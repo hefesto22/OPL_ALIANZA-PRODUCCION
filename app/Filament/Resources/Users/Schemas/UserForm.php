@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Users\Schemas;
 
+use App\Models\Warehouse;
 use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
@@ -94,6 +95,15 @@ class UserForm
                             ->preload()
                             ->searchable()
                             ->placeholder('Seleccionar roles'),
+
+                        Select::make('warehouse_id')
+                            ->label('Bodega asignada')
+                            ->options(Warehouse::pluck('code', 'id'))
+                            ->searchable()
+                            ->nullable()
+                            ->placeholder('Sin bodega (Admin / Haremar)')
+                            ->helperText('Solo asignar bodega a usuarios operadores. Dejar vacío para admins y Haremar.')
+                            ->prefixIcon('heroicon-o-building-storefront'),
                     ]),
 
                 Section::make('Estado de la Cuenta')

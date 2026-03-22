@@ -2,66 +2,53 @@
 
 namespace Database\Seeders;
 
+use BezhanSalleh\FilamentShield\Support\Utils;
 use Illuminate\Database\Seeder;
 use Spatie\Permission\Models\Role;
-use Spatie\Permission\Models\Permission;
-use BezhanSalleh\FilamentShield\Support\Utils;
 
+/**
+ * Crea los roles del sistema.
+ *
+ * ⚠️  IMPORTANTE — Orden de despliegue:
+ *   1. php artisan migrate
+ *   2. php artisan db:seed                    ← crea roles y usuario admin
+ *   3. php artisan shield:generate --all      ← crea permisos en formato Shield
+ *   4. Asignar permisos a roles desde el panel: /admin/shield/roles
+ *
+ * Los permisos NO se asignan aquí porque Shield los genera en su propio
+ * formato (PascalCase con dos puntos, ej: ViewAny:Manifest) y deben
+ * asignarse DESPUÉS de que shield:generate haya corrido.
+ */
 class RoleSeeder extends Seeder
 {
     public function run(): void
     {
-        // Reset cached roles and permissions
         app()[\Spatie\Permission\PermissionRegistrar::class]->forgetCachedPermissions();
 
-        // Create Super Admin role
-        $superAdmin = Role::firstOrCreate(
-            ['name' => Utils::getSuperAdminName()],
-            ['guard_name' => 'web']
-        );
-
-        // Create Panel User role
-        $panelUser = Role::firstOrCreate(
-            ['name' => Utils::getPanelUserRoleName()],
-            ['guard_name' => 'web']
-        );
-
-        // Define base permissions for resources
-        $resources = [
-            'user' => ['view_any', 'view', 'create', 'update', 'delete', 'restore', 'force_delete'],
-            'role' => ['view_any', 'view', 'create', 'update', 'delete'],
+        // ── Roles del sistema ──────────────────────────────────────
+        //
+        //  Roles globales (warehouse_id = null) → ven todo el sistema:
+        //    super_admin  → Mauricio, acceso total sin restricciones
+        //    admin        → Administrador OPL Alianza, gestión general
+        //
+        //  Roles de bodega (warehouse_id asignado) → solo su bodega:
+        //    encargado    → Supervisor de bodega, corrige errores de su equipo
+        //    operador     → Operador, consulta manifiestos y devoluciones (impresión)
+        //    finance      → Finanzas, registra depósitos
+        //
+        $roles = [
+            Utils::getSuperAdminName(), // super_admin
+            'admin',
+            'encargado',
+            'operador',
+            'finance',
         ];
 
-        $permissions = [];
-
-        foreach ($resources as $resource => $actions) {
-            foreach ($actions as $action) {
-                $permissions[] = Permission::firstOrCreate(
-                    ['name' => "{$action}_{$resource}"],
-                    ['guard_name' => 'web']
-                );
-            }
-        }
-
-        // Page permissions
-        $pagePermissions = [
-            'page_MyProfilePage',
-            'page_ActivityLogPage',
-        ];
-
-        foreach ($pagePermissions as $permission) {
-            Permission::firstOrCreate(
-                ['name' => $permission],
+        foreach ($roles as $role) {
+            Role::firstOrCreate(
+                ['name'       => $role],
                 ['guard_name' => 'web']
             );
         }
-
-        // Super Admin gets all permissions
-        $superAdmin->syncPermissions(Permission::all());
-
-        // Panel User gets basic view permissions
-        $panelUser->syncPermissions([
-            'page_MyProfilePage',
-        ]);
     }
 }
