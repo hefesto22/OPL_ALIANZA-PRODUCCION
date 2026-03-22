@@ -2,7 +2,7 @@
 
 namespace App\Filament\Resources\Manifests\RelationManagers;
 
-use App\Filament\Resources\Manifests\Actions\RegistrarDevolucionAction;
+use App\Filament\Resources\Manifests\Pages\Actions\RegistrarDevolucionAction;
 use App\Models\Invoice;
 use App\Models\User;
 use App\Services\InvoicePdfService;

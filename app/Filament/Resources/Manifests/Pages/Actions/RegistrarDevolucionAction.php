@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Filament\Resources\Manifests\Actions;
+namespace App\Filament\Resources\Manifests\Pages\Actions;
 
 use App\Models\Invoice;
 use App\Models\ReturnReason;
