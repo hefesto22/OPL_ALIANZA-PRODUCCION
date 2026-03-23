@@ -117,6 +117,7 @@ class ManifestsTable
                     ->money('HNL')
                     ->color('danger')
                     ->toggleable()
+                    ->visible(fn (): bool => ! Auth::user()->hasRole('operador'))
                     ->state(function (Manifest $record): float {
                         /** @var User $user */
                         $user = Auth::user();
@@ -134,6 +135,7 @@ class ManifestsTable
                     ->color('warning')
                     ->weight('bold')
                     ->toggleable()
+                    ->visible(fn (): bool => ! Auth::user()->hasRole('operador'))
                     ->state(function (Manifest $record): float {
                         /** @var User $user */
                         $user = Auth::user();
@@ -150,6 +152,7 @@ class ManifestsTable
                     ->money('HNL')
                     ->color('success')
                     ->toggleable()
+                    ->visible(fn (): bool => ! Auth::user()->hasRole('operador'))
                     ->state(function (Manifest $record): float {
                         /** @var User $user */
                         $user = Auth::user();
@@ -169,6 +172,7 @@ class ManifestsTable
                     ->money('HNL')
                     ->weight('bold')
                     ->toggleable()
+                    ->visible(fn (): bool => ! Auth::user()->hasRole('operador'))
                     ->state(function (Manifest $record): float {
                         /** @var User $user */
                         $user = Auth::user();
@@ -313,7 +317,11 @@ class ManifestsTable
 
                 EditAction::make()
                     ->label('Editar')
-                    ->hidden(fn (Manifest $record): bool => $record->isClosed()),
+                    ->hidden(function (Manifest $record): bool {
+                        /** @var User $user */
+                        $user = Auth::user();
+                        return $record->isClosed() || !$user->hasRole('super_admin');
+                    }),
 
                 Action::make('close')
                     ->label('Cerrar')
@@ -323,7 +331,11 @@ class ManifestsTable
                     ->modalHeading('¿Cerrar este manifiesto?')
                     ->modalDescription('Una vez cerrado no podrá modificarse. Solo un administrador podrá reabrirlo.')
                     ->modalSubmitActionLabel('Sí, cerrar')
-                    ->visible(fn (Manifest $record): bool => $record->isReadyToClose())
+                    ->visible(function (Manifest $record): bool {
+                        /** @var User $user */
+                        $user = Auth::user();
+                        return $record->isReadyToClose() && $user->hasAnyRole(['super_admin', 'admin']);
+                    })
                     ->action(function (Manifest $record): void {
                         $record->close(Auth::id());
                         Notification::make()
@@ -356,7 +368,12 @@ class ManifestsTable
 
             ->toolbarActions([
                 BulkActionGroup::make([
-                    DeleteBulkAction::make(),
+                    DeleteBulkAction::make()
+                        ->visible(function (): bool {
+                            /** @var User $user */
+                            $user = Auth::user();
+                            return $user->hasAnyRole(['super_admin', 'admin']);
+                        }),
                 ]),
             ])
 

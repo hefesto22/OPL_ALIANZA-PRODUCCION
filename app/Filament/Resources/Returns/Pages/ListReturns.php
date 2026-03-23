@@ -6,10 +6,7 @@ use App\Exports\ReturnsDetailExport;
 use App\Exports\ReturnsExport;
 use App\Filament\Resources\Returns\ReturnResource;
 use App\Filament\Resources\Returns\Tables\ReturnsTable;
-use App\Models\InvoiceReturn;
 use App\Models\Warehouse;
-use App\Services\ReturnExportService;
-use App\Services\ReturnExporter;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Actions\CreateAction;
@@ -193,24 +190,6 @@ class ListReturns extends ListRecords
                         );
                     }),
 
-                // ── Formato Jaremar ────────────────────────────────────
-                Action::make('export_json')
-                    ->label('Exportar JSON (Jaremar)')
-                    ->icon('heroicon-o-code-bracket')
-                    ->color('gray')
-                    ->action(fn () => $this->exportReturnsJaremar('json')),
-
-                Action::make('export_xml')
-                    ->label('Exportar XML (Jaremar)')
-                    ->icon('heroicon-o-document-text')
-                    ->color('gray')
-                    ->action(fn () => $this->exportReturnsJaremar('xml')),
-
-                Action::make('export_csv')
-                    ->label('Exportar CSV (Jaremar)')
-                    ->icon('heroicon-o-table-cells')
-                    ->color('gray')
-                    ->action(fn () => $this->exportReturnsJaremar('csv')),
             ])
                 ->label('Reportes')
                 ->icon('heroicon-o-document-chart-bar')
@@ -218,21 +197,4 @@ class ListReturns extends ListRecords
         ];
     }
 
-    private function exportReturnsJaremar(string $format): mixed
-    {
-        $exportService = app(ReturnExportService::class);
-        $exporter      = app(ReturnExporter::class);
-
-        $query   = InvoiceReturn::query();
-        $returns = $exportService->withRelations($query)->get();
-
-        $data     = $exportService->toJaremarArray($returns);
-        $filename = 'devoluciones_' . now()->format('Y-m-d');
-
-        return match ($format) {
-            'json' => $exporter->toJson($data, "{$filename}.json"),
-            'xml'  => $exporter->toXml($data, "{$filename}.xml"),
-            'csv'  => $exporter->toCsv($data, "{$filename}.csv"),
-        };
-    }
 }

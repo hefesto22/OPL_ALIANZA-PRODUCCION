@@ -14,6 +14,7 @@ use Filament\Resources\Pages\ListRecords;
 use Filament\Schemas\Components\Tabs\Tab;
 use Filament\Schemas\Components\Utilities\Get;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Crypt;
 use Maatwebsite\Excel\Facades\Excel;
 
@@ -153,7 +154,12 @@ class ListManifests extends ListRecords
         return [
             CreateAction::make()
                 ->label('Subir Manifiesto')
-                ->icon('heroicon-o-arrow-up-tray'),
+                ->icon('heroicon-o-arrow-up-tray')
+                ->visible(function (): bool {
+                    /** @var \App\Models\User $user */
+                    $user = Auth::user();
+                    return $user->hasAnyRole(['super_admin', 'admin']);
+                }),
 
             ActionGroup::make([
                 // ── Reporte PDF ────────────────────────────────────────
@@ -246,7 +252,12 @@ class ListManifests extends ListRecords
             ])
                 ->label('Reportes')
                 ->icon('heroicon-o-document-chart-bar')
-                ->color('gray'),
+                ->color('gray')
+                ->visible(function (): bool {
+                    /** @var \App\Models\User $user */
+                    $user = Auth::user();
+                    return $user->hasAnyRole(['super_admin', 'admin']);
+                }),
         ];
     }
 }

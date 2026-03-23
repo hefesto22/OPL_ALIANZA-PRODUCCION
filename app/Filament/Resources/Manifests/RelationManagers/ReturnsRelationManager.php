@@ -22,6 +22,14 @@ class ReturnsRelationManager extends RelationManager
     protected static ?string $label       = 'Devolución';
     protected static ?string $pluralLabel = 'Devoluciones';
 
+    public static function canViewForRecord(\Illuminate\Database\Eloquent\Model $ownerRecord, string $pageClass): bool
+    {
+        /** @var User $user */
+        $user = Auth::user();
+
+        return ! $user->hasRole('operador');
+    }
+
     public function table(Table $table): Table
     {
         $isClosed = $this->getOwnerRecord()->isClosed();

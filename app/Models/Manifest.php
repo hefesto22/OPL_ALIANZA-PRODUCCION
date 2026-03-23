@@ -160,10 +160,16 @@ class Manifest extends Model
     /**
      * Resumen de facturas agrupado por status.
      */
-    public function getInvoicesSummary(): array
+    public function getInvoicesSummary(?int $warehouseId = null): array
     {
-        return $this->invoices()
-            ->selectRaw('status, COUNT(*) as count, COALESCE(SUM(total), 0) as total')
+        $query = $this->invoices()
+            ->selectRaw('status, COUNT(*) as count, COALESCE(SUM(total), 0) as total');
+
+        if ($warehouseId) {
+            $query->where('warehouse_id', $warehouseId);
+        }
+
+        return $query
             ->groupBy('status')
             ->get()
             ->mapWithKeys(fn($row) => [

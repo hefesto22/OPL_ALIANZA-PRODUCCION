@@ -5,6 +5,7 @@ namespace App\Filament\Widgets;
 use App\Models\Manifest;
 use Filament\Widgets\ChartWidget;
 use Illuminate\Support\Facades\Cache;
+use BezhanSalleh\FilamentShield\Traits\HasWidgetShield;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -24,6 +25,8 @@ use Illuminate\Support\Facades\DB;
  */
 class MonthlyReturnRateChart extends ChartWidget
 {
+    use HasWidgetShield;
+
     protected static ?int $sort = 4;
 
     public function getHeading(): string

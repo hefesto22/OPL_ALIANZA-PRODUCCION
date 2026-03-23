@@ -4,6 +4,7 @@ namespace App\Filament\Widgets;
 
 use App\Models\ManifestWarehouseTotal;
 use Filament\Widgets\ChartWidget;
+use BezhanSalleh\FilamentShield\Traits\HasWidgetShield;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
@@ -16,6 +17,8 @@ use Illuminate\Support\Facades\DB;
  */
 class ReturnsByWarehouseChart extends ChartWidget
 {
+    use HasWidgetShield;
+
     protected static ?int $sort = 6;
 
     public function getHeading(): string

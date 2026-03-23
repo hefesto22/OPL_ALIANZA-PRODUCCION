@@ -6,6 +6,7 @@ use App\Models\Deposit;
 use App\Models\Manifest;
 use Filament\Widgets\ChartWidget;
 use Illuminate\Support\Facades\Cache;
+use BezhanSalleh\FilamentShield\Traits\HasWidgetShield;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -21,6 +22,8 @@ use Illuminate\Support\Facades\DB;
  */
 class MonthlySalesVsCollectionsChart extends ChartWidget
 {
+    use HasWidgetShield;
+
     protected static ?int $sort = 3;
     protected int | string | array $columnSpan = 'full';
 

@@ -38,13 +38,17 @@ class ViewManifest extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
-            // ── Editar (oculto si cerrado) ─────────────────────────────
+            // ── Editar (solo super_admin, oculto si cerrado) ────────────
             EditAction::make()
                 ->label('Editar')
                 ->icon('heroicon-o-pencil-square')
-                ->hidden(fn (): bool => $this->record->isClosed()),
+                ->hidden(function (): bool {
+                    /** @var User $user */
+                    $user = Auth::user();
+                    return $this->record->isClosed() || !$user->hasRole('super_admin');
+                }),
 
-            // ── Cerrar manifiesto ──────────────────────────────────────
+            // ── Cerrar manifiesto (solo super_admin y admin) ────────────
             Action::make('close')
                 ->label('Cerrar Manifiesto')
                 ->icon('heroicon-o-lock-closed')
@@ -54,7 +58,11 @@ class ViewManifest extends ViewRecord
                 ->modalHeading('¿Cerrar este manifiesto?')
                 ->modalDescription('Una vez cerrado no podrá modificarse. Solo un administrador podrá reabrirlo.')
                 ->modalSubmitActionLabel('Sí, cerrar')
-                ->visible(fn (): bool => $this->record->isReadyToClose())
+                ->visible(function (): bool {
+                    /** @var User $user */
+                    $user = Auth::user();
+                    return $this->record->isReadyToClose() && $user->hasAnyRole(['super_admin', 'admin']);
+                })
                 ->action(function (): void {
                     $this->record->close(Auth::id());
 
@@ -94,13 +102,18 @@ class ViewManifest extends ViewRecord
                     $this->refreshFormData(['status', 'closed_at', 'closed_by']);
                 }),
 
-            // ── Registrar Depósito ─────────────────────────────────────
+            // ── Registrar Depósito (super_admin, admin, encargado, finance) ──
             Action::make('registrar_deposito')
                 ->label('Registrar Depósito')
                 ->icon('heroicon-o-banknotes')
                 ->color('success')
                 ->button()
-                ->hidden(fn (): bool => $this->record->isClosed() || (float) $this->record->difference === 0.0)
+                ->hidden(function (): bool {
+                    /** @var User $user */
+                    $user = Auth::user();
+                    $noPermission = !$user->hasAnyRole(['super_admin', 'admin', 'encargado', 'finance']);
+                    return $this->record->isClosed() || (float) $this->record->difference === 0.0 || $noPermission;
+                })
                 ->modalHeading('Registrar Depósito')
                 ->modalDescription(function (): string {
                     $pending = app(DepositService::class)->getPendingAmount($this->record);
@@ -176,16 +189,26 @@ class ViewManifest extends ViewRecord
                         ->send();
                 }),
 
-            // ── Reportes de facturas ───────────────────────────────────
+            // ── Reportes de facturas (super_admin, admin, encargado) ───
             ActionGroup::make([
                 Action::make('report_facturas_pdf')
                     ->label('Reporte PDF')
                     ->icon('heroicon-o-document-text')
                     ->color('danger')
                     ->action(function (): void {
-                        $payload = Crypt::encryptString(json_encode([
+                        /** @var User $user */
+                        $user = Auth::user();
+
+                        $payloadData = [
                             'manifest_id' => $this->record->id,
-                        ]));
+                        ];
+
+                        // Si el usuario tiene bodega asignada, filtrar solo sus facturas
+                        if ($user->warehouse_id) {
+                            $payloadData['warehouse_id'] = $user->warehouse_id;
+                        }
+
+                        $payload = Crypt::encryptString(json_encode($payloadData));
 
                         $this->js("window.open('/imprimir/reportes/facturas?payload=" . urlencode($payload) . "', '_blank')");
                     }),
@@ -194,6 +217,11 @@ class ViewManifest extends ViewRecord
                     ->label('Exportar Excel')
                     ->icon('heroicon-o-table-cells')
                     ->color('success')
+                    ->visible(function (): bool {
+                        /** @var User $user */
+                        $user = Auth::user();
+                        return $user->hasAnyRole(['super_admin', 'admin', 'encargado']);
+                    })
                     ->action(function (): mixed {
                         $manifest = $this->record;
                         $filename = "facturas_{$manifest->number}_" . now()->format('Y-m-d') . '.xlsx';
@@ -207,9 +235,14 @@ class ViewManifest extends ViewRecord
                 ->label('Facturas')
                 ->icon('heroicon-o-document-chart-bar')
                 ->color('gray')
-                ->button(),
+                ->button()
+                ->visible(function (): bool {
+                    /** @var User $user */
+                    $user = Auth::user();
+                    return $user->hasAnyRole(['super_admin', 'admin', 'encargado', 'operador']);
+                }),
 
-            // ── Reporte PDF de devoluciones ────────────────────────────
+            // ── Reporte PDF de devoluciones (super_admin, admin, encargado) ──
             // Jaremar consume los datos vía API; Hozana genera el PDF.
             // El modal permite filtrar por período antes de imprimir.
             Action::make('report_devoluciones_pdf')
@@ -217,7 +250,11 @@ class ViewManifest extends ViewRecord
                 ->icon('heroicon-o-arrow-uturn-left')
                 ->color('gray')
                 ->button()
-                ->visible(fn (): bool => $this->record->returns()->exists())
+                ->visible(function (): bool {
+                    /** @var User $user */
+                    $user = Auth::user();
+                    return $this->record->returns()->exists() && $user->hasAnyRole(['super_admin', 'admin', 'encargado']);
+                })
                 ->modalHeading('Reporte de Devoluciones')
                 ->modalDescription('Selecciona el período que deseas incluir en el reporte.')
                 ->modalIcon('heroicon-o-document-chart-bar')

@@ -17,6 +17,7 @@ use Filament\Support\Icons\Heroicon;
 use Spatie\Activitylog\Models\Activity;
 use BackedEnum;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Auth;
 
 class ActivityLogResource extends Resource
 {
@@ -33,6 +34,11 @@ class ActivityLogResource extends Resource
     public static function getNavigationGroup(): ?string
     {
         return 'Administración';
+    }
+
+    public static function canAccess(): bool
+    {
+        return Auth::user()->hasAnyRole(['super_admin', 'admin']);
     }
 
     public static function canCreate(): bool

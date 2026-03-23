@@ -104,13 +104,20 @@ class ManifestInfolist
                         ->icon('heroicon-o-document-text')
                         ->columns(2)
                         ->extraAttributes(['class' => 'h-full'])
-                        ->visible(fn (): bool => Auth::user()->isGlobalUser())
                         ->schema([
                             TextEntry::make('invoices_count')
                                 ->label('Total Enviadas')
                                 ->weight('bold')
                                 ->suffix(' facturas')
-                                ->state(fn ($record) => $record->invoices()->count())
+                                ->state(function ($record): int {
+                                    /** @var User $user */
+                                    $user = Auth::user();
+                                    $query = $record->invoices();
+                                    if ($user->warehouse_id) {
+                                        $query->where('warehouse_id', $user->warehouse_id);
+                                    }
+                                    return $query->count();
+                                })
                                 ->extraAttributes([
                                     'class'      => 'cursor-pointer select-none rounded-lg px-3 py-2 transition-all hover:bg-gray-100 dark:hover:bg-white/5',
                                     'wire:click' => "\$dispatch('filterInvoicesByStatus', { statuses: [] })",
@@ -123,7 +130,9 @@ class ManifestInfolist
                                 ->suffix(' facturas')
                                 ->color('success')
                                 ->state(function ($record): int {
-                                    $summary = $record->getInvoicesSummary();
+                                    /** @var User $user */
+                                    $user = Auth::user();
+                                    $summary = $record->getInvoicesSummary($user->warehouse_id);
                                     return ($summary['imported']['count'] ?? 0)
                                          + ($summary['partial_return']['count'] ?? 0)
                                          + ($summary['returned']['count'] ?? 0);
@@ -139,7 +148,11 @@ class ManifestInfolist
                                 ->weight('bold')
                                 ->suffix(' facturas')
                                 ->color('warning')
-                                ->state(fn ($record): int => $record->getInvoicesSummary()['pending_warehouse']['count'] ?? 0)
+                                ->state(function ($record): int {
+                                    /** @var User $user */
+                                    $user = Auth::user();
+                                    return $record->getInvoicesSummary($user->warehouse_id)['pending_warehouse']['count'] ?? 0;
+                                })
                                 ->extraAttributes([
                                     'class'      => 'cursor-pointer select-none rounded-lg px-3 py-2 transition-all hover:bg-warning-50 dark:hover:bg-warning-500/10',
                                     'wire:click' => "\$dispatch('filterInvoicesByStatus', { statuses: ['pending_warehouse'] })",
@@ -151,7 +164,11 @@ class ManifestInfolist
                                 ->weight('bold')
                                 ->suffix(' facturas')
                                 ->color('danger')
-                                ->state(fn ($record): int => $record->getInvoicesSummary()['rejected']['count'] ?? 0)
+                                ->state(function ($record): int {
+                                    /** @var User $user */
+                                    $user = Auth::user();
+                                    return $record->getInvoicesSummary($user->warehouse_id)['rejected']['count'] ?? 0;
+                                })
                                 ->extraAttributes([
                                     'class'      => 'cursor-pointer select-none rounded-lg px-3 py-2 transition-all hover:bg-danger-50 dark:hover:bg-danger-500/10',
                                     'wire:click' => "\$dispatch('filterInvoicesByStatus', { statuses: ['rejected'] })",
@@ -167,27 +184,75 @@ class ManifestInfolist
                         ->schema([
                             TextEntry::make('invoices_count')
                                 ->label('Facturas con bodega asignada')
-                                ->suffix(fn ($record) => ' de ' . $record->invoices()->count() . ' enviadas')
-                                ->state(fn ($record): int => (int) $record->invoices_count),
+                                ->suffix(function ($record): string {
+                                    /** @var User $user */
+                                    $user = Auth::user();
+                                    $query = $record->invoices();
+                                    if ($user->warehouse_id) {
+                                        $query->where('warehouse_id', $user->warehouse_id);
+                                    }
+                                    return ' de ' . $query->count() . ' enviadas';
+                                })
+                                ->state(function ($record): int {
+                                    /** @var User $user */
+                                    $user = Auth::user();
+                                    if ($user->warehouse_id) {
+                                        return (int) $record->invoices()
+                                            ->where('warehouse_id', $user->warehouse_id)
+                                            ->whereNotNull('warehouse_id')
+                                            ->count();
+                                    }
+                                    return (int) $record->invoices_count;
+                                }),
 
                             TextEntry::make('returns_count')
                                 ->label('Total Devoluciones')
-                                ->state(fn ($record): int => (int) $record->returns_count)
+                                ->state(function ($record): int {
+                                    /** @var User $user */
+                                    $user = Auth::user();
+                                    if ($user->warehouse_id) {
+                                        return (int) $record->returns()
+                                            ->where('warehouse_id', $user->warehouse_id)
+                                            ->count();
+                                    }
+                                    return (int) $record->returns_count;
+                                })
                                 ->color(fn ($state): string => $state > 0 ? 'warning' : 'gray'),
 
                             TextEntry::make('deposit_progress')
                                 ->label('Progreso de Depósito')
                                 ->columnSpanFull()
+                                ->hidden(fn (): bool => Auth::user()->hasRole('operador'))
                                 ->state(function ($record): string {
-                                    $toDeposit = (float) $record->total_to_deposit;
-                                    $deposited = (float) $record->total_deposited;
+                                    /** @var User $user */
+                                    $user = Auth::user();
+                                    if ($user->warehouse_id) {
+                                        $wt = $record->warehouseTotals
+                                            ->where('warehouse_id', $user->warehouse_id)
+                                            ->first();
+                                        $toDeposit = (float) ($wt?->total_to_deposit ?? 0);
+                                        $deposited = (float) ($wt?->total_deposited ?? 0);
+                                    } else {
+                                        $toDeposit = (float) $record->total_to_deposit;
+                                        $deposited = (float) $record->total_deposited;
+                                    }
                                     if ($toDeposit <= 0) return 'Sin monto a depositar';
                                     $pct = min(100, round(($deposited / $toDeposit) * 100, 1));
                                     return "{$pct}%";
                                 })
                                 ->color(function ($record): string {
-                                    $toDeposit = (float) $record->total_to_deposit;
-                                    $deposited = (float) $record->total_deposited;
+                                    /** @var User $user */
+                                    $user = Auth::user();
+                                    if ($user->warehouse_id) {
+                                        $wt = $record->warehouseTotals
+                                            ->where('warehouse_id', $user->warehouse_id)
+                                            ->first();
+                                        $toDeposit = (float) ($wt?->total_to_deposit ?? 0);
+                                        $deposited = (float) ($wt?->total_deposited ?? 0);
+                                    } else {
+                                        $toDeposit = (float) $record->total_to_deposit;
+                                        $deposited = (float) $record->total_deposited;
+                                    }
                                     if ($toDeposit <= 0) return 'gray';
                                     $pct = ($deposited / $toDeposit) * 100;
                                     if ($pct >= 100) return 'success';
@@ -207,6 +272,7 @@ class ManifestInfolist
                 ->description('Total − Devoluciones = A Depositar   ·   A Depositar − Depositado = Diferencia')
                 ->columns(5)
                 ->columnSpanFull()
+                ->hidden(fn (): bool => Auth::user()->hasRole('operador'))
                 ->schema([
                     TextEntry::make('total_invoices')
                         ->label('Total Manifiesto')

@@ -182,7 +182,7 @@ table.lines tbody td.r { text-align: right; }
             @if($manifest) — Manifiesto #{{ $manifest->number }} @endif
         </strong>
         <span>
-            @if(!empty($filters['date_from']) && $filters['period'] !== 'all')
+            @if(!empty($filters['date_from']) && ($filters['period'] ?? null) !== 'all')
                 Período: {{ \Carbon\Carbon::parse($filters['date_from'])->format('d/m/Y') }}
                 al {{ \Carbon\Carbon::parse($filters['date_to'])->format('d/m/Y') }}
                 &nbsp;·&nbsp;

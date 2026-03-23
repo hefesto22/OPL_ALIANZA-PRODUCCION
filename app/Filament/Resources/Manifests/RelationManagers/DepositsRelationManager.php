@@ -22,6 +22,14 @@ class DepositsRelationManager extends RelationManager
     protected static ?string $label       = 'Depósito';
     protected static ?string $pluralLabel = 'Depósitos';
 
+    public static function canViewForRecord(\Illuminate\Database\Eloquent\Model $ownerRecord, string $pageClass): bool
+    {
+        /** @var \App\Models\User $user */
+        $user = \Illuminate\Support\Facades\Auth::user();
+
+        return ! $user->hasRole('operador');
+    }
+
     public function table(Table $table): Table
     {
         return $table

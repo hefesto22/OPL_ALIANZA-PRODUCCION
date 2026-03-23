@@ -189,9 +189,16 @@ class PrintReportsController extends Controller
         $data     = $this->decryptPayload($request);
         $manifest = Manifest::with(['warehouse', 'supplier'])->findOrFail((int) ($data['manifest_id'] ?? 0));
 
-        $invoices = $manifest->invoices()
+        $invoiceQuery = $manifest->invoices()
             ->with(['warehouse'])
-            ->where('status', '!=', 'rejected')
+            ->where('status', '!=', 'rejected');
+
+        // Filtrar por bodega cuando el usuario tiene bodega asignada (operador)
+        if (!empty($data['warehouse_id'])) {
+            $invoiceQuery->where('warehouse_id', (int) $data['warehouse_id']);
+        }
+
+        $invoices = $invoiceQuery
             ->orderBy('route_number')
             ->orderBy('invoice_number')
             ->get();
@@ -205,13 +212,24 @@ class PrintReportsController extends Controller
             ];
         })->sortKeys();
 
+        // Si se filtra por bodega, recalcular devoluciones y neto solo para esa bodega
+        $warehouseFiltered = !empty($data['warehouse_id']);
+        $totalReturns = $warehouseFiltered
+            ? $manifest->returns()
+                ->where('warehouse_id', (int) $data['warehouse_id'])
+                ->where('status', 'approved')
+                ->sum('total')
+            : $manifest->total_returns;
+
+        $totalInvoices = $invoices->sum('total');
+
         $totals = [
-            'total'          => $invoices->sum('total'),
+            'total'          => $totalInvoices,
             'count'          => $invoices->count(),
             'total_isv15'    => $invoices->sum('isv15'),
             'total_isv18'    => $invoices->sum('isv18'),
-            'total_returns'  => $manifest->total_returns,
-            'net'            => $manifest->total_to_deposit,
+            'total_returns'  => $totalReturns,
+            'net'            => $totalInvoices - $totalReturns,
         ];
 
         $html = view('pdf.report-invoices', [

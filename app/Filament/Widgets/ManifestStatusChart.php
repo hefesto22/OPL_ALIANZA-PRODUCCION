@@ -4,6 +4,7 @@ namespace App\Filament\Widgets;
 
 use App\Models\Manifest;
 use Filament\Widgets\ChartWidget;
+use BezhanSalleh\FilamentShield\Traits\HasWidgetShield;
 use Illuminate\Support\Facades\Cache;
 
 /**
@@ -13,6 +14,8 @@ use Illuminate\Support\Facades\Cache;
  */
 class ManifestStatusChart extends ChartWidget
 {
+    use HasWidgetShield;
+
     protected static ?int $sort = 5;
 
     public function getHeading(): string

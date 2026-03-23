@@ -4,12 +4,15 @@ namespace App\Filament\Widgets;
 
 use App\Filament\Resources\Manifests\ManifestResource;
 use App\Models\Manifest;
+use BezhanSalleh\FilamentShield\Traits\HasWidgetShield;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Filament\Widgets\TableWidget as BaseWidget;
 
 class LatestManifestsWidget extends BaseWidget
 {
+    use HasWidgetShield;
+
     protected static ?int $sort = 7;
     protected int | string | array $columnSpan = 'full';
 
