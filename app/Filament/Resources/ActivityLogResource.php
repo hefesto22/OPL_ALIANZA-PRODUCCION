@@ -238,11 +238,77 @@ class ActivityLogResource extends Resource
                         ]),
                     ]),
 
-                // ── Sección API: solo cuando log_name = 'api' ─
+                // ── Sección IMPORTACIÓN API: cuando tiene source = jaremar_api ──
+                Section::make('Resumen de Importación')
+                    ->icon('heroicon-o-cloud-arrow-down')
+                    ->collapsible()
+                    ->visible(fn (Activity $record): bool =>
+                        $record->log_name === 'api' &&
+                        ($record->properties['source'] ?? null) === 'jaremar_api'
+                    )
+                    ->schema([
+                        Grid::make(2)->schema([
+                            TextEntry::make('properties.source')
+                                ->label('Origen')
+                                ->badge()
+                                ->color('info')
+                                ->formatStateUsing(fn (?string $state): string => match($state) {
+                                    'jaremar_api' => 'API Jaremar',
+                                    default       => $state ?? '—',
+                                }),
+
+                            TextEntry::make('properties.batch_uuid')
+                                ->label('ID de Lote (batch)')
+                                ->icon('heroicon-o-finger-print')
+                                ->placeholder('—')
+                                ->copyable()
+                                ->copyMessage('UUID copiado')
+                                ->fontFamily('mono'),
+
+                            TextEntry::make('properties.invoices_total')
+                                ->label('Total Procesadas')
+                                ->icon('heroicon-o-document-text')
+                                ->placeholder('0')
+                                ->weight('bold'),
+
+                            TextEntry::make('properties.invoices_inserted')
+                                ->label('Insertadas')
+                                ->icon('heroicon-o-plus-circle')
+                                ->placeholder('0')
+                                ->badge()
+                                ->color(fn (mixed $state): string => ((int) $state) > 0 ? 'success' : 'gray'),
+
+                            TextEntry::make('properties.invoices_unchanged')
+                                ->label('Sin Cambios')
+                                ->icon('heroicon-o-minus-circle')
+                                ->placeholder('0')
+                                ->badge()
+                                ->color('gray'),
+
+                            TextEntry::make('properties.invoices_pending')
+                                ->label('Con Conflictos')
+                                ->icon('heroicon-o-exclamation-triangle')
+                                ->placeholder('0')
+                                ->badge()
+                                ->color(fn (mixed $state): string => ((int) $state) > 0 ? 'warning' : 'gray'),
+
+                            TextEntry::make('properties.invoices_rejected')
+                                ->label('Rechazadas')
+                                ->icon('heroicon-o-x-circle')
+                                ->placeholder('0')
+                                ->badge()
+                                ->color(fn (mixed $state): string => ((int) $state) > 0 ? 'danger' : 'gray'),
+                        ]),
+                    ]),
+
+                // ── Sección API consulta: cuando tiene endpoint (logs de consulta API) ──
                 Section::make('Detalle de la Llamada API')
                     ->icon('heroicon-o-arrow-path')
                     ->collapsible()
-                    ->visible(fn (Activity $record): bool => $record->log_name === 'api')
+                    ->visible(fn (Activity $record): bool =>
+                        $record->log_name === 'api' &&
+                        ! empty($record->properties['endpoint'])
+                    )
                     ->schema([
                         Grid::make(2)->schema([
 
@@ -324,7 +390,11 @@ class ActivityLogResource extends Resource
                     ->collapsed()
                     ->visible(fn (Activity $record): bool =>
                         $record->log_name === 'api' &&
-                        $record->properties->except(['endpoint','ip','fecha','pagina','total','desde_cache','resultado'])->isNotEmpty()
+                        $record->properties->except([
+                            'endpoint','ip','fecha','pagina','total','desde_cache','resultado',
+                            'source','batch_uuid','invoices_total','invoices_inserted',
+                            'invoices_unchanged','invoices_pending','invoices_rejected',
+                        ])->isNotEmpty()
                     )
                     ->schema([
                         TextEntry::make('properties')
@@ -333,7 +403,11 @@ class ActivityLogResource extends Resource
                                 if (!$state instanceof \Illuminate\Support\Collection) {
                                     return '—';
                                 }
-                                $extra = $state->except(['endpoint','ip','fecha','pagina','total','desde_cache','resultado'])->toArray();
+                                $extra = $state->except([
+                                    'endpoint','ip','fecha','pagina','total','desde_cache','resultado',
+                                    'source','batch_uuid','invoices_total','invoices_inserted',
+                                    'invoices_unchanged','invoices_pending','invoices_rejected',
+                                ])->toArray();
                                 return static::formatProperties($extra);
                             })
                             ->markdown()

@@ -456,6 +456,132 @@ class PrintReportsController extends Controller
         return response($html, 200, ['Content-Type' => 'text/html; charset=UTF-8']);
     }
 
+    /**
+     * GET /imprimir/reportes/productos?payload={encrypted}
+     *
+     * Sublista de productos consolidada por manifiesto.
+     * Agrupa todas las líneas de factura por product_id, sumando cajas y unidades.
+     *
+     * Payload:
+     *   - manifest_id:  int
+     *   - warehouse_id: int|null  (filtra facturas de una bodega específica)
+     */
+    public function products(Request $request): Response
+    {
+        $data     = $this->decryptPayload($request);
+        $manifest = Manifest::with(['warehouse', 'supplier'])->findOrFail((int) ($data['manifest_id'] ?? 0));
+
+        // Query base: líneas de facturas no rechazadas del manifiesto
+        $invoiceQuery = $manifest->invoices()
+            ->where('status', '!=', 'rejected');
+
+        // Filtrar por IDs específicos (bulk action) o por bodega
+        if (!empty($data['invoice_ids'])) {
+            $invoiceQuery->whereIn('id', $data['invoice_ids']);
+        } elseif (!empty($data['warehouse_id'])) {
+            $invoiceQuery->where('warehouse_id', (int) $data['warehouse_id']);
+        }
+
+        $invoiceIds = $invoiceQuery->pluck('id');
+
+        // Agrupar líneas por producto, sumando cantidades y totales
+        $products = DB::table('invoice_lines')
+            ->whereIn('invoice_id', $invoiceIds)
+            ->select(
+                'product_id',
+                'product_description',
+                'unit_sale',
+                DB::raw('SUM(quantity_box) as total_boxes'),
+                DB::raw('SUM(quantity_fractions) as total_units'),
+                DB::raw('SUM(total) as total_amount'),
+            )
+            ->groupBy('product_id', 'product_description', 'unit_sale')
+            ->orderBy('product_id')
+            ->get();
+
+        $totals = [
+            'total_boxes'  => $products->sum('total_boxes'),
+            'total_units'  => $products->sum('total_units'),
+            'total_amount' => $products->sum('total_amount'),
+            'count'        => $products->count(),
+        ];
+
+        $html = view('pdf.report-products', [
+            'manifest'    => $manifest,
+            'products'    => $products,
+            'totals'      => $totals,
+            'supplier'    => Supplier::first(),
+            'generatedAt' => now()->format('d/m/Y H:i:s'),
+            'warehouseFiltered' => !empty($data['warehouse_id']),
+        ])->render();
+
+        return response($html, 200, ['Content-Type' => 'text/html; charset=UTF-8']);
+    }
+
+    /**
+     * GET /imprimir/reportes/facturas-checklist?payload={encrypted}
+     *
+     * Sublista de facturas simplificada para verificación en campo (operador).
+     * Columnas: #, Factura, Cliente, Total, ✓
+     * Agrupada por ruta. A4 portrait.
+     *
+     * Payload:
+     *   - manifest_id:  int
+     *   - warehouse_id: int|null  (filtra por bodega del operador)
+     */
+    public function invoicesChecklist(Request $request): Response
+    {
+        $data     = $this->decryptPayload($request);
+        $manifest = Manifest::with(['warehouse', 'supplier'])->findOrFail((int) ($data['manifest_id'] ?? 0));
+
+        $invoiceQuery = $manifest->invoices()
+            ->where('status', '!=', 'rejected');
+
+        $warehouseFiltered = !empty($data['warehouse_id']);
+        $warehouseName     = '—';
+
+        // Filtrar por IDs específicos (bulk action) o por bodega
+        if (!empty($data['invoice_ids'])) {
+            $invoiceQuery->whereIn('id', $data['invoice_ids']);
+        } elseif ($warehouseFiltered) {
+            $invoiceQuery->where('warehouse_id', (int) $data['warehouse_id']);
+            $warehouse = \App\Models\Warehouse::find((int) $data['warehouse_id']);
+            $warehouseName = $warehouse ? "{$warehouse->code} — {$warehouse->name}" : '—';
+        }
+
+        $invoices = $invoiceQuery
+            ->orderBy('route_number')
+            ->orderBy('invoice_number')
+            ->get();
+
+        // Agrupar por ruta con subtotales
+        $byRoute = $invoices->groupBy('route_number')->map(function ($group) {
+            return [
+                'invoices' => $group->values(),
+                'subtotal' => $group->sum('total'),
+                'count'    => $group->count(),
+            ];
+        })->sortKeys();
+
+        $totals = [
+            'total'   => $invoices->sum('total'),
+            'count'   => $invoices->count(),
+            'clients' => $invoices->pluck('client_id')->unique()->count(),
+        ];
+
+        $html = view('pdf.report-invoices-checklist', [
+            'manifest'          => $manifest,
+            'byRoute'           => $byRoute,
+            'totals'            => $totals,
+            'supplier'          => Supplier::first(),
+            'generatedAt'       => now()->format('d/m/Y H:i:s'),
+            'warehouseFiltered' => $warehouseFiltered,
+            'warehouseName'     => $warehouseName,
+        ])->render();
+
+        return response($html, 200, ['Content-Type' => 'text/html; charset=UTF-8']);
+    }
+
     // ── Helper ────────────────────────────────────────────────────
 
     private function decryptPayload(Request $request): array

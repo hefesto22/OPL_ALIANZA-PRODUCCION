@@ -70,12 +70,12 @@ class OperatorDashboardWidget extends BaseWidget
                 ->where('status', '!=', 'rejected')
                 ->count();
 
-            // Total facturado del mes en esta bodega
-            $totalFacturadoMes = (float) Invoice::where('warehouse_id', $warehouseId)
-                ->whereMonth('invoice_date', $thisMonth)
-                ->whereYear('invoice_date', $thisYear)
-                ->where('status', '!=', 'rejected')
-                ->sum('total');
+            // Manifiestos cerrados este mes en esta bodega
+            $closedManifests = Manifest::where('status', 'closed')
+                ->whereMonth('date', $thisMonth)
+                ->whereYear('date', $thisYear)
+                ->whereHas('invoices', fn($q) => $q->where('warehouse_id', $warehouseId))
+                ->count();
 
             // Último manifiesto con facturas en esta bodega
             $lastManifest = Manifest::whereHas('invoices', fn($q) => $q->where('warehouse_id', $warehouseId))
@@ -89,7 +89,7 @@ class OperatorDashboardWidget extends BaseWidget
             return compact(
                 'activeManifests',
                 'invoicesMes',
-                'totalFacturadoMes',
+                'closedManifests',
                 'lastManifestNumber',
                 'lastManifestStatus',
                 'lastManifestDate',
@@ -127,11 +127,11 @@ class OperatorDashboardWidget extends BaseWidget
                 ->color('info')
                 ->icon('heroicon-o-document-duplicate'),
 
-            Stat::make("Facturado {$mesActual}", 'L. ' . number_format($data['totalFacturadoMes'], 2))
-                ->description('Total facturado en tu bodega')
-                ->descriptionIcon('heroicon-m-currency-dollar')
+            Stat::make("Cerrados {$mesActual}", number_format($data['closedManifests']))
+                ->description('Manifiestos cerrados este mes')
+                ->descriptionIcon('heroicon-m-check-circle')
                 ->color('success')
-                ->icon('heroicon-o-banknotes'),
+                ->icon('heroicon-o-check-badge'),
 
             Stat::make('Último Manifiesto', $data['lastManifestNumber'])
                 ->description("{$statusLabel} — {$data['lastManifestDate']}")

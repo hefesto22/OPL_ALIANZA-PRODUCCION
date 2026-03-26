@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Services\InvoicePdfService;
 use Filament\Actions\BulkAction;
 use Filament\Actions\BulkActionGroup;
+use Illuminate\Support\Facades\Crypt;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
@@ -122,7 +123,6 @@ class InvoicesRelationManager extends RelationManager
                         'imported'       => 'Importada',
                         'partial_return' => 'Dev. Parcial',
                         'returned'       => 'Devuelta',
-                        'rejected'       => 'Rechazada',
                     ]),
 
                 SelectFilter::make('warehouse_id')
@@ -138,8 +138,16 @@ class InvoicesRelationManager extends RelationManager
                 SelectFilter::make('route_number')
                     ->label('Ruta')
                     ->options(function (): array {
-                        return Invoice::where('manifest_id', $this->getOwnerRecord()->id)
-                            ->distinct()
+                        /** @var User $user */
+                        $user = Auth::user();
+
+                        $query = Invoice::where('manifest_id', $this->getOwnerRecord()->id);
+
+                        if ($user->isWarehouseUser()) {
+                            $query->where('warehouse_id', $user->warehouse_id);
+                        }
+
+                        return $query->distinct()
                             ->orderBy('route_number')
                             ->pluck('route_number', 'route_number')
                             ->toArray();
@@ -160,6 +168,42 @@ class InvoicesRelationManager extends RelationManager
                                 ->generatePrintUrl($manifest, $invoiceIds);
 
                             $this->js("window.open('{$url}', '_blank')");
+                        })
+                        ->deselectRecordsAfterCompletion(),
+
+                    BulkAction::make('sublista_productos_seleccionadas')
+                        ->label('Sublista Productos')
+                        ->icon('heroicon-o-cube')
+                        ->color('warning')
+                        ->action(function (Collection $records): void {
+                            /** @var \App\Models\Manifest $manifest */
+                            $manifest = $this->getOwnerRecord();
+
+                            $payloadData = [
+                                'manifest_id' => $manifest->id,
+                                'invoice_ids' => $records->pluck('id')->toArray(),
+                            ];
+
+                            $payload = Crypt::encryptString(json_encode($payloadData));
+                            $this->js("window.open('/imprimir/reportes/productos?payload=" . urlencode($payload) . "', '_blank')");
+                        })
+                        ->deselectRecordsAfterCompletion(),
+
+                    BulkAction::make('sublista_facturas_seleccionadas')
+                        ->label('Sublista Facturas')
+                        ->icon('heroicon-o-clipboard-document-check')
+                        ->color('success')
+                        ->action(function (Collection $records): void {
+                            /** @var \App\Models\Manifest $manifest */
+                            $manifest = $this->getOwnerRecord();
+
+                            $payloadData = [
+                                'manifest_id' => $manifest->id,
+                                'invoice_ids' => $records->pluck('id')->toArray(),
+                            ];
+
+                            $payload = Crypt::encryptString(json_encode($payloadData));
+                            $this->js("window.open('/imprimir/reportes/facturas-checklist?payload=" . urlencode($payload) . "', '_blank')");
                         })
                         ->deselectRecordsAfterCompletion(),
                 ]),

@@ -7,7 +7,9 @@ use App\Models\ApiInvoiceImportConflict;
 use App\Models\Invoice;
 use App\Models\Manifest;
 use App\Models\Supplier;
+use App\Models\User;
 use App\Models\Warehouse;
+use App\Notifications\InvoicesImported;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -56,6 +58,7 @@ class ApiInvoiceImporterService
             'manifiestos_rechazados'  => [],
             'warnings'                => [],
             'errors'                  => [],
+            'inserted_warehouse_counts' => [],
         ];
 
         $grouped = collect($invoices)->groupBy('NumeroManifiesto');
@@ -200,12 +203,141 @@ class ApiInvoiceImporterService
         }
 
         // ── 4. Procesar cada factura individualmente ───────────────────
+        // Aislar conteos de bodegas para ESTE manifiesto (summary es compartido entre manifiestos)
+        $prevWarehouseCounts = $summary['inserted_warehouse_counts'];
+        $summary['inserted_warehouse_counts'] = [];
+
         foreach ($invoices as $invoiceData) {
             $this->processInvoice($invoiceData, $manifest, $importRecord, $summary);
         }
 
+        $thisManifestWarehouseCounts = $summary['inserted_warehouse_counts'];
+
+        // Restaurar acumulado global
+        foreach ($thisManifestWarehouseCounts as $whId => $count) {
+            $prevWarehouseCounts[$whId] = ($prevWarehouseCounts[$whId] ?? 0) + $count;
+        }
+        $summary['inserted_warehouse_counts'] = $prevWarehouseCounts;
+
         // ── 5. Recalcular totales del manifiesto ───────────────────────
         $manifest->recalculateTotals();
+
+        // ── 6. Log consolidado de importación (1 registro por manifiesto) ──
+        $parts = [];
+        if ($summary['invoices_inserted'] > 0) {
+            $parts[] = "{$summary['invoices_inserted']} insertadas";
+        }
+        if ($summary['invoices_unchanged'] > 0) {
+            $parts[] = "{$summary['invoices_unchanged']} sin cambios";
+        }
+        if ($summary['invoices_pending_review'] > 0) {
+            $parts[] = "{$summary['invoices_pending_review']} con conflictos";
+        }
+        if ($summary['invoices_rejected'] > 0) {
+            $parts[] = "{$summary['invoices_rejected']} rechazadas";
+        }
+
+        $totalProcessed = count($invoices);
+        $description = "Manifiesto #{$manifestNumber} importado via API: {$totalProcessed} facturas procesadas";
+        if (!empty($parts)) {
+            $description .= ' (' . implode(', ', $parts) . ')';
+        }
+
+        activity('api')
+            ->performedOn($manifest)
+            ->withProperties([
+                'batch_uuid'            => $importRecord->batch_uuid,
+                'source'                => 'jaremar_api',
+                'invoices_total'        => $totalProcessed,
+                'invoices_inserted'     => $summary['invoices_inserted'],
+                'invoices_unchanged'    => $summary['invoices_unchanged'],
+                'invoices_pending'      => $summary['invoices_pending_review'],
+                'invoices_rejected'     => $summary['invoices_rejected'],
+            ])
+            ->log($description);
+
+        // ── 7. Notificaciones a usuarios de bodegas afectadas ────────
+        if (!empty($thisManifestWarehouseCounts)) {
+            $this->notifyWarehouseUsers($manifest, $thisManifestWarehouseCounts);
+        }
+    }
+
+    /**
+     * Envía notificaciones a usuarios de bodegas que recibieron facturas nuevas.
+     *
+     * - Usuarios de bodega: reciben notificación solo de SU bodega.
+     * - Usuarios globales (admin, super_admin, finance): reciben resumen de TODAS las bodegas.
+     *
+     * @param array<int, int> $warehouseCounts  [warehouse_id => cantidad_insertada]
+     */
+    protected function notifyWarehouseUsers(Manifest $manifest, array $warehouseCounts): void
+    {
+        if (empty($warehouseCounts)) {
+            return;
+        }
+
+        try {
+            $affectedIds    = array_keys($warehouseCounts);
+            $warehouseNames = Warehouse::whereIn('id', $affectedIds)->pluck('name', 'id');
+            $totalInserted  = array_sum($warehouseCounts);
+            $manifestUrl    = '/admin/manifests/' . $manifest->id;
+            $notified       = 0;
+
+            // ── Notificar usuarios de cada bodega afectada ───────────
+            $warehouseUsers = User::whereIn('warehouse_id', $affectedIds)
+                ->where('is_active', true)
+                ->get();
+
+            foreach ($warehouseUsers as $user) {
+                $count = $warehouseCounts[$user->warehouse_id] ?? 0;
+                if ($count === 0) continue;
+
+                $warehouseName = $warehouseNames[$user->warehouse_id] ?? 'Desconocida';
+
+                $user->notify(new InvoicesImported(
+                    title: 'Nuevas facturas importadas',
+                    body: "{$count} facturas importadas al manifiesto #{$manifest->number} para {$warehouseName}.",
+                    actionUrl: $manifestUrl,
+                    iconColor: 'success',
+                ));
+                $notified++;
+            }
+
+            // ── Notificar usuarios globales (sin bodega) con resumen ─
+            $globalUsers = User::whereNull('warehouse_id')
+                ->where('is_active', true)
+                ->get();
+
+            if ($globalUsers->isNotEmpty()) {
+                $breakdown = collect($warehouseCounts)
+                    ->map(fn (int $count, int $id) => ($warehouseNames[$id] ?? '?') . ": {$count}")
+                    ->implode(', ');
+
+                foreach ($globalUsers as $user) {
+                    $user->notify(new InvoicesImported(
+                        title: "Importación API: Manifiesto #{$manifest->number}",
+                        body: "{$totalInserted} facturas importadas ({$breakdown}).",
+                        actionUrl: $manifestUrl,
+                        iconColor: 'info',
+                    ));
+                    $notified++;
+                }
+            }
+
+            Log::info("API Notificaciones: {$notified} notificaciones enviadas para manifiesto #{$manifest->number}.", [
+                'warehouse_users' => $warehouseUsers->count(),
+                'global_users'    => $globalUsers->count(),
+                'warehouses'      => $warehouseCounts,
+            ]);
+
+        } catch (\Throwable $e) {
+            // No interrumpir el flujo de importación si falla la notificación
+            Log::error('API Notificaciones: error al enviar.', [
+                'manifest' => $manifest->number,
+                'error'    => $e->getMessage(),
+                'trace'    => $e->getTraceAsString(),
+            ]);
+        }
     }
 
     /**
@@ -256,13 +388,12 @@ class ApiInvoiceImporterService
             $invoice = $this->insertInvoice($invoiceData, $manifest);
             $summary['invoices_inserted']++;
 
-            activity('api')
-                ->performedOn($invoice)
-                ->withProperties([
-                    'batch_uuid' => $importRecord->batch_uuid,
-                    'source'     => 'jaremar_api',
-                ])
-                ->log("Factura #{$invoiceNumber} insertada via API en manifiesto #{$manifest->number}.");
+            // Rastrear bodega para notificaciones
+            if ($invoice->warehouse_id) {
+                $summary['inserted_warehouse_counts'][$invoice->warehouse_id]
+                    = ($summary['inserted_warehouse_counts'][$invoice->warehouse_id] ?? 0) + 1;
+            }
+
             return;
         }
 
@@ -283,15 +414,6 @@ class ApiInvoiceImporterService
             'previous_values'       => $changes['previous'],
             'incoming_values'       => $changes['incoming'],
         ]);
-
-        activity('api')
-            ->performedOn($existing)
-            ->withProperties([
-                'batch_uuid'         => $importRecord->batch_uuid,
-                'campos_modificados' => array_keys($changes['previous']),
-                'source'             => 'jaremar_api',
-            ])
-            ->log("Conflicto detectado en factura #{$invoiceNumber} — datos diferentes a los existentes.");
 
         $summary['invoices_pending_review']++;
         $summary['warnings'][] = [

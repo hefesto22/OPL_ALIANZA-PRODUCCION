@@ -2,7 +2,6 @@
 
 namespace App\Filament\Resources\Manifests\Pages;
 
-use App\Exports\InvoicesExport;
 use App\Filament\Resources\Manifests\ManifestResource;
 use App\Models\Deposit;
 use App\Models\User;
@@ -19,7 +18,6 @@ use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Crypt;
-use Maatwebsite\Excel\Facades\Excel;
 
 class ViewManifest extends ViewRecord
 {
@@ -195,6 +193,7 @@ class ViewManifest extends ViewRecord
                     ->label('Reporte PDF')
                     ->icon('heroicon-o-document-text')
                     ->color('danger')
+                    ->visible(fn (): bool => Auth::user()->hasAnyRole(['super_admin', 'admin', 'encargado', 'finance']))
                     ->action(function (): void {
                         /** @var User $user */
                         $user = Auth::user();
@@ -213,24 +212,48 @@ class ViewManifest extends ViewRecord
                         $this->js("window.open('/imprimir/reportes/facturas?payload=" . urlencode($payload) . "', '_blank')");
                     }),
 
-                Action::make('export_facturas_excel')
-                    ->label('Exportar Excel')
-                    ->icon('heroicon-o-table-cells')
-                    ->color('success')
-                    ->visible(function (): bool {
+                Action::make('report_productos_pdf')
+                    ->label('Sublista Productos')
+                    ->icon('heroicon-o-cube')
+                    ->color('warning')
+                    ->action(function (): void {
                         /** @var User $user */
                         $user = Auth::user();
-                        return $user->hasAnyRole(['super_admin', 'admin', 'encargado']);
-                    })
-                    ->action(function (): mixed {
-                        $manifest = $this->record;
-                        $filename = "facturas_{$manifest->number}_" . now()->format('Y-m-d') . '.xlsx';
 
-                        return Excel::download(
-                            new InvoicesExport($manifest->id, $manifest->number),
-                            $filename
-                        );
+                        $payloadData = [
+                            'manifest_id' => $this->record->id,
+                        ];
+
+                        if ($user->warehouse_id) {
+                            $payloadData['warehouse_id'] = $user->warehouse_id;
+                        }
+
+                        $payload = Crypt::encryptString(json_encode($payloadData));
+
+                        $this->js("window.open('/imprimir/reportes/productos?payload=" . urlencode($payload) . "', '_blank')");
                     }),
+
+                Action::make('report_facturas_checklist')
+                    ->label('Sublista Facturas')
+                    ->icon('heroicon-o-clipboard-document-check')
+                    ->color('success')
+                    ->action(function (): void {
+                        /** @var User $user */
+                        $user = Auth::user();
+
+                        $payloadData = [
+                            'manifest_id' => $this->record->id,
+                        ];
+
+                        if ($user->warehouse_id) {
+                            $payloadData['warehouse_id'] = $user->warehouse_id;
+                        }
+
+                        $payload = Crypt::encryptString(json_encode($payloadData));
+
+                        $this->js("window.open('/imprimir/reportes/facturas-checklist?payload=" . urlencode($payload) . "', '_blank')");
+                    }),
+
             ])
                 ->label('Facturas')
                 ->icon('heroicon-o-document-chart-bar')

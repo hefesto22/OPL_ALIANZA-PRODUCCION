@@ -44,4 +44,10 @@ Route::prefix('imprimir/reportes')
 
         Route::get('/ventas-por-bodega', [PrintReportsController::class, 'warehouseSales'])
             ->name('reports.warehouse-sales');
+
+        Route::get('/productos', [PrintReportsController::class, 'products'])
+            ->name('reports.products');
+
+        Route::get('/facturas-checklist', [PrintReportsController::class, 'invoicesChecklist'])
+            ->name('reports.invoices-checklist');
     });

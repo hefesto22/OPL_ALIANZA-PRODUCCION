@@ -84,3 +84,12 @@ Schedule::call(function () {
         Log::info("Cleanup comprobantes: {$deleted} imagen(es) de depósito eliminada(s) (> 60 días), {$nulled} registro(s) actualizado(s).");
     }
 })->dailyAt('03:00')->name('limpiar-comprobantes-deposito')->withoutOverlapping();
+
+// ── Limpieza de activity_log (retención 90 días) ────────────────────────
+// Los registros de auditoría mayores a 90 días se eliminan para evitar
+// inflar la base de datos. El detalle técnico de importaciones API se
+// conserva en api_invoice_imports y api_invoice_import_conflicts.
+Schedule::command('activitylog:prune --days=90')
+    ->dailyAt('03:30')
+    ->name('limpiar-activity-log')
+    ->withoutOverlapping();
