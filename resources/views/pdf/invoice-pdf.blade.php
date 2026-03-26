@@ -132,7 +132,6 @@ table.lines td {
     overflow: hidden;
     white-space: nowrap;
 }
-
 .notas {
     margin-top: 3px;
     border-top: 1px solid #000;
@@ -253,19 +252,18 @@ table.lines td {
     <table class="lines">
         <thead>
             <tr>
-                <th style="width:26mm; text-align:left;">ARTICULO No</th>
+                <th style="width:24mm; text-align:left;">ARTICULO No</th>
                 <th style="width:52mm; text-align:left;">DESCRIPCION</th>
                 <th style="width:6mm;">UM</th>
                 <th style="width:6mm;">CJ-SC</th>
                 <th style="width:6mm;">UN</th>
                 <th style="width:9mm;">CANT</th>
-                <th style="width:18mm;">PRECIO UNIT</th>
+                <th style="width:17mm;">PRECIO UNIT</th>
                 <th style="width:14mm;">VALOR</th>
-                <th style="width:12mm; font-size:4.8pt; white-space:normal; line-height:1.1;">Y REBAJAS<br>18% OTG</th>
-                <th style="width:6mm;">ISV</th>
-                <th style="width:10mm;">15%</th>
-                <th style="width:8mm;">ISV</th>
-                <th style="width:16mm;">VALOR TOTAL</th>
+                <th style="width:15mm; font-size:4.8pt; white-space:normal; line-height:1.1;">DESCUENTOS<br>Y REBAJAS</th>
+                <th style="width:10mm;">18% ISV</th>
+                <th style="width:12mm;">15% ISV</th>
+                <th style="width:18mm;">VALOR TOTAL</th>
             </tr>
         </thead>
         <tbody>
@@ -274,14 +272,22 @@ table.lines td {
                 <td>{{ $line->product_id }} {{ $line->jaremar_line_id }}</td>
                 <td>{{ $line->product_description }}</td>
                 <td class="c">{{ $line->unit_sale }}</td>
-                <td class="c">{{ $line->quantity_box > 0 ? number_format($line->quantity_box, 0) : '' }}</td>
-                <td class="c">{{ number_format($line->quantity_fractions, 0) }}</td>
+                <td class="c">{{ strtoupper($line->unit_sale) === 'CJ' ? number_format($line->quantity_box, 0) : '' }}</td>
+                <td class="c">{{ strtoupper($line->unit_sale) !== 'CJ' ? number_format($line->quantity_fractions, 0) : '' }}</td>
                 <td class="r">{{ number_format($line->quantity_decimal, 3) }}</td>
-                <td class="r">{{ number_format($line->price_min_sale ?: $line->price, 3) }}</td>
-                <td class="r">{{ number_format($line->subtotal, 2) }}</td>
-                <td class="r">{{ number_format($line->discount ?? 0, 2) }}</td>
+                <td class="r">{{ number_format($line->price, 3) }}</td>
+                @php
+                    $isBonus = strtoupper($line->product_type ?? '') === 'B';
+                    $displayValor = $isBonus
+                        ? round($line->price * $line->quantity_decimal, 2)
+                        : $line->subtotal;
+                    $displayDiscount = $isBonus
+                        ? -(floor($line->price * $line->quantity_decimal * 100) / 100)
+                        : ($line->discount ?? 0);
+                @endphp
+                <td class="r">{{ number_format($displayValor, 2) }}</td>
+                <td class="r">{{ number_format($displayDiscount, 2) }}</td>
                 <td class="r">.00</td>
-                <td class="r">{{ number_format($line->discount_percent > 0 ? $line->discount : 0, 2) }}</td>
                 <td class="r">{{ number_format($line->tax ?? 0, 2) }}</td>
                 <td class="r">{{ number_format($line->total, 2) }}</td>
             </tr>
@@ -292,9 +298,8 @@ table.lines td {
                     TOTAL A PAGAR L
                 </td>
                 <td class="r" style="border-top:1px solid #000; font-weight:bold; font-size:5.8pt;">
-                    {{ number_format(($invoice->importe_exento ?? 0) + ($invoice->importe_exonerado ?? 0) + ($invoice->importe_gravado ?? 0), 2) }}
+                    {{ number_format(($invoice->importe_excento ?? 0) + ($invoice->importe_exonerado ?? 0) + ($invoice->importe_gravado ?? 0), 2) }}
                 </td>
-                <td style="border-top:1px solid #000;"></td>
                 <td style="border-top:1px solid #000;"></td>
                 <td style="border-top:1px solid #000;"></td>
                 <td style="border-top:1px solid #000;"></td>
@@ -337,7 +342,7 @@ table.lines td {
                 <table style="width:100%; font-size:6.5pt;">
                     <tr>
                         <td style="width:30%;">Importe Exento &nbsp; L</td>
-                        <td style="width:14%; text-align:right;">{{ number_format($invoice->importe_exento ?? 0, 2) }}</td>
+                        <td style="width:14%; text-align:right;">{{ number_format($invoice->importe_excento ?? 0, 2) }}</td>
                         <td style="width:9%; text-align:right;">{{ number_format($invoice->importe_exento_desc ?? 0, 2) }}</td>
                         <td style="width:7%; text-align:right;">.00</td>
                         <td style="width:9%; text-align:right;">{{ number_format($invoice->importe_exento_isv15 ?? 0, 2) }}</td>
@@ -361,7 +366,7 @@ table.lines td {
                     </tr>
                     <tr style="border-top:1px solid #000; font-weight:bold;">
                         <td>TOTAL A PAGAR &nbsp; L</td>
-                        <td style="text-align:right;">{{ number_format(($invoice->importe_exento ?? 0) + ($invoice->importe_exonerado ?? 0) + ($invoice->importe_gravado ?? 0), 2) }}</td>
+                        <td style="text-align:right;">{{ number_format(($invoice->importe_excento ?? 0) + ($invoice->importe_exonerado ?? 0) + ($invoice->importe_gravado ?? 0), 2) }}</td>
                         <td style="text-align:right;">{{ number_format(($invoice->importe_exento_desc ?? 0) + ($invoice->importe_exonerado_desc ?? 0) + ($invoice->importe_gravado_desc ?? 0), 2) }}</td>
                         <td style="text-align:right;">.00</td>
                         <td style="text-align:right;">{{ number_format($invoice->isv15 ?? 0, 2) }}</td>
