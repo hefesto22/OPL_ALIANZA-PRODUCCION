@@ -28,10 +28,13 @@ class AdminPanelProvider extends PanelProvider
         return $panel
             ->default()
             ->id('admin')
-            ->path('admin')
+            ->path('')
             ->login()
             ->profile()
-            ->brandName('Distribuidora Hosana')
+            ->brandLogo(asset('Logo-Hosana.png'))
+            ->darkModeBrandLogo(asset('Logo-Hosana.png'))
+            ->brandLogoHeight('3.6rem')
+            ->favicon(asset('Logo-Hosana.ico'))
             ->colors([
                 'primary' => Color::Amber,
             ])

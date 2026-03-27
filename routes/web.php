@@ -5,15 +5,11 @@ use App\Http\Controllers\PrintInvoicesController;
 use App\Http\Controllers\PrintReportsController;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/', function () {
-    return view('welcome');
-});
-
 // ── Comprobante de depósito (imagen privada, solo usuarios autenticados) ──
 // La imagen se guarda en el disco 'local' (fuera del public/) y solo se
 // sirve a través de esta ruta. Cualquier intento de acceso sin sesión activa
 // recibe un 403 gracias al middleware 'auth'.
-Route::get('/admin/depositos/{deposit}/comprobante', [DepositReceiptController::class, 'show'])
+Route::get('/depositos/{deposit}/comprobante', [DepositReceiptController::class, 'show'])
     ->middleware(['web', 'auth'])
     ->name('deposits.receipt');
 
