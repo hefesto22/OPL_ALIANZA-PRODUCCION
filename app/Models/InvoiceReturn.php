@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -11,7 +12,12 @@ use Spatie\Activitylog\LogOptions;
 
 class InvoiceReturn extends Model
 {
-    use SoftDeletes, LogsActivity;
+    use HasFactory, SoftDeletes, LogsActivity;
+
+    protected static function newFactory()
+    {
+        return \Database\Factories\InvoiceReturnFactory::new();
+    }
 
     protected $table = 'returns';
 

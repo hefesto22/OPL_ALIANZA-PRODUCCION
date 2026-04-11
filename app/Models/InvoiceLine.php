@@ -2,12 +2,15 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class InvoiceLine extends Model
 {
+    use HasFactory;
+
     protected $fillable = [
         'invoice_id', 'jaremar_line_id', 'invoice_jaremar_id', 'line_number',
         'product_id', 'product_description', 'product_type', 'unit_sale',
