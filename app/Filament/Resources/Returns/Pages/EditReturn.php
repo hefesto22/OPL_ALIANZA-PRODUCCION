@@ -6,7 +6,6 @@ use App\Filament\Resources\Returns\ReturnResource;
 use App\Filament\Resources\Returns\Schemas\ReturnForm;
 use App\Models\Invoice;
 use App\Models\InvoiceReturn;
-use App\Models\ReturnLine;
 use App\Services\ReturnService;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\ViewAction;
@@ -14,8 +13,6 @@ use Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
 use Filament\Schemas\Schema;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
 
 class EditReturn extends EditRecord
 {
@@ -157,22 +154,26 @@ class EditReturn extends EditRecord
     }
 
     /**
-     * Al editar dentro del mismo día permitimos:
-     *   - Cambiar el motivo de devolución
-     *   - Cambiar la fecha de devolución
-     *   - Modificar las cantidades de líneas ya existentes
-     *   - Agregar líneas olvidadas de la misma factura
+     * Delega toda la lógica de edición al ReturnService.
      *
-     * NO permitimos cambiar la factura ni la bodega porque eso equivale
-     * a una devolución distinta (eliminar + crear nueva es el flujo correcto).
+     * La página Filament mantiene solo responsabilidades de UI:
+     *   - Pre-checks con notificaciones "suaves" (mejor UX que una
+     *     ValidationException genérica, pero no son la fuente de verdad).
+     *   - La ValidationException del servicio burbujea y Filament la
+     *     bindea automáticamente a los campos del formulario.
      *
-     * Guard doble: manifiesto cerrado + ventana de edición.
+     * La fuente de verdad de los guards (manifiesto cerrado, ventana de
+     * edición, cantidades disponibles) vive en ReturnService::updateReturn,
+     * que es lo que tests y futuros endpoints usan directamente.
      */
     protected function handleRecordUpdate(Model $record, array $data): Model
     {
         /** @var InvoiceReturn $record */
 
-        // Defensa en submit: manifiesto cerrado entre carga y submit.
+        // Pre-checks de UX: notificación amigable + halt. El servicio
+        // también tiene estos guards como defensa final, pero fallar
+        // acá nos permite mostrar una notificación de Filament en vez
+        // de una ValidationException genérica con mensaje suelto.
         if ($record->manifest->isClosed()) {
             Notification::make()
                 ->title('Manifiesto cerrado')
@@ -183,7 +184,6 @@ class EditReturn extends EditRecord
             $this->halt();
         }
 
-        // Defensa en submit: ventana de edición expirada entre carga y submit.
         if (! $record->isEditableToday()) {
             Notification::make()
                 ->title('Ventana de edición expirada')
@@ -194,110 +194,10 @@ class EditReturn extends EditRecord
             $this->halt();
         }
 
-        DB::transaction(function () use ($record, $data): void {
-            // ── Race condition guard (edición) ────────────────────────────
-            // Mismo patrón que createReturn(): lockForUpdate() garantiza que
-            // las cantidades calculadas dentro de esta transacción son correctas
-            // aunque otro request concurrente intente modificar la misma factura.
-            $invoice = Invoice::with(['lines', 'manifest'])
-                ->lockForUpdate()
-                ->findOrFail($record->invoice_id);
-
-            $linesData = $data['lines'] ?? [];
-
-            // ── Validación server-side de cantidades ──────────────────────
-            // Calculamos las cantidades devueltas por OTRAS devoluciones
-            // (excluyendo la actual, igual que en mutateFormDataBeforeFill).
-            // Esto protege contra manipulación directa del request o carrera
-            // concurrente entre que se abrió el formulario y se hizo submit.
-            $returnService  = app(ReturnService::class);
-            $lineIds        = $invoice->lines->pluck('id')->toArray();
-            $returnedByLine = $returnService->getReturnedQuantitiesForLinesExcluding(
-                $lineIds,
-                $record->id
-            );
-
-            $linesByOriginalId = $invoice->lines->keyBy('id');
-            $validationErrors  = [];
-
-            foreach ($linesData as $lineData) {
-                $lineId = $lineData['invoice_line_id'] ?? null;
-                $boxes  = (float) ($lineData['quantity_box'] ?? 0);
-                $units  = (float) ($lineData['quantity']     ?? 0);
-
-                if (! $lineId || ($boxes <= 0 && $units <= 0)) {
-                    continue;
-                }
-
-                $originalLine = $linesByOriginalId[$lineId] ?? null;
-                if (! $originalLine) {
-                    continue;
-                }
-
-                $alreadyReturned = (float) ($returnedByLine[$lineId] ?? 0);
-                $available       = max(0, (float) $originalLine->quantity_fractions - $alreadyReturned);
-                $convFactor      = max(1, (float) ($originalLine->conversion_factor ?? 1));
-                $requestedTotal  = ($boxes * $convFactor) + $units;
-
-                if ($requestedTotal > $available + 0.001) {
-                    $validationErrors["lines.{$lineId}.quantity"] =
-                        "Cantidad solicitada ({$requestedTotal} uds.) supera la disponible ({$available}) para {$originalLine->product_description}.";
-                }
-            }
-
-            if (! empty($validationErrors)) {
-                throw ValidationException::withMessages($validationErrors);
-            }
-
-            // ── Actualizar encabezado ─────────────────────────────────────
-            $record->update([
-                'return_reason_id' => $data['return_reason_id'],
-                'return_date'      => $data['return_date'],
-            ]);
-
-            // ── Sincronizar líneas ────────────────────────────────────────
-            // Borramos las líneas actuales y recreamos con los nuevos valores.
-            // line_total se recalcula server-side para no depender del frontend.
-            $record->lines()->delete();
-
-            $newTotal = 0.0;
-
-            foreach ($linesData as $lineData) {
-                $lineId = $lineData['invoice_line_id'] ?? null;
-                $boxes  = (float) ($lineData['quantity_box'] ?? 0);
-                $units  = (float) ($lineData['quantity']     ?? 0);
-
-                if ($boxes <= 0 && $units <= 0) {
-                    continue;
-                }
-
-                // Recalcular line_total server-side (misma lógica que createReturn).
-                $originalLine = $lineId ? ($linesByOriginalId[$lineId] ?? null) : null;
-                $convFactor   = max(1, (float) ($originalLine?->conversion_factor ?? 1));
-                $unitPrice    = $originalLine?->price_min_sale !== null ? (float) $originalLine->price_min_sale : (float) ($originalLine?->price ?? 0);
-                $lineTotal    = round(($boxes * $convFactor + $units) * $unitPrice, 2);
-
-                ReturnLine::create([
-                    'return_id'           => $record->id,
-                    'invoice_line_id'     => $lineId,
-                    'line_number'         => $lineData['line_number'],
-                    'product_id'          => $lineData['product_id'],
-                    'product_description' => $lineData['product_description'],
-                    'quantity_box'        => $boxes,
-                    'quantity'            => $units,
-                    'line_total'          => $lineTotal,
-                ]);
-
-                $newTotal += $lineTotal;
-            }
-
-            $record->update(['total' => $newTotal]);
-        });
-
-        // Recálculo sincrónico de totales del manifiesto.
-        app(ReturnService::class)->recalculateManifestTotals($record->manifest_id);
-
-        return $record;
+        // Delegamos al servicio. Los errores de validación por línea
+        // (p.ej. "lines.42.quantity") los bindea Filament automáticamente
+        // al Repeater correspondiente.
+        return app(ReturnService::class)->updateReturn($record, $data);
     }
 
     protected function getHeaderActions(): array

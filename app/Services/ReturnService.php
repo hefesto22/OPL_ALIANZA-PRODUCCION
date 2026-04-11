@@ -170,6 +170,184 @@ class ReturnService
         return $return;
     }
 
+    /**
+     * Actualiza una devolución existente (dentro de su ventana de edición).
+     *
+     * Regla de negocio: las devoluciones son absolutas. Una vez registradas,
+     * solo pueden editarse el MISMO día calendario. Después de medianoche
+     * Jaremar puede haber consumido la devolución vía API, por lo que
+     * cualquier cambio posterior generaría inconsistencia.
+     *
+     * Flujo:
+     *  1. Guard de manifiesto cerrado (misma defensa que createReturn)
+     *  2. Guard de ventana de edición (isEditableToday)
+     *  3. Validación server-side de cantidades contra OTRAS devoluciones
+     *  4. Reemplazo total de las líneas (delete + recreate)
+     *  5. Recálculo del total server-side
+     *  6. Recálculo del manifest + invalidación de cache fuera de la TX
+     *
+     * Cambios permitidos:
+     *  - return_reason_id
+     *  - return_date
+     *  - Cantidades por línea (modificar o agregar líneas olvidadas)
+     *
+     * NO se permite cambiar invoice_id ni warehouse_id: eso equivale a una
+     * devolución distinta (borrar + crear nueva es el flujo correcto).
+     *
+     * @param  array  $data  Debe contener: return_reason_id, return_date, lines[]
+     * @throws ValidationException  si el manifiesto está cerrado, la ventana
+     *                              de edición expiró, o alguna línea excede
+     *                              la cantidad disponible
+     */
+    public function updateReturn(InvoiceReturn $return, array $data): InvoiceReturn
+    {
+        // ── Guards previos a la transacción ──────────────────────────────
+        // Se revisan fuera para fallar rápido sin abrir transacción inútil.
+        if ($return->manifest->isClosed()) {
+            throw ValidationException::withMessages([
+                'id' => 'No se puede editar una devolución de un manifiesto cerrado.',
+            ]);
+        }
+
+        if (! $return->isEditableToday()) {
+            throw ValidationException::withMessages([
+                'id' => 'La devolución solo puede editarse el día en que fue registrada.',
+            ]);
+        }
+
+        DB::transaction(function () use ($return, $data) {
+            // ── Race condition guard ─────────────────────────────────────
+            // Mismo patrón que createReturn: lockForUpdate() sobre la factura
+            // garantiza que las cantidades calculadas dentro de esta TX son
+            // correctas aunque otro request concurrente toque la misma factura.
+            $invoice = Invoice::with(['lines', 'manifest'])
+                ->lockForUpdate()
+                ->findOrFail($return->invoice_id);
+
+            $linesData = $data['lines'] ?? [];
+
+            // ── Validación server-side de cantidades ─────────────────────
+            // Calculamos cantidades devueltas por OTRAS devoluciones
+            // (excluye la actual para que el usuario pueda ver y modificar
+            // sus propias cantidades sin que el máximo quede bloqueado en 0).
+            $lineIds        = $invoice->lines->pluck('id')->toArray();
+            $returnedByLine = $this->getReturnedQuantitiesForLinesExcluding(
+                $lineIds,
+                $return->id
+            );
+
+            $linesByOriginalId = $invoice->lines->keyBy('id');
+            $validationErrors  = [];
+
+            foreach ($linesData as $lineData) {
+                $lineId = $lineData['invoice_line_id'] ?? null;
+                $boxes  = (float) ($lineData['quantity_box'] ?? 0);
+                $units  = (float) ($lineData['quantity']     ?? 0);
+
+                if (! $lineId || ($boxes <= 0 && $units <= 0)) {
+                    continue;
+                }
+
+                $originalLine = $linesByOriginalId[$lineId] ?? null;
+                if (! $originalLine) {
+                    continue;
+                }
+
+                $alreadyReturned = (float) ($returnedByLine[$lineId] ?? 0);
+                $available       = max(0, (float) $originalLine->quantity_fractions - $alreadyReturned);
+                $convFactor      = max(1, (float) ($originalLine->conversion_factor ?? 1));
+                $requestedTotal  = ($boxes * $convFactor) + $units;
+
+                if ($requestedTotal > $available + 0.001) {
+                    $validationErrors["lines.{$lineId}.quantity"] =
+                        "Cantidad solicitada ({$requestedTotal} uds.) supera la disponible ({$available}) para {$originalLine->product_description}.";
+                }
+            }
+
+            if (! empty($validationErrors)) {
+                throw ValidationException::withMessages($validationErrors);
+            }
+
+            // ── Actualizar encabezado ────────────────────────────────────
+            $return->update([
+                'return_reason_id' => $data['return_reason_id'],
+                'return_date'      => $data['return_date'],
+            ]);
+
+            // ── Sincronizar líneas ───────────────────────────────────────
+            // Borramos todas las líneas de esta devolución y recreamos con
+            // los nuevos valores. line_total y el total de la devolución se
+            // recalculan server-side para no depender del frontend.
+            $return->lines()->delete();
+
+            $newTotal = 0.0;
+
+            foreach ($linesData as $lineData) {
+                $lineId = $lineData['invoice_line_id'] ?? null;
+                $boxes  = (float) ($lineData['quantity_box'] ?? 0);
+                $units  = (float) ($lineData['quantity']     ?? 0);
+
+                if ($boxes <= 0 && $units <= 0) {
+                    continue;
+                }
+
+                $originalLine = $lineId ? ($linesByOriginalId[$lineId] ?? null) : null;
+                $convFactor   = max(1, (float) ($originalLine?->conversion_factor ?? 1));
+                // Null → usar price; 0 → bonificación (gratis). Evitar ?: porque 0 es falsy.
+                $unitPrice    = $originalLine?->price_min_sale !== null
+                    ? (float) $originalLine->price_min_sale
+                    : (float) ($originalLine?->price ?? 0);
+                $lineTotal    = round(($boxes * $convFactor + $units) * $unitPrice, 2);
+
+                ReturnLine::create([
+                    'return_id'           => $return->id,
+                    'invoice_line_id'     => $lineId,
+                    'line_number'         => $lineData['line_number'],
+                    'product_id'          => $lineData['product_id'],
+                    'product_description' => $lineData['product_description'],
+                    'quantity_box'        => $boxes,
+                    'quantity'            => $units,
+                    'line_total'          => $lineTotal,
+                ]);
+
+                $newTotal += $lineTotal;
+            }
+
+            // Al editar, el type puede cambiar: recalculamos a partir del
+            // nuevo total vs el pendiente (excluyendo esta devolución).
+            // pendingExcludingThis = total_factura - devoluciones_otras
+            $otherReturnsTotal = $invoice->returns()
+                ->where('id', '!=', $return->id)
+                ->whereIn('status', ['approved', 'pending'])
+                ->sum('total');
+            $pendingExcludingThis = max(0, (float) $invoice->total - (float) $otherReturnsTotal);
+            $newType = (abs($newTotal - $pendingExcludingThis) < 0.01) ? 'total' : 'partial';
+
+            $return->update([
+                'total' => $newTotal,
+                'type'  => $newType,
+            ]);
+
+            $this->updateInvoiceStatus($invoice);
+        });
+
+        // ── Post-transacción ─────────────────────────────────────────────
+        $this->recalculateManifestTotals($return->manifest_id);
+
+        // Si la devolución ya estaba aprobada (regla absoluta: nacen aprobadas),
+        // su processed_date ya indexa el cache. Invalidamos ese día para que
+        // la API de Jaremar refleje los cambios.
+        if ($return->processed_date) {
+            $this->invalidateDevolucionesCache(
+                $return->processed_date instanceof \DateTimeInterface
+                    ? $return->processed_date->format('Y-m-d')
+                    : (string) $return->processed_date
+            );
+        }
+
+        return $return->fresh('lines');
+    }
+
     public function approveReturn(InvoiceReturn $return, int $reviewedBy): void
     {
         // Proteger manifiestos cerrados. Un manifiesto puede cerrarse mientras
@@ -281,13 +459,20 @@ class ReturnService
      */
     public function getReturnedQuantity(int $invoiceLineId): float
     {
+        // Nota sobre portabilidad: originalmente la expresión usaba
+        // GREATEST(COALESCE(conversion_factor, 1), 1), que es específico de
+        // PostgreSQL. SQLite (usado en tests) no reconoce GREATEST. La
+        // traducción literal a CASE WHEN preserva la misma defensa contra
+        // conversion_factor NULL o 0 y funciona en ambos motores.
         $result = ReturnLine::query()
             ->where('return_lines.invoice_line_id', $invoiceLineId)
             ->whereHas('return', fn($q) => $q->whereIn('status', ['approved', 'pending']))
             ->join('invoice_lines', 'return_lines.invoice_line_id', '=', 'invoice_lines.id')
             ->selectRaw(
                 'COALESCE(SUM(' .
-                    'return_lines.quantity_box * GREATEST(COALESCE(invoice_lines.conversion_factor, 1), 1) ' .
+                    'return_lines.quantity_box * ' .
+                    '(CASE WHEN COALESCE(invoice_lines.conversion_factor, 1) < 1 ' .
+                    ' THEN 1 ELSE COALESCE(invoice_lines.conversion_factor, 1) END) ' .
                     '+ return_lines.quantity' .
                 '), 0) AS total_returned'
             )
@@ -311,6 +496,8 @@ class ReturnService
 
         // Sumamos en fracciones: (cajas × factor_conversión) + unidades_sueltas.
         // JOIN con invoice_lines para obtener el factor de conversión de cada línea.
+        // CASE WHEN reemplaza al GREATEST de Postgres por portabilidad a SQLite;
+        // ver nota en getReturnedQuantity().
         return ReturnLine::query()
             ->whereIn('return_lines.invoice_line_id', $lineIds)
             ->whereHas('return', fn($q) => $q->whereIn('status', ['approved', 'pending']))
@@ -318,7 +505,9 @@ class ReturnService
             ->selectRaw(
                 'return_lines.invoice_line_id, ' .
                 'COALESCE(SUM(' .
-                    'return_lines.quantity_box * GREATEST(COALESCE(invoice_lines.conversion_factor, 1), 1) ' .
+                    'return_lines.quantity_box * ' .
+                    '(CASE WHEN COALESCE(invoice_lines.conversion_factor, 1) < 1 ' .
+                    ' THEN 1 ELSE COALESCE(invoice_lines.conversion_factor, 1) END) ' .
                     '+ return_lines.quantity' .
                 '), 0) AS total_returned'
             )
@@ -347,6 +536,7 @@ class ReturnService
             return [];
         }
 
+        // CASE WHEN portable (ver getReturnedQuantity).
         return ReturnLine::query()
             ->whereIn('return_lines.invoice_line_id', $lineIds)
             ->where('return_lines.return_id', '!=', $excludeReturnId)
@@ -355,7 +545,9 @@ class ReturnService
             ->selectRaw(
                 'return_lines.invoice_line_id, ' .
                 'COALESCE(SUM(' .
-                    'return_lines.quantity_box * GREATEST(COALESCE(invoice_lines.conversion_factor, 1), 1) ' .
+                    'return_lines.quantity_box * ' .
+                    '(CASE WHEN COALESCE(invoice_lines.conversion_factor, 1) < 1 ' .
+                    ' THEN 1 ELSE COALESCE(invoice_lines.conversion_factor, 1) END) ' .
                     '+ return_lines.quantity' .
                 '), 0) AS total_returned'
             )
