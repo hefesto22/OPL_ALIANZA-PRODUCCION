@@ -50,7 +50,15 @@ class DevolucionesController extends Controller
         }
 
         try {
-            $fecha = Carbon::createFromFormat('d/m/Y', $fechaHeader)->toDateString();
+            // Carbon::createFromFormat es permisivo: '99/99/9999' no tira
+            // exception, hace overflow a una fecha "válida" cualquiera. Para
+            // detectar ese caso re-formateamos el parseo y lo comparamos con
+            // el string original — si no coincide, la fecha era basura.
+            $parsed = Carbon::createFromFormat('d/m/Y', $fechaHeader);
+            if ($parsed === false || $parsed->format('d/m/Y') !== $fechaHeader) {
+                throw new \InvalidArgumentException("Fecha overflow: {$fechaHeader}");
+            }
+            $fecha = $parsed->toDateString();
         } catch (\Exception $e) {
             activity('api')
                 ->withProperties([
