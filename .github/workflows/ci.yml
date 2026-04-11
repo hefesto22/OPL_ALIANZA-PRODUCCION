@@ -1,0 +1,155 @@
+name: CI
+
+# Pipeline de integración continua para Distribuidora Hozana.
+#
+# Se ejecuta en cada push y pull request contra main/develop.
+# Los tests corren contra un PostgreSQL 16 real levantado como service
+# container (ver phpunit.xml → DB_CONNECTION=pgsql, DB_DATABASE=hozana_test).
+# Esto refleja el stack de producción y permite que las migraciones
+# usen sintaxis Postgres específica (CHECK constraints con ALTER TABLE,
+# índices nombrados, etc.) sin tener que mantener ramas condicionales
+# para SQLite.
+#
+# Pasos:
+#   1. Levantar postgres:16 como servicio
+#   2. Setup PHP + composer install con cache
+#   3. php -l sobre app/ routes/ database/ config/ tests/
+#   4. Laravel Pint --test (no reformatea, solo valida estilo)
+#   5. Crear BD hozana_test y correr php artisan test
+#
+# Nota: Filament 4 requiere PHP 8.2+ (ver composer.json).
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  tests:
+    name: PHP ${{ matrix.php }} — Laravel tests
+    runs-on: ubuntu-24.04
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: hozana_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.2', '8.3']
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP ${{ matrix.php }}
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: mbstring, dom, fileinfo, pgsql, pdo_pgsql, redis, intl, gd, bcmath
+          coverage: none
+          tools: composer:v2
+
+      - name: Validate composer.json
+        run: composer validate --strict --no-check-publish
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.composer/cache
+          key: ${{ runner.os }}-php${{ matrix.php }}-composer-${{ hashFiles('**/composer.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-php${{ matrix.php }}-composer-
+
+      - name: Install Composer dependencies
+        run: composer install --prefer-dist --no-interaction --no-progress
+
+      - name: Prepare .env for tests
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
+      - name: PHP syntax lint (app/ + routes/ + database/)
+        run: |
+          find app routes database config tests -name "*.php" -print0 \
+            | xargs -0 -n1 -P4 php -l > /dev/null
+
+      - name: Laravel Pint (style check, non-destructive)
+        run: vendor/bin/pint --test
+
+      - name: Run PHPUnit tests
+        # Las variables de entorno de phpunit.xml resuelven la conexión,
+        # pero las repetimos aquí para documentar claramente contra qué
+        # corren los tests y para permitir override rápido si algún día
+        # el servicio se renombra.
+        env:
+          APP_ENV: testing
+          DB_CONNECTION: pgsql
+          DB_HOST: 127.0.0.1
+          DB_PORT: 5432
+          DB_DATABASE: hozana_test
+          DB_USERNAME: postgres
+          DB_PASSWORD: postgres
+          CACHE_STORE: array
+          SESSION_DRIVER: array
+          QUEUE_CONNECTION: sync
+        run: php artisan test --no-coverage
+
+  security-audit:
+    name: Dependency security audit
+    runs-on: ubuntu-24.04
+    # Corre independiente de los tests: aunque haya un test rojo queremos
+    # saber si alguna dependencia tiene un CVE publicado. No bloquea el
+    # merge si hay advisories (continue-on-error: true) — es señal, no gate.
+    # Cuando el equipo quiera hacerlo estricto basta con quitar esa línea.
+    continue-on-error: true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP 8.3
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, dom, fileinfo, pgsql, pdo_pgsql, redis, intl, gd, bcmath
+          coverage: none
+          tools: composer:v2
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Composer dependencies (no scripts)
+        # --no-scripts evita que corra post-install (package:discover, etc.)
+        # que necesita .env configurado. Para `composer audit` sólo hace falta
+        # composer.lock instalado.
+        run: composer install --prefer-dist --no-interaction --no-progress --no-scripts
+
+      - name: composer audit — PHP dependency advisories
+        # Lee composer.lock y consulta packagist/friendsofphp/security-advisories.
+        # Sale con código 1 si encuentra un paquete afectado.
+        run: composer audit --locked --no-dev --format=plain
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: npm audit — JS dependency advisories
+        # --audit-level=high: ignora "low" y "moderate". Estos generan mucho
+        # ruido en dependencias dev (esbuild, vite) sin afectar producción.
+        # Cuando el equipo quiera endurecer, bajar a "moderate".
+        run: npm audit --audit-level=high
