@@ -196,9 +196,9 @@ class DepositsRelationManager extends RelationManager
                 ->helperText('Sube la foto del recibo o boleta bancaria. Formatos: JPG, PNG, WEBP. Máx. 8 MB. El archivo se guarda de forma privada y se elimina automáticamente después de 2 meses.')
                 ->image()
                 ->imageEditor()          // permite recortar/rotar antes de guardar
-                ->imageResizeMode('contain')
-                ->imageResizeTargetWidth('1400')   // máx 1400px — calidad suficiente, peso reducido
-                ->imageResizeTargetHeight('1400')
+                ->automaticallyResizeImagesMode('contain')
+                ->automaticallyResizeImagesToWidth('1400')   // máx 1400px — calidad suficiente, peso reducido
+                ->automaticallyResizeImagesToHeight('1400')
                 ->disk('local')          // disco PRIVADO — no accesible vía URL directa
                 ->directory('deposits/receipts')
                 ->visibility('private')
