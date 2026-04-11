@@ -45,6 +45,10 @@ class ApiInvoiceImporterService
      * La validación de fechas vive en el controller ANTES del hash detector.
      * Aquí solo procesamos almacenes y lógica de negocio.
      *
+     * Optimización clave: todas las facturas existentes se precargan en UNA
+     * sola query al inicio (whereIn), eliminando el problema N+1 que hacía
+     * un SELECT por factura del batch dentro de processInvoice().
+     *
      * @return array Resumen del procesamiento
      */
     public function processBatch(array $invoices, ApiInvoiceImport $importRecord): array
@@ -61,6 +65,24 @@ class ApiInvoiceImporterService
             'inserted_warehouse_counts' => [],
         ];
 
+        // ── Preload: UNA sola query para resolver todas las existencias ───
+        // Antes: processInvoice() hacía Invoice::where(invoice_number)->first()
+        // por cada factura del batch (N queries). Para batches de miles de
+        // facturas esto dominaba el tiempo de respuesta.
+        $allNumbers = collect($invoices)
+            ->pluck('Nfactura')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        $existingInvoices = !empty($allNumbers)
+            ? Invoice::with('manifest:id,number')
+                ->whereIn('invoice_number', $allNumbers)
+                ->get()
+                ->keyBy('invoice_number')
+            : collect();
+
         $grouped = collect($invoices)->groupBy('NumeroManifiesto');
 
         foreach ($grouped as $manifestNumber => $manifestInvoices) {
@@ -68,7 +90,8 @@ class ApiInvoiceImporterService
                 (string) $manifestNumber,
                 $manifestInvoices->values()->all(),
                 $importRecord,
-                $summary
+                $summary,
+                $existingInvoices,
             );
         }
 
@@ -160,7 +183,8 @@ class ApiInvoiceImporterService
         string $manifestNumber,
         array $invoices,
         ApiInvoiceImport $importRecord,
-        array &$summary
+        array &$summary,
+        \Illuminate\Support\Collection $existingInvoices,
     ): void {
         // ── 1. Validar almacenes ANTES de tocar la BD ─────────────────
         $warehouseErrors = $this->validateWarehouses($invoices);
@@ -202,13 +226,78 @@ class ApiInvoiceImporterService
             $manifest = $this->createManifest($manifestNumber);
         }
 
-        // ── 4. Procesar cada factura individualmente ───────────────────
-        // Aislar conteos de bodegas para ESTE manifiesto (summary es compartido entre manifiestos)
+        // ── 4. Clasificar facturas usando el mapa precargado ───────────
+        // Antes: un SELECT por factura + Invoice::create() individual.
+        // Ahora: sin queries por factura, y las nuevas se insertan en bulk.
+        $newInvoicesData   = [];
+        $conflictsToCreate = [];
+
+        foreach ($invoices as $invoiceData) {
+            $invoiceNumber = $invoiceData['Nfactura'];
+            $existing      = $existingInvoices->get($invoiceNumber);
+
+            // Factura existe en otro manifiesto → rechazar
+            if ($existing && $existing->manifest_id !== $manifest->id) {
+                $summary['invoices_rejected']++;
+                $summary['errors'][] = [
+                    'factura'    => $invoiceNumber,
+                    'manifiesto' => $manifest->number,
+                    'motivo'     => "La factura {$invoiceNumber} ya existe en el manifiesto #{$existing->manifest->number} y no puede duplicarse.",
+                ];
+                continue;
+            }
+
+            // Factura nueva → se insertará en bulk
+            if (!$existing) {
+                $newInvoicesData[] = $invoiceData;
+                continue;
+            }
+
+            // Factura existente en el mismo manifiesto → comparar campos
+            $incomingMapped = $this->mapInvoiceFields($invoiceData, $manifest);
+            $changes        = $this->detectChanges($existing, $incomingMapped);
+
+            if (empty($changes)) {
+                $summary['invoices_unchanged']++;
+                continue;
+            }
+
+            $conflictsToCreate[] = [
+                'existing'       => $existing,
+                'changes'        => $changes,
+                'invoice_number' => $invoiceNumber,
+            ];
+        }
+
+        // Aislar conteos de bodegas para ESTE manifiesto
         $prevWarehouseCounts = $summary['inserted_warehouse_counts'];
         $summary['inserted_warehouse_counts'] = [];
 
-        foreach ($invoices as $invoiceData) {
-            $this->processInvoice($invoiceData, $manifest, $importRecord, $summary);
+        // ── 5. Insert masivo de facturas nuevas + sus líneas ───────────
+        if (!empty($newInvoicesData)) {
+            $bulkResult = $this->bulkInsertNewInvoices($newInvoicesData, $manifest);
+            $summary['invoices_inserted']           += $bulkResult['total'];
+            $summary['inserted_warehouse_counts']    = $bulkResult['by_warehouse'];
+        }
+
+        // ── 6. Crear filas de conflicto ────────────────────────────────
+        foreach ($conflictsToCreate as $conflict) {
+            ApiInvoiceImportConflict::create([
+                'api_invoice_import_id' => $importRecord->id,
+                'invoice_id'            => $conflict['existing']->id,
+                'invoice_number'        => $conflict['invoice_number'],
+                'manifest_number'       => $manifest->number,
+                'previous_values'       => $conflict['changes']['previous'],
+                'incoming_values'       => $conflict['changes']['incoming'],
+            ]);
+
+            $summary['invoices_pending_review']++;
+            $summary['warnings'][] = [
+                'factura'           => $conflict['invoice_number'],
+                'manifiesto'        => $manifest->number,
+                'campos_con_cambio' => array_keys($conflict['changes']['previous']),
+                'mensaje'           => 'Factura recibida con diferencias respecto a la versión existente. Pendiente de revisión por Hosana.',
+            ];
         }
 
         $thisManifestWarehouseCounts = $summary['inserted_warehouse_counts'];
@@ -219,10 +308,10 @@ class ApiInvoiceImporterService
         }
         $summary['inserted_warehouse_counts'] = $prevWarehouseCounts;
 
-        // ── 5. Recalcular totales del manifiesto ───────────────────────
+        // ── 7. Recalcular totales del manifiesto ───────────────────────
         $manifest->recalculateTotals();
 
-        // ── 6. Log consolidado de importación (1 registro por manifiesto) ──
+        // ── 8. Log consolidado de importación (1 registro por manifiesto) ──
         $parts = [];
         if ($summary['invoices_inserted'] > 0) {
             $parts[] = "{$summary['invoices_inserted']} insertadas";
@@ -256,7 +345,7 @@ class ApiInvoiceImporterService
             ])
             ->log($description);
 
-        // ── 7. Notificaciones a usuarios de bodegas afectadas ────────
+        // ── 9. Notificaciones a usuarios de bodegas afectadas ────────
         if (!empty($thisManifestWarehouseCounts)) {
             $this->notifyWarehouseUsers($manifest, $thisManifestWarehouseCounts);
         }
@@ -363,65 +452,132 @@ class ApiInvoiceImporterService
         return $errors;
     }
 
-    protected function processInvoice(
-        array $invoiceData,
-        Manifest $manifest,
-        ApiInvoiceImport $importRecord,
-        array &$summary
-    ): void {
-        $invoiceNumber = $invoiceData['Nfactura'];
-        $existing      = Invoice::where('invoice_number', $invoiceNumber)->first();
+    /**
+     * Inserta en bulk todas las facturas nuevas de un manifiesto y sus
+     * líneas asociadas. Usa INSERT ... RETURNING para recuperar los IDs
+     * generados y poder asociar las líneas sin queries extra.
+     *
+     * @param  array<int, array>  $newInvoicesData  Payload crudo de Jaremar
+     * @return array{total:int, by_warehouse:array<int,int>}
+     */
+    protected function bulkInsertNewInvoices(array $newInvoicesData, Manifest $manifest): array
+    {
+        $now    = now()->toDateTimeString();
+        $counts = ['total' => 0, 'by_warehouse' => []];
 
-        // Factura existe en otro manifiesto → rechazar
-        if ($existing && $existing->manifest_id !== $manifest->id) {
-            $summary['invoices_rejected']++;
-            $summary['errors'][] = [
-                'factura'    => $invoiceNumber,
-                'manifiesto' => $manifest->number,
-                'motivo'     => "La factura {$invoiceNumber} ya existe en el manifiesto #{$existing->manifest->number} y no puede duplicarse.",
-            ];
-            return;
+        // ── 1. Preparar filas mapeadas ──────────────────────────────────
+        $rows = [];
+        foreach ($newInvoicesData as $data) {
+            $mapped = $this->mapInvoiceFields($data, $manifest);
+            $mapped['manifest_id'] = $manifest->id;
+            $mapped['created_at']  = $now;
+            $mapped['updated_at']  = $now;
+
+            $rows[] = $mapped;
+            $counts['total']++;
+
+            if (!empty($mapped['warehouse_id'])) {
+                $counts['by_warehouse'][$mapped['warehouse_id']] =
+                    ($counts['by_warehouse'][$mapped['warehouse_id']] ?? 0) + 1;
+            }
         }
 
-        // Factura nueva → insertar
-        if (!$existing) {
-            $invoice = $this->insertInvoice($invoiceData, $manifest);
-            $summary['invoices_inserted']++;
+        if (empty($rows)) {
+            return $counts;
+        }
 
-            // Rastrear bodega para notificaciones
-            if ($invoice->warehouse_id) {
-                $summary['inserted_warehouse_counts'][$invoice->warehouse_id]
-                    = ($summary['inserted_warehouse_counts'][$invoice->warehouse_id] ?? 0) + 1;
+        // ── 2. INSERT masivo con RETURNING para recuperar los IDs ───────
+        // Se divide en chunks de 500 para mantener el número de bindings
+        // muy por debajo del límite de PostgreSQL (~65,535 placeholders).
+        $invoiceNumberToId = [];
+
+        DB::transaction(function () use ($rows, &$invoiceNumberToId) {
+            foreach (array_chunk($rows, 500) as $chunk) {
+                $columns     = array_keys($chunk[0]);
+                $columnList  = implode(', ', array_map(fn ($c) => "\"{$c}\"", $columns));
+                $placeholder = '(' . implode(', ', array_fill(0, count($columns), '?')) . ')';
+
+                $valueRows = [];
+                $bindings  = [];
+                foreach ($chunk as $row) {
+                    $valueRows[] = $placeholder;
+                    foreach ($columns as $c) {
+                        $bindings[] = $row[$c];
+                    }
+                }
+
+                $sql = "INSERT INTO \"invoices\" ({$columnList}) VALUES "
+                     . implode(', ', $valueRows)
+                     . " RETURNING \"id\", \"invoice_number\"";
+
+                $inserted = DB::select($sql, $bindings);
+
+                foreach ($inserted as $r) {
+                    $invoiceNumberToId[$r->invoice_number] = (int) $r->id;
+                }
+            }
+        });
+
+        // ── 3. Preparar e insertar líneas en bulk ───────────────────────
+        $allLines = [];
+        foreach ($newInvoicesData as $data) {
+            $invoiceId = $invoiceNumberToId[$data['Nfactura']] ?? null;
+            if (!$invoiceId || empty($data['LineasFactura'])) {
+                continue;
             }
 
-            return;
+            foreach ($data['LineasFactura'] as $line) {
+                $cantidadFracciones = (float) ($line['CantidadFracciones'] ?? 0);
+                $cantidadCaja       = (float) ($line['CantidadCaja'] ?? 0);
+                $factorConversion   = max(1, (int) ($line['FactorConversion'] ?? 1));
+
+                // Para productos CJ (caja): Jaremar envía CantidadFracciones=0
+                // y CantidadCaja>0. quantity_fractions debe reflejar el total
+                // de fracciones disponibles para devolución:
+                //   CantidadCaja * FactorConversion
+                if ($cantidadFracciones == 0 && $cantidadCaja > 0) {
+                    $cantidadFracciones = $cantidadCaja * $factorConversion;
+                }
+
+                $allLines[] = [
+                    'invoice_id'          => $invoiceId,
+                    'jaremar_line_id'     => $line['Id'] ?? null,
+                    'invoice_jaremar_id'  => isset($line['InvoiceId']) ? (int) $line['InvoiceId'] : null,
+                    'line_number'         => (int) ($line['NumeroLinea'] ?? 0),
+                    'product_id'          => (string) ($line['ProductoId'] ?? ''),
+                    'product_description' => (string) ($line['ProductoDesc'] ?? ''),
+                    'product_type'        => $line['TipoProducto'] ?? null,
+                    'unit_sale'           => $line['UniVenta'] ?? null,
+                    'quantity_fractions'  => $cantidadFracciones,
+                    'quantity_decimal'    => (float) ($line['CantidadDecimal'] ?? 0),
+                    'quantity_box'        => $cantidadCaja,
+                    'quantity_min_sale'   => (float) ($line['CantidadUnidadMinVenta'] ?? 0),
+                    'conversion_factor'   => $factorConversion,
+                    'cost'                => (float) ($line['Costo'] ?? 0),
+                    'price'               => (float) ($line['Precio'] ?? 0),
+                    'price_min_sale'      => (float) ($line['PrecioUnidadMinVenta'] ?? 0),
+                    'subtotal'            => (float) ($line['Subtotal'] ?? 0),
+                    'discount'            => (float) ($line['Descuento'] ?? 0),
+                    'discount_percent'    => (float) ($line['PorcentajeDescuento'] ?? 0),
+                    'tax'                 => (float) ($line['Impuesto'] ?? 0),
+                    'tax_percent'         => (float) ($line['PorcentajeImpuesto'] ?? 0),
+                    'tax18'               => (float) ($line['Impuesto18'] ?? 0),
+                    'total'               => (float) ($line['Total'] ?? 0),
+                    'weight'              => (float) ($line['Peso'] ?? 0),
+                    'volume'              => (float) ($line['Volumen'] ?? 0),
+                    'created_at'          => $now,
+                    'updated_at'          => $now,
+                ];
+            }
         }
 
-        // Factura existente → comparar campos
-        $incomingMapped = $this->mapInvoiceFields($invoiceData, $manifest);
-        $changes        = $this->detectChanges($existing, $incomingMapped);
-
-        if (empty($changes)) {
-            $summary['invoices_unchanged']++;
-            return;
+        if (!empty($allLines)) {
+            collect($allLines)->chunk(500)->each(function ($chunk) {
+                DB::table('invoice_lines')->insert($chunk->values()->all());
+            });
         }
 
-        ApiInvoiceImportConflict::create([
-            'api_invoice_import_id' => $importRecord->id,
-            'invoice_id'            => $existing->id,
-            'invoice_number'        => $invoiceNumber,
-            'manifest_number'       => $manifest->number,
-            'previous_values'       => $changes['previous'],
-            'incoming_values'       => $changes['incoming'],
-        ]);
-
-        $summary['invoices_pending_review']++;
-        $summary['warnings'][] = [
-            'factura'           => $invoiceNumber,
-            'manifiesto'        => $manifest->number,
-            'campos_con_cambio' => array_keys($changes['previous']),
-            'mensaje'           => 'Factura recibida con diferencias respecto a la versión existente. Pendiente de revisión por Hosana.',
-        ];
+        return $counts;
     }
 
     protected function detectChanges(Invoice $existing, array $incoming): array
@@ -454,74 +610,6 @@ class ApiInvoiceImporterService
             'previous' => $previous,
             'incoming' => $newValues,
         ];
-    }
-
-    protected function insertInvoice(array $data, Manifest $manifest): Invoice
-    {
-        $mapped                = $this->mapInvoiceFields($data, $manifest);
-        $mapped['manifest_id'] = $manifest->id;
-
-        $invoice = Invoice::create($mapped);
-
-        if (!empty($data['LineasFactura'])) {
-            $this->insertLines($invoice->id, $data['LineasFactura']);
-        }
-
-        return $invoice;
-    }
-
-    protected function insertLines(int $invoiceId, array $lines): void
-    {
-        $now  = now()->toDateTimeString();
-        $rows = [];
-
-        foreach ($lines as $line) {
-            $cantidadFracciones = (float) ($line['CantidadFracciones'] ?? 0);
-            $cantidadCaja       = (float) ($line['CantidadCaja'] ?? 0);
-            $factorConversion   = max(1, (int) ($line['FactorConversion'] ?? 1));
-
-            // Para productos CJ (caja): Jaremar envía CantidadFracciones=0 y CantidadCaja>0.
-            // quantity_fractions debe reflejar el total de fracciones disponibles para devolución:
-            //   CantidadCaja * FactorConversion  (ej: 1 caja × 12 = 12 fracciones)
-            // Si ya vienen fracciones sueltas, se respetan tal cual.
-            if ($cantidadFracciones == 0 && $cantidadCaja > 0) {
-                $cantidadFracciones = $cantidadCaja * $factorConversion;
-            }
-
-            $rows[] = [
-                'invoice_id'          => $invoiceId,
-                'jaremar_line_id'     => $line['Id'] ?? null,
-                'invoice_jaremar_id'  => isset($line['InvoiceId']) ? (int) $line['InvoiceId'] : null,
-                'line_number'         => (int) ($line['NumeroLinea'] ?? 0),
-                'product_id'          => (string) ($line['ProductoId'] ?? ''),
-                'product_description' => (string) ($line['ProductoDesc'] ?? ''),
-                'product_type'        => $line['TipoProducto'] ?? null,
-                'unit_sale'           => $line['UniVenta'] ?? null,
-                'quantity_fractions'  => $cantidadFracciones,
-                'quantity_decimal'    => (float) ($line['CantidadDecimal'] ?? 0),
-                'quantity_box'        => $cantidadCaja,
-                'quantity_min_sale'   => (float) ($line['CantidadUnidadMinVenta'] ?? 0),
-                'conversion_factor'   => $factorConversion,
-                'cost'                => (float) ($line['Costo'] ?? 0),
-                'price'               => (float) ($line['Precio'] ?? 0),
-                'price_min_sale'      => (float) ($line['PrecioUnidadMinVenta'] ?? 0),
-                'subtotal'            => (float) ($line['Subtotal'] ?? 0),
-                'discount'            => (float) ($line['Descuento'] ?? 0),
-                'discount_percent'    => (float) ($line['PorcentajeDescuento'] ?? 0),
-                'tax'                 => (float) ($line['Impuesto'] ?? 0),
-                'tax_percent'         => (float) ($line['PorcentajeImpuesto'] ?? 0),
-                'tax18'               => (float) ($line['Impuesto18'] ?? 0),
-                'total'               => (float) ($line['Total'] ?? 0),
-                'weight'              => (float) ($line['Peso'] ?? 0),
-                'volume'              => (float) ($line['Volumen'] ?? 0),
-                'created_at'          => $now,
-                'updated_at'          => $now,
-            ];
-        }
-
-        collect($rows)->chunk(500)->each(function ($chunk) {
-            DB::table('invoice_lines')->insert($chunk->values()->all());
-        });
     }
 
     protected function mapInvoiceFields(array $data, Manifest $manifest): array
