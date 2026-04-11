@@ -194,21 +194,53 @@ class Manifest extends Model
 
     public function recalculateTotals(): void
     {
-        $this->total_invoices   = $this->invoices()->whereNotNull('warehouse_id')->sum('total');
-        $this->total_returns    = $this->returns()->where('status', 'approved')->sum('total');
-        $this->total_to_deposit = $this->total_invoices - $this->total_returns;
-        $this->total_deposited  = $this->deposits()->sum('amount');
-        $this->difference       = $this->total_to_deposit - $this->total_deposited;
-        $this->invoices_count   = $this->invoices()->whereNotNull('warehouse_id')->count();
-        $this->returns_count    = $this->returns()->count();
+        // ── Optimización (B1): de 6 queries a 3 usando agregación condicional ──
+        //
+        // Antes: se lanzaban 6 queries independientes (sum, count, sum, sum,
+        // count, count distinct) cada vez que un manifiesto recalculaba
+        // totales — operación frecuente durante el importador de la API.
+        //
+        // Ahora: una query por tabla (invoices, returns, deposits) con todos
+        // los agregados en un solo SELECT. Se usa CASE WHEN (ANSI SQL) en
+        // vez del FILTER clause de PostgreSQL — más portable y con
+        // rendimiento equivalente en Postgres 16.
+        //
+        // Invoices: 3 agregados en 1 query.
+        //   - total_invoices / invoices_count: sólo filas con warehouse_id
+        //   - clients_count: todas las filas del manifiesto (DISTINCT ignora NULLs)
+        $invoiceStats = $this->invoices()
+            ->selectRaw("
+                COALESCE(SUM(CASE WHEN warehouse_id IS NOT NULL THEN total ELSE 0 END), 0) AS total_invoices,
+                SUM(CASE WHEN warehouse_id IS NOT NULL THEN 1 ELSE 0 END)                  AS invoices_count,
+                COUNT(DISTINCT client_id)                                                  AS clients_count
+            ")
+            ->first();
 
+        // Returns: 2 agregados en 1 query.
+        //   - total_returns: sólo las aprobadas
+        //   - returns_count: todas
+        $returnStats = $this->returns()
+            ->selectRaw("
+                COALESCE(SUM(CASE WHEN status = 'approved' THEN total ELSE 0 END), 0) AS total_returns,
+                COUNT(*)                                                              AS returns_count
+            ")
+            ->first();
+
+        // Deposits: una sola SUM (tabla independiente, no se puede fusionar).
+        $totalDeposited = (float) $this->deposits()->sum('amount');
+
+        // ── Asignar resultados al modelo ──────────────────────────────────
+        $this->total_invoices   = (float) ($invoiceStats->total_invoices ?? 0);
+        $this->invoices_count   = (int)   ($invoiceStats->invoices_count ?? 0);
         // Clientes únicos por client_id (ID interno de Jaremar).
         // Se prefiere client_id sobre client_rtn porque Jaremar siempre lo
         // envía — el RTN puede estar vacío para clientes sin registro fiscal.
-        $this->clients_count    = $this->invoices()
-            ->whereNotNull('client_id')
-            ->distinct('client_id')
-            ->count('client_id');
+        $this->clients_count    = (int)   ($invoiceStats->clients_count  ?? 0);
+        $this->total_returns    = (float) ($returnStats->total_returns   ?? 0);
+        $this->returns_count    = (int)   ($returnStats->returns_count   ?? 0);
+        $this->total_deposited  = $totalDeposited;
+        $this->total_to_deposit = $this->total_invoices - $this->total_returns;
+        $this->difference       = $this->total_to_deposit - $this->total_deposited;
 
         $this->save();
 
