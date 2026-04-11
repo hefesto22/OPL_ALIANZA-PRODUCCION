@@ -51,22 +51,35 @@ class ApiInvoiceValidatorService
     protected function validateInvoice(array $invoice, int $position): void
     {
         foreach ($this->requiredInvoiceFields as $field) {
-            if (empty($invoice[$field]) && $invoice[$field] !== 0) {
+            // Usamos array_key_exists primero para evitar "Undefined array key"
+            // (PHP 8+ lo convierte en warning y en tests termina como exception).
+            // Tratamos null/''/false/[] como "falta", pero permitimos el literal 0
+            // porque Total puede ser 0 legítimamente en facturas canceladas.
+            $value   = $invoice[$field] ?? null;
+            $missing = ! array_key_exists($field, $invoice)
+                || ($value !== 0 && $value !== '0' && empty($value));
+
+            if ($missing) {
                 $this->errors[] = "Factura #{$position}: falta el campo obligatorio '{$field}'.";
             }
         }
 
-        if (isset($invoice['Total']) && (!is_numeric($invoice['Total']) || $invoice['Total'] < 0)) {
+        if (array_key_exists('Total', $invoice) && $invoice['Total'] !== null && (!is_numeric($invoice['Total']) || $invoice['Total'] < 0)) {
             $label = $invoice['Nfactura'] ?? "#{$position}";
             $this->errors[] = "Factura {$label}: el campo 'Total' debe ser un número positivo.";
         }
 
-        if (isset($invoice['LineasFactura'])) {
+        if (array_key_exists('LineasFactura', $invoice) && $invoice['LineasFactura'] !== null) {
             if (!is_array($invoice['LineasFactura']) || empty($invoice['LineasFactura'])) {
                 $label = $invoice['Nfactura'] ?? "#{$position}";
                 $this->errors[] = "Factura {$label}: 'LineasFactura' no puede estar vacío.";
             } else {
                 foreach ($invoice['LineasFactura'] as $lineIndex => $line) {
+                    if (!is_array($line)) {
+                        $label = $invoice['Nfactura'] ?? "#{$position}";
+                        $this->errors[] = "Factura {$label}, Línea #" . ($lineIndex + 1) . ": formato inválido.";
+                        continue;
+                    }
                     $this->validateLine($line, $lineIndex + 1, $invoice['Nfactura'] ?? "#{$position}");
                 }
             }
