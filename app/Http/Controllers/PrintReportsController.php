@@ -41,6 +41,7 @@ class PrintReportsController extends Controller
             $query->where('status', $data['status']);
         }
 
+        $this->enforceRowLimit($query, 'manifiestos');
         $manifests = $query->get();
 
         $totals = [
@@ -101,6 +102,7 @@ class PrintReportsController extends Controller
             $query->where('status', $data['status']);
         }
 
+        $this->enforceRowLimit($query, 'manifiestos (sin ISV)');
         $manifests = $query->get();
 
         // Una sola query para obtener ISV por manifiesto (sin N+1).
@@ -198,10 +200,12 @@ class PrintReportsController extends Controller
             $invoiceQuery->where('warehouse_id', (int) $data['warehouse_id']);
         }
 
-        $invoices = $invoiceQuery
+        $invoiceQuery
             ->orderBy('route_number')
-            ->orderBy('invoice_number')
-            ->get();
+            ->orderBy('invoice_number');
+
+        $this->enforceRowLimit($invoiceQuery, 'facturas del manifiesto');
+        $invoices = $invoiceQuery->get();
 
         // Agrupar por ruta con subtotales
         $byRoute = $invoices->groupBy('route_number')->map(function ($group) {
@@ -284,6 +288,7 @@ class PrintReportsController extends Controller
             $query->where('warehouse_id', $data['warehouse_id']);
         }
 
+        $this->enforceRowLimit($query, 'devoluciones');
         $returns = $query->get();
 
         // Agrupar por manifiesto con subtotales
@@ -342,6 +347,7 @@ class PrintReportsController extends Controller
             $query->whereDate('deposit_date', '<=', $data['date_to']);
         }
 
+        $this->enforceRowLimit($query, 'depósitos');
         $deposits = $query->get();
 
         // Agrupar por banco con subtotales
@@ -424,6 +430,9 @@ class PrintReportsController extends Controller
             $query->where('manifests.status', $data['status']);
         }
 
+        // Nota: este reporte agrupa por bodega (3 filas como máximo en prod)
+        // así que el guard es más que nada defensivo ante configuraciones futuras.
+        $this->enforceRowLimit($query, 'ventas por bodega');
         $rows = $query->get();
 
         // ── Totales globales ─────────────────────────────────────────────────
@@ -485,7 +494,7 @@ class PrintReportsController extends Controller
         $invoiceIds = $invoiceQuery->pluck('id');
 
         // Agrupar líneas por producto, sumando cantidades y totales
-        $products = DB::table('invoice_lines')
+        $productsQuery = DB::table('invoice_lines')
             ->whereIn('invoice_id', $invoiceIds)
             ->select(
                 'product_id',
@@ -496,8 +505,10 @@ class PrintReportsController extends Controller
                 DB::raw('SUM(total) as total_amount'),
             )
             ->groupBy('product_id', 'product_description', 'unit_sale')
-            ->orderBy('product_id')
-            ->get();
+            ->orderBy('product_id');
+
+        $this->enforceRowLimit($productsQuery, 'productos del manifiesto');
+        $products = $productsQuery->get();
 
         $totals = [
             'total_boxes'  => $products->sum('total_boxes'),
@@ -549,10 +560,12 @@ class PrintReportsController extends Controller
             $warehouseName = $warehouse ? "{$warehouse->code} — {$warehouse->name}" : '—';
         }
 
-        $invoices = $invoiceQuery
+        $invoiceQuery
             ->orderBy('route_number')
-            ->orderBy('invoice_number')
-            ->get();
+            ->orderBy('invoice_number');
+
+        $this->enforceRowLimit($invoiceQuery, 'checklist de facturas');
+        $invoices = $invoiceQuery->get();
 
         // Agrupar por ruta con subtotales
         $byRoute = $invoices->groupBy('route_number')->map(function ($group) {
@@ -582,7 +595,7 @@ class PrintReportsController extends Controller
         return response($html, 200, ['Content-Type' => 'text/html; charset=UTF-8']);
     }
 
-    // ── Helper ────────────────────────────────────────────────────
+    // ── Helpers ───────────────────────────────────────────────────
 
     private function decryptPayload(Request $request): array
     {
@@ -591,6 +604,40 @@ class PrintReportsController extends Controller
             return json_decode($payload, true, 512, JSON_THROW_ON_ERROR);
         } catch (\Throwable) {
             abort(403, 'Enlace de reporte inválido o expirado.');
+        }
+    }
+
+    /**
+     * Salvaguarda de memoria para reportes PDF.
+     *
+     * Antes de materializar la query con ->get(), contamos cuántas filas
+     * devolvería y abortamos con 422 si supera REPORTS_MAX_ROWS. Esto
+     * protege al proceso PHP (y al worker de Browsershot/Chromium) de
+     * consumir toda la memoria cuando un usuario pide un rango demasiado
+     * amplio — por ejemplo "todos los depósitos del año" en una instalación
+     * con cientos de miles de filas.
+     *
+     * Se usa directamente en las queries ya construidas con filtros;
+     * el count() reutiliza los mismos WHERE/JOIN pero sin SELECT pesado.
+     *
+     * @param  \Illuminate\Contracts\Database\Query\Builder|\Illuminate\Database\Eloquent\Builder  $query
+     */
+    private function enforceRowLimit($query, string $reportName): void
+    {
+        $limit = (int) env('REPORTS_MAX_ROWS', 5000);
+        if ($limit <= 0) {
+            return; // 0 o negativo = sin límite (útil en dev)
+        }
+
+        $count = (clone $query)->count();
+
+        if ($count > $limit) {
+            abort(
+                422,
+                "El reporte de {$reportName} devolvería {$count} filas, superando el límite " .
+                "de seguridad ({$limit}). Afine los filtros (rango de fechas, bodega, estado) " .
+                "y vuelva a generarlo."
+            );
         }
     }
 }
