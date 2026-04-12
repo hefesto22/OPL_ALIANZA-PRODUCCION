@@ -78,7 +78,9 @@ class ManifestImporterService
         ]);
     }
 
-    // ─── Chunk: INSERT facturas + COPY líneas (dos pasos) ──────
+    // ─── Chunk: INSERT facturas + INSERT líneas ─────────────────
+
+    protected const LINE_CHUNK_SIZE = 500;
 
     public function importChunk(Manifest $manifest, array $chunk): void
     {
@@ -154,8 +156,10 @@ class ManifestImporterService
             ];
         }
 
-        // PASO 1: Insertar facturas y commitear para que COPY pueda verlas
-        $jarimarToInvoiceId = DB::transaction(function () use ($invoiceRows) {
+        // Todo en una sola transacción — facturas y líneas usan la misma
+        // conexión de Laravel, por lo que las FK se satisfacen sin commitear.
+        DB::transaction(function () use ($invoiceRows, $chunk, $now) {
+            // PASO 1: Insertar facturas con INSERT...RETURNING
             $columnsList = implode(', ', array_map(fn($c) => "\"{$c}\"", self::INVOICE_COLUMNS));
             $placeholder = '(' . implode(', ', array_fill(0, count(self::INVOICE_COLUMNS), '?')) . ')';
             $bindings    = [];
@@ -172,110 +176,55 @@ class ManifestImporterService
 
             $inserted = DB::select($sql, $bindings);
 
-            return collect($inserted)->pluck('id', 'jaremar_id')->toArray();
+            $jarimarToInvoiceId = collect($inserted)->pluck('id', 'jaremar_id')->toArray();
+
+            // PASO 2: Preparar líneas como arrays asociativos e insertar en chunks
+            $lineRows = [];
+            foreach ($chunk as $invoiceData) {
+                $invoiceId = $jarimarToInvoiceId[$invoiceData['Id'] ?? null] ?? null;
+
+                if (!$invoiceId || empty($invoiceData['LineasFactura'])) {
+                    continue;
+                }
+
+                foreach ($invoiceData['LineasFactura'] as $lineData) {
+                    $lineRows[] = [
+                        'invoice_id'          => $invoiceId,
+                        'jaremar_line_id'     => $lineData['Id'] ?? null,
+                        'invoice_jaremar_id'  => isset($lineData['InvoiceId']) ? (int) $lineData['InvoiceId'] : null,
+                        'line_number'         => (int)    ($lineData['NumeroLinea']            ?? 0),
+                        'product_id'          => (string) ($lineData['ProductoId']             ?? ''),
+                        'product_description' => (string) ($lineData['ProductoDesc']           ?? ''),
+                        'product_type'        => isset($lineData['TipoProducto']) ? (string) $lineData['TipoProducto'] : null,
+                        'unit_sale'           => isset($lineData['UniVenta'])      ? (string) $lineData['UniVenta']     : null,
+                        'quantity_fractions'   => (float) ($lineData['CantidadFracciones']     ?? 0),
+                        'quantity_decimal'     => (float) ($lineData['CantidadDecimal']        ?? 0),
+                        'quantity_box'         => (float) ($lineData['CantidadCaja']           ?? 0),
+                        'quantity_min_sale'    => (float) ($lineData['CantidadUnidadMinVenta'] ?? 0),
+                        'conversion_factor'    => (int)   ($lineData['FactorConversion']       ?? 1),
+                        'cost'                => (float) ($lineData['Costo']                   ?? 0),
+                        'price'               => (float) ($lineData['Precio']                  ?? 0),
+                        'price_min_sale'      => (float) ($lineData['PrecioUnidadMinVenta']   ?? 0),
+                        'subtotal'            => (float) ($lineData['Subtotal']                ?? 0),
+                        'discount'            => (float) ($lineData['Descuento']               ?? 0),
+                        'discount_percent'    => (float) ($lineData['PorcentajeDescuento']     ?? 0),
+                        'tax'                 => (float) ($lineData['Impuesto']                ?? 0),
+                        'tax_percent'         => (float) ($lineData['PorcentajeImpuesto']      ?? 0),
+                        'tax18'               => (float) ($lineData['Impuesto18']              ?? 0),
+                        'total'               => (float) ($lineData['Total']                   ?? 0),
+                        'weight'              => (float) ($lineData['Peso']                    ?? 0),
+                        'volume'              => (float) ($lineData['Volumen']                 ?? 0),
+                        'created_at'          => $now,
+                        'updated_at'          => $now,
+                    ];
+                }
+            }
+
+            // Insertar líneas en chunks de 500 vía DB facade (misma conexión = FK OK)
+            foreach (array_chunk($lineRows, self::LINE_CHUNK_SIZE) as $lineChunk) {
+                DB::table('invoice_lines')->insert($lineChunk);
+            }
         });
-
-        // PASO 2: Preparar y COPY líneas (facturas ya commiteadas y visibles)
-        $linesRows = [];
-        foreach ($chunk as $invoiceData) {
-            $invoiceId = $jarimarToInvoiceId[$invoiceData['Id'] ?? null] ?? null;
-
-            if (!$invoiceId || empty($invoiceData['LineasFactura'])) {
-                continue;
-            }
-
-            foreach ($invoiceData['LineasFactura'] as $lineData) {
-                $linesRows[] = [
-                    $invoiceId,
-                    $lineData['Id'] ?? null,
-                    isset($lineData['InvoiceId']) ? (int)$lineData['InvoiceId'] : null,
-                    (int)   ($lineData['NumeroLinea']              ?? 0),
-                    (string)($lineData['ProductoId']               ?? ''),
-                    (string)($lineData['ProductoDesc']             ?? ''),
-                    isset($lineData['TipoProducto']) ? (string)$lineData['TipoProducto'] : null,
-                    isset($lineData['UniVenta'])      ? (string)$lineData['UniVenta']     : null,
-                    (float) ($lineData['CantidadFracciones']       ?? 0),
-                    (float) ($lineData['CantidadDecimal']          ?? 0),
-                    (float) ($lineData['CantidadCaja']             ?? 0),
-                    (float) ($lineData['CantidadUnidadMinVenta']   ?? 0),
-                    (int)   ($lineData['FactorConversion']         ?? 1),
-                    (float) ($lineData['Costo']                    ?? 0),
-                    (float) ($lineData['Precio']                   ?? 0),
-                    (float) ($lineData['PrecioUnidadMinVenta']     ?? 0),
-                    (float) ($lineData['Subtotal']                 ?? 0),
-                    (float) ($lineData['Descuento']                ?? 0),
-                    (float) ($lineData['PorcentajeDescuento']      ?? 0),
-                    (float) ($lineData['Impuesto']                 ?? 0),
-                    (float) ($lineData['PorcentajeImpuesto']       ?? 0),
-                    (float) ($lineData['Impuesto18']               ?? 0),
-                    (float) ($lineData['Total']                    ?? 0),
-                    (float) ($lineData['Peso']                     ?? 0),
-                    (float) ($lineData['Volumen']                  ?? 0),
-                    $now,
-                    $now,
-                ];
-            }
-        }
-
-        if (!empty($linesRows)) {
-            $this->pgCopyLines($linesRows);
-        }
-    }
-
-    /**
-     * Inserta líneas usando pg_copy_from sobre una conexión nativa pgsql.
-     * Las facturas ya están commiteadas, por lo que la FK se satisface.
-     */
-    protected function pgCopyLines(array $rows): void
-    {
-        $config = config('database.connections.pgsql');
-        $dsn    = sprintf(
-            'host=%s port=%s dbname=%s user=%s password=%s',
-            $config['host'],
-            $config['port'],
-            $config['database'],
-            $config['username'],
-            $config['password'],
-        );
-
-        $pgConn = pg_connect($dsn);
-
-        if (!$pgConn) {
-            throw new \Exception('No se pudo conectar a PostgreSQL para COPY.');
-        }
-
-        try {
-            $columnsSql = implode(', ', array_map(fn($c) => "\"{$c}\"", self::LINE_COLUMNS));
-
-            // Usar pg_put_line para control total sobre el stream COPY
-            pg_query($pgConn, "COPY \"invoice_lines\" ({$columnsSql}) FROM STDIN");
-
-            foreach ($rows as $row) {
-                $line = implode("\t", array_map(fn($v) => $this->escapeTsv($v), $row)) . "\n";
-                pg_put_line($pgConn, $line);
-            }
-
-            // Señal de fin de COPY
-            pg_put_line($pgConn, "\\.\n");
-            pg_end_copy($pgConn);
-
-        } finally {
-            // Garantizamos cierre de conexión pase lo que pase.
-            // Sin esto, una excepción durante el COPY dejaba la conexión
-            // nativa abierta hasta que PHP la limpiara al final del proceso.
-            pg_close($pgConn);
-        }
-    }
-
-    protected function escapeTsv(mixed $value): string
-    {
-        if ($value === null) return '\\N';
-        $value = (string) $value;
-        $value = str_replace('\\', '\\\\', $value);
-        $value = str_replace("\t", '\\t', $value);
-        $value = str_replace("\n", '\\n', $value);
-        $value = str_replace("\r", '\\r', $value);
-        return $value;
     }
 
     // ─── Helpers ──────────────────────────────────────────────
