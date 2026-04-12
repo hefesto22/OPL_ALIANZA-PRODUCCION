@@ -97,10 +97,20 @@ class JsonValidatorServiceTest extends TestCase
 
     public function test_missing_required_invoice_field_fails(): void
     {
-        // Usamos campo vacío en vez de unset para evitar el TypeError
-        // en validateLine() que tiene type hint string (bug conocido del
-        // service cuando Nfactura es null — se reportaría por separado).
         $inv = $this->validInvoice(['Nfactura' => '']);
+        $json = json_encode([$inv]);
+
+        $v = $this->makeValidator();
+        $this->assertFalse($v->validate($json));
+        $this->assertStringContainsString('Nfactura', $v->getFirstError());
+    }
+
+    public function test_null_nfactura_does_not_throw_type_error(): void
+    {
+        // Antes del fix, unset(Nfactura) causaba TypeError en validateLine()
+        // porque recibía null en un parámetro tipado como string.
+        $inv = $this->validInvoice();
+        unset($inv['Nfactura']);
         $json = json_encode([$inv]);
 
         $v = $this->makeValidator();

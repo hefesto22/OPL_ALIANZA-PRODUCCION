@@ -72,6 +72,9 @@ class JsonValidatorService
      */
     protected function validateInvoice(array $invoice, int $position): void
     {
+        // Identificador seguro para mensajes de error (Nfactura puede faltar)
+        $invoiceLabel = (string) ($invoice['Nfactura'] ?? "#{$position}");
+
         // Campos obligatorios
         foreach ($this->requiredInvoiceFields as $field) {
             if (empty($invoice[$field])) {
@@ -81,16 +84,16 @@ class JsonValidatorService
 
         // Total debe ser numérico y positivo
         if (isset($invoice['Total']) && (!is_numeric($invoice['Total']) || $invoice['Total'] < 0)) {
-            $this->errors[] = "Factura #{$position} ({$invoice['Nfactura']}): el campo 'Total' debe ser un número positivo.";
+            $this->errors[] = "Factura #{$position} ({$invoiceLabel}): el campo 'Total' debe ser un número positivo.";
         }
 
         // LineasFactura debe ser array no vacío
         if (isset($invoice['LineasFactura'])) {
             if (!is_array($invoice['LineasFactura']) || empty($invoice['LineasFactura'])) {
-                $this->errors[] = "Factura #{$position} ({$invoice['Nfactura']}): 'LineasFactura' no puede estar vacío.";
+                $this->errors[] = "Factura #{$position} ({$invoiceLabel}): 'LineasFactura' no puede estar vacío.";
             } else {
                 foreach ($invoice['LineasFactura'] as $lineIndex => $line) {
-                    $this->validateLine($line, $lineIndex + 1, $invoice['Nfactura']);
+                    $this->validateLine($line, $lineIndex + 1, $invoiceLabel);
                 }
             }
         }
