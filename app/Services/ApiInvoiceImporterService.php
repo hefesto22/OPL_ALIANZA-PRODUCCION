@@ -226,9 +226,55 @@ class ApiInvoiceImporterService
             $manifest = $this->createManifest($manifestNumber);
         }
 
-        // ── 4. Clasificar facturas usando el mapa precargado ───────────
-        // Antes: un SELECT por factura + Invoice::create() individual.
-        // Ahora: sin queries por factura, y las nuevas se insertan en bulk.
+        // ── 4. Clasificar facturas: nuevas, sin cambios, o con conflicto
+        $classified = $this->classifyInvoices($invoices, $manifest, $existingInvoices, $summary);
+
+        // ── 5. Insert masivo de facturas nuevas + sus líneas ───────────
+        // Aislar conteos de bodegas para ESTE manifiesto antes del bulk.
+        $prevWarehouseCounts = $summary['inserted_warehouse_counts'];
+        $summary['inserted_warehouse_counts'] = [];
+
+        if (!empty($classified['new'])) {
+            $bulkResult = $this->bulkInsertNewInvoices($classified['new'], $manifest);
+            $summary['invoices_inserted']        += $bulkResult['total'];
+            $summary['inserted_warehouse_counts'] = $bulkResult['by_warehouse'];
+        }
+
+        // ── 6. Crear filas de conflicto ────────────────────────────────
+        $this->createConflictRows($classified['conflicts'], $importRecord, $manifest, $summary);
+
+        // Restaurar acumulado global de conteos por bodega
+        $thisManifestWarehouseCounts = $summary['inserted_warehouse_counts'];
+        foreach ($thisManifestWarehouseCounts as $whId => $count) {
+            $prevWarehouseCounts[$whId] = ($prevWarehouseCounts[$whId] ?? 0) + $count;
+        }
+        $summary['inserted_warehouse_counts'] = $prevWarehouseCounts;
+
+        // ── 7. Recalcular totales del manifiesto ───────────────────────
+        $manifest->recalculateTotals();
+
+        // ── 8. Log + notificaciones ───────────────────────────────────
+        $this->logManifestImport($manifest, $manifestNumber, $importRecord, $summary, count($invoices));
+
+        if (!empty($thisManifestWarehouseCounts)) {
+            $this->notifyWarehouseUsers($manifest, $thisManifestWarehouseCounts);
+        }
+    }
+
+    /**
+     * Clasifica las facturas del batch en 3 categorías:
+     *   - new:       facturas que no existen → se insertarán en bulk
+     *   - conflicts: facturas existentes con campos distintos → pendientes de revisión
+     *   - (unchanged e invoices en otro manifiesto se registran directo en $summary)
+     *
+     * @return array{new: array, conflicts: array}
+     */
+    protected function classifyInvoices(
+        array $invoices,
+        Manifest $manifest,
+        \Illuminate\Support\Collection $existingInvoices,
+        array &$summary,
+    ): array {
         $newInvoicesData   = [];
         $conflictsToCreate = [];
 
@@ -269,19 +315,19 @@ class ApiInvoiceImporterService
             ];
         }
 
-        // Aislar conteos de bodegas para ESTE manifiesto
-        $prevWarehouseCounts = $summary['inserted_warehouse_counts'];
-        $summary['inserted_warehouse_counts'] = [];
+        return ['new' => $newInvoicesData, 'conflicts' => $conflictsToCreate];
+    }
 
-        // ── 5. Insert masivo de facturas nuevas + sus líneas ───────────
-        if (!empty($newInvoicesData)) {
-            $bulkResult = $this->bulkInsertNewInvoices($newInvoicesData, $manifest);
-            $summary['invoices_inserted']           += $bulkResult['total'];
-            $summary['inserted_warehouse_counts']    = $bulkResult['by_warehouse'];
-        }
-
-        // ── 6. Crear filas de conflicto ────────────────────────────────
-        foreach ($conflictsToCreate as $conflict) {
+    /**
+     * Persiste las filas de conflicto y actualiza el summary con warnings.
+     */
+    protected function createConflictRows(
+        array $conflicts,
+        ApiInvoiceImport $importRecord,
+        Manifest $manifest,
+        array &$summary,
+    ): void {
+        foreach ($conflicts as $conflict) {
             ApiInvoiceImportConflict::create([
                 'api_invoice_import_id' => $importRecord->id,
                 'invoice_id'            => $conflict['existing']->id,
@@ -299,19 +345,18 @@ class ApiInvoiceImporterService
                 'mensaje'           => 'Factura recibida con diferencias respecto a la versión existente. Pendiente de revisión por Hosana.',
             ];
         }
+    }
 
-        $thisManifestWarehouseCounts = $summary['inserted_warehouse_counts'];
-
-        // Restaurar acumulado global
-        foreach ($thisManifestWarehouseCounts as $whId => $count) {
-            $prevWarehouseCounts[$whId] = ($prevWarehouseCounts[$whId] ?? 0) + $count;
-        }
-        $summary['inserted_warehouse_counts'] = $prevWarehouseCounts;
-
-        // ── 7. Recalcular totales del manifiesto ───────────────────────
-        $manifest->recalculateTotals();
-
-        // ── 8. Log consolidado de importación (1 registro por manifiesto) ──
+    /**
+     * Registra un activity log consolidado por manifiesto.
+     */
+    protected function logManifestImport(
+        Manifest $manifest,
+        string $manifestNumber,
+        ApiInvoiceImport $importRecord,
+        array $summary,
+        int $totalProcessed,
+    ): void {
         $parts = [];
         if ($summary['invoices_inserted'] > 0) {
             $parts[] = "{$summary['invoices_inserted']} insertadas";
@@ -326,7 +371,6 @@ class ApiInvoiceImporterService
             $parts[] = "{$summary['invoices_rejected']} rechazadas";
         }
 
-        $totalProcessed = count($invoices);
         $description = "Manifiesto #{$manifestNumber} importado via API: {$totalProcessed} facturas procesadas";
         if (!empty($parts)) {
             $description .= ' (' . implode(', ', $parts) . ')';
@@ -344,11 +388,6 @@ class ApiInvoiceImporterService
                 'invoices_rejected'     => $summary['invoices_rejected'],
             ])
             ->log($description);
-
-        // ── 9. Notificaciones a usuarios de bodegas afectadas ────────
-        if (!empty($thisManifestWarehouseCounts)) {
-            $this->notifyWarehouseUsers($manifest, $thisManifestWarehouseCounts);
-        }
     }
 
     /**
