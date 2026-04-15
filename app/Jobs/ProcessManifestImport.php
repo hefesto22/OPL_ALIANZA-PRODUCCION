@@ -24,11 +24,29 @@ class ProcessManifestImport implements ShouldQueue
 
     protected const CHUNK_SIZE = 1000; // Subido de 500 → 1000
 
+    /**
+     * Cola `reports` — import pesado (miles de facturas en chunks),
+     * perfilmente asimilable a los exports: lento, memoria alta,
+     * debe NO bloquear la cola `high` donde corren las notificaciones
+     * al usuario que acaba de subir el manifiesto.
+     *
+     * Nota: tries=3 acá OVERRIDE el tries=1 del supervisor-reports,
+     * que es intencional: el importer es idempotente a nivel de chunk
+     * (cada factura usa updateOrCreate) y un fallo transitorio de red
+     * o de BD no debería obligar al usuario a volver a subir el JSON.
+     *
+     * Se setea vía onQueue() en vez de `public $queue = 'reports'` porque
+     * en PHP 8.3 + Laravel 11 el trait Queueable ya declara `public $queue`
+     * sin valor, y declarar el mismo con valor inicial lanza Fatal error
+     * por conflicto de traits.
+     */
     public function __construct(
         protected string $storedPath,
         protected int $userId,
         protected string $originalFileName,
-    ) {}
+    ) {
+        $this->onQueue('reports');
+    }
 
     public function handle(ManifestImporterService $importer): void
     {

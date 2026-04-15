@@ -23,11 +23,30 @@ class NotifyExportReady implements ShouldQueue
 {
     use Queueable;
 
+    /**
+     * Cola por defecto: `high`.
+     *
+     * Este job es liviano (una notificación a DB) pero *bloquea* la UX:
+     * el usuario está esperando ver "Exportación lista". Si cae en la
+     * misma cola que los exports pesados, una notificación de 50ms
+     * puede quedar esperando 10 minutos detrás de un export.
+     *
+     * Siempre se dispara encadenado con ->onQueue('high') desde los
+     * call sites de Filament, pero fijarlo acá también defiende contra
+     * olvidos en chains futuros.
+     *
+     * Nota: se setea vía onQueue() en vez de `public $queue = 'high'` porque
+     * en PHP 8.3 + Laravel 11 el trait Queueable ya declara `public $queue`
+     * sin valor, y declarar el mismo con valor inicial lanza Fatal error
+     * por conflicto de traits.
+     */
     public function __construct(
         protected int $userId,
         protected string $filePath,
         protected string $fileName,
-    ) {}
+    ) {
+        $this->onQueue('high');
+    }
 
     public function handle(): void
     {

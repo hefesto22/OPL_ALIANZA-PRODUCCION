@@ -4,18 +4,20 @@ namespace App\Filament\Resources\Manifests\Pages;
 
 use App\Exports\ManifestsExport;
 use App\Filament\Resources\Manifests\ManifestResource;
+use App\Jobs\NotifyExportReady;
+use App\Support\WarehouseScope;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Actions\CreateAction;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Select;
+use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ListRecords;
 use Filament\Schemas\Components\Tabs\Tab;
 use Filament\Schemas\Components\Utilities\Get;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Crypt;
-use Maatwebsite\Excel\Facades\Excel;
 
 class ListManifests extends ListRecords
 {
@@ -235,19 +237,34 @@ class ListManifests extends ListRecords
                     ->modalHeading('Exportar Manifiestos — Excel')
                     ->modalDescription('Seleccioná el período y filtros para exportar.')
                     ->modalSubmitActionLabel('Exportar')
-                    ->action(function (array $data): mixed {
+                    ->action(function (array $data): void {
                         ['date_from' => $from, 'date_to' => $to] = $this->resolvePeriodDates($data);
 
-                        $filename = 'manifiestos_'.now()->format('Y-m-d').'.xlsx';
+                        $fileName = 'manifiestos_'.now()->format('Y-m-d').'.xlsx';
+                        $filePath = "exports/{$fileName}";
 
-                        return Excel::download(
-                            new ManifestsExport(
-                                status: $data['status'] ?? null,
-                                dateFrom: $from,
-                                dateTo: $to,
-                            ),
-                            $filename
-                        );
+                        // Export despachado a cola `reports` (ver ManifestsExport::$queue).
+                        // El chain encadena NotifyExportReady con cola `high`.
+                        // WarehouseScope: capturamos el warehouse_id acá (donde Auth
+                        // existe) — dentro del job worker `Auth::user()` es null.
+                        (new ManifestsExport(
+                            status: $data['status'] ?? null,
+                            dateFrom: $from,
+                            dateTo: $to,
+                            warehouseId: WarehouseScope::getWarehouseId(),
+                        ))->queue($filePath, 'local')->chain([
+                            (new NotifyExportReady(
+                                userId: Auth::id(),
+                                filePath: $filePath,
+                                fileName: $fileName,
+                            ))->onQueue('high'),
+                        ]);
+
+                        Notification::make()
+                            ->title('Exportación en proceso')
+                            ->body("El archivo {$fileName} se está generando. Te notificaremos cuando esté listo.")
+                            ->info()
+                            ->send();
                     }),
             ])
                 ->label('Reportes')

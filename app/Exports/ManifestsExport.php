@@ -3,26 +3,63 @@
 namespace App\Exports;
 
 use App\Models\Manifest;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\Eloquent\Builder;
+use Maatwebsite\Excel\Concerns\Exportable;
 use Maatwebsite\Excel\Concerns\FromQuery;
 use Maatwebsite\Excel\Concerns\ShouldAutoSize;
+use Maatwebsite\Excel\Concerns\WithChunkReading;
 use Maatwebsite\Excel\Concerns\WithHeadings;
 use Maatwebsite\Excel\Concerns\WithMapping;
 use Maatwebsite\Excel\Concerns\WithStyles;
 use Maatwebsite\Excel\Concerns\WithTitle;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
-class ManifestsExport implements FromQuery, ShouldAutoSize, WithHeadings, WithMapping, WithStyles, WithTitle
+/**
+ * Export de manifiestos — una fila por manifiesto (11 columnas).
+ *
+ * Se procesa en background (ShouldQueue) para no bloquear el request
+ * del usuario. El usuario recibe notificación cuando el archivo está
+ * listo (ver chain en ListManifests::export_excel action).
+ *
+ * Cola: `reports` (ver config/horizon.php, supervisor-reports).
+ */
+class ManifestsExport implements
+    FromQuery,
+    ShouldAutoSize,
+    ShouldQueue,
+    WithChunkReading,
+    WithHeadings,
+    WithMapping,
+    WithStyles,
+    WithTitle
 {
+    use Exportable;
+
+    public string $queue = 'reports';
+
+    /**
+     * @param  ?int  $warehouseId  Filtro de bodega. `null` = ver todas las bodegas
+     *                             (solo super_admin/admin). Se captura en el call
+     *                             site con WarehouseScope::getWarehouseId() porque
+     *                             el job corre en worker sin contexto de Auth.
+     */
     public function __construct(
         private readonly ?string $status = null,
         private readonly ?string $dateFrom = null,
         private readonly ?string $dateTo = null,
+        private readonly ?int $warehouseId = null,
     ) {}
+
+    public function chunkSize(): int
+    {
+        return 1000;
+    }
 
     public function query(): Builder
     {
-        $query = Manifest::query()->with(['warehouse']);
+        // Columnas específicas en el relation — bodega solo necesita code.
+        $query = Manifest::query()->with(['warehouse:id,code']);
 
         if ($this->status) {
             $query->where('status', $this->status);
@@ -34,6 +71,11 @@ class ManifestsExport implements FromQuery, ShouldAutoSize, WithHeadings, WithMa
 
         if ($this->dateTo) {
             $query->whereDate('date', '<=', $this->dateTo);
+        }
+
+        // Multi-tenant: usuarios de bodega solo ven su bodega.
+        if ($this->warehouseId) {
+            $query->where('warehouse_id', $this->warehouseId);
         }
 
         return $query->orderBy('date', 'desc');

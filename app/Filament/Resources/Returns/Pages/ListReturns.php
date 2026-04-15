@@ -8,6 +8,7 @@ use App\Filament\Resources\Returns\ReturnResource;
 use App\Filament\Resources\Returns\Tables\ReturnsTable;
 use App\Jobs\NotifyExportReady;
 use App\Models\Warehouse;
+use App\Support\WarehouseScope;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Actions\CreateAction;
@@ -163,17 +164,23 @@ class ListReturns extends ListRecords
                         $fileName = 'devoluciones_interno_'.now()->format('Y-m-d').'.xlsx';
                         $filePath = "exports/{$fileName}";
 
+                        // Multi-tenant: si es usuario de bodega, forzamos SU bodega
+                        // ignorando el select del form (defensa en profundidad).
+                        // Admin/super_admin: respetan la selección del form (o null = todas).
+                        $effectiveWarehouseId = WarehouseScope::getWarehouseId()
+                            ?? (isset($data['warehouse_id']) ? (int) $data['warehouse_id'] : null);
+
                         (new ReturnsExport(
                             status: $data['status'] ?? null,
-                            warehouseId: $data['warehouse_id'] ?? null,
+                            warehouseId: $effectiveWarehouseId,
                             dateFrom: $data['date_from'] ?? null,
                             dateTo: $data['date_to'] ?? null,
                         ))->queue($filePath, 'local')->chain([
-                            new NotifyExportReady(
+                            (new NotifyExportReady(
                                 userId: Auth::id(),
                                 filePath: $filePath,
                                 fileName: $fileName,
-                            ),
+                            ))->onQueue('high'),
                         ]);
 
                         Notification::make()
@@ -232,18 +239,23 @@ class ListReturns extends ListRecords
                         $fileName = "Devoluciones_{$label}.xlsx";
                         $filePath = "exports/{$fileName}";
 
+                        // Multi-tenant: si es usuario de bodega, forzamos SU bodega
+                        // ignorando el select del form (defensa en profundidad).
+                        $effectiveWarehouseId = WarehouseScope::getWarehouseId()
+                            ?? (isset($data['warehouse_id']) ? (int) $data['warehouse_id'] : null);
+
                         // Despachar a cola — ReturnsDetailExport implementa ShouldQueue
                         (new ReturnsDetailExport(
                             dateFrom: $from,
                             dateTo: $to,
                             status: $data['status'] ?? null,
-                            warehouseId: isset($data['warehouse_id']) ? (int) $data['warehouse_id'] : null,
+                            warehouseId: $effectiveWarehouseId,
                         ))->queue($filePath, 'local')->chain([
-                            new NotifyExportReady(
+                            (new NotifyExportReady(
                                 userId: Auth::id(),
                                 filePath: $filePath,
                                 fileName: $fileName,
-                            ),
+                            ))->onQueue('high'),
                         ]);
 
                         Notification::make()

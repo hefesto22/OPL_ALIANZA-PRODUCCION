@@ -97,7 +97,12 @@ return [
     */
 
     'waits' => [
+        // Cola rápida (notificaciones): alerta rápida si se atasca.
+        'redis:high' => 30,
+        // Cola por defecto (jobs de aplicación): umbral estándar.
         'redis:default' => 60,
+        // Cola de reportes (exports pesados): más tolerante.
+        'redis:reports' => 300,
     ],
 
     /*
@@ -196,8 +201,47 @@ return [
     |
     */
 
+    /*
+    |--------------------------------------------------------------------------
+    | Arquitectura de colas — 3 supervisores dedicados
+    |--------------------------------------------------------------------------
+    |
+    | Razón: un solo supervisor con cola mixta sufre head-of-line blocking:
+    | un export pesado (ReturnsDetailExport, 71 cols × miles de filas) puede
+    | dejar esperando 10 minutos a una notificación de 50ms. Con 3 supervisores
+    | cada tipo de carga tiene workers dedicados y no se pisa entre sí.
+    |
+    | Asignación de cola por tipo de job:
+    |   • high    → NotifyExportReady, RecalculateManifestTotalsJob (respuesta rápida)
+    |   • default → jobs de aplicación general (futuros)
+    |   • reports → *Export (ManifestsExport, DepositsExport, ReturnsExport,
+    |                ReturnsDetailExport), ProcessManifestImport (lentos/pesados)
+    |
+    | Configuración por supervisor (tuneada para cada perfil):
+    |   • timeout: máximo de segundos que puede correr un job en ese supervisor
+    |   • memory:  límite de RAM por worker antes de restart (MB)
+    |   • tries:   reintentos ante fallo (reports=1 porque un export parcial
+    |              no debe reintentarse ciegamente)
+    */
+
     'defaults' => [
-        'supervisor-1' => [
+        // Cola rápida — notificaciones y jobs ligeros que deben responder ya.
+        'supervisor-high' => [
+            'connection' => 'redis',
+            'queue' => ['high'],
+            'balance' => 'auto',
+            'autoScalingStrategy' => 'time',
+            'maxProcesses' => 1,
+            'maxTime' => 3600,
+            'maxJobs' => 0,
+            'memory' => 128,
+            'tries' => 3,
+            'timeout' => 60,
+            'nice' => 0,
+        ],
+
+        // Cola por defecto — jobs de aplicación estándar.
+        'supervisor-default' => [
             'connection' => 'redis',
             'queue' => ['default'],
             'balance' => 'auto',
@@ -207,24 +251,52 @@ return [
             'maxJobs' => 0,
             'memory' => 256,
             'tries' => 3,
-            'timeout' => 600,
+            'timeout' => 300,
             'nice' => 0,
+        ],
+
+        // Cola de reportes — exports pesados y procesamientos largos.
+        // tries=1 porque reintentar un Excel parcial genera basura y horas
+        // de procesamiento perdidas; preferimos fallar rápido y notificar.
+        'supervisor-reports' => [
+            'connection' => 'redis',
+            'queue' => ['reports'],
+            'balance' => 'auto',
+            'autoScalingStrategy' => 'time',
+            'maxProcesses' => 1,
+            'maxTime' => 3600,
+            'maxJobs' => 0,
+            'memory' => 512,
+            'tries' => 1,
+            'timeout' => 1800,
+            'nice' => 10,
         ],
     ],
 
     'environments' => [
         'production' => [
-            'supervisor-1' => [
-                'maxProcesses' => 6,
+            // En KVM4 (4 vCPU): 2+3+2 = 7 workers. Margen para PHP-FPM y Nginx.
+            'supervisor-high' => [
+                'maxProcesses' => 2,
+                'balanceMaxShift' => 1,
+                'balanceCooldown' => 3,
+            ],
+            'supervisor-default' => [
+                'maxProcesses' => 3,
+                'balanceMaxShift' => 1,
+                'balanceCooldown' => 3,
+            ],
+            'supervisor-reports' => [
+                'maxProcesses' => 2,
                 'balanceMaxShift' => 1,
                 'balanceCooldown' => 3,
             ],
         ],
 
         'local' => [
-            'supervisor-1' => [
-                'maxProcesses' => 3,
-            ],
+            'supervisor-high' => ['maxProcesses' => 1],
+            'supervisor-default' => ['maxProcesses' => 2],
+            'supervisor-reports' => ['maxProcesses' => 1],
         ],
     ],
 

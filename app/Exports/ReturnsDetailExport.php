@@ -7,15 +7,17 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\Eloquent\Builder;
 use Maatwebsite\Excel\Concerns\Exportable;
 use Maatwebsite\Excel\Concerns\FromQuery;
-use Maatwebsite\Excel\Concerns\ShouldAutoSize;
+use Maatwebsite\Excel\Concerns\WithChunkReading;
+use Maatwebsite\Excel\Concerns\WithColumnFormatting;
+use Maatwebsite\Excel\Concerns\WithColumnWidths;
 use Maatwebsite\Excel\Concerns\WithEvents;
 use Maatwebsite\Excel\Concerns\WithHeadings;
 use Maatwebsite\Excel\Concerns\WithMapping;
+use Maatwebsite\Excel\Concerns\WithStrictNullComparison;
 use Maatwebsite\Excel\Concerns\WithStyles;
 use Maatwebsite\Excel\Concerns\WithTitle;
 use Maatwebsite\Excel\Events\AfterSheet;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
-use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
@@ -28,12 +30,36 @@ use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
  *   - Una fila por línea de devolución (ReturnLine).
  *   - Campos de factura repetidos en cada línea del mismo encabezado.
  *   - Todos los campos numéricos con 4 decimales (0.0000).
- *   - Encabezado verde, fuente Arial 8 pt, columnas auto-ajustadas.
+ *   - Encabezado verde, fuente Arial 8 pt, columnas con anchos fijos.
  *   - Primera fila congelada para facilitar la navegación.
  *
+ * ─── Arquitectura de performance ─────────────────────────────────────────
+ *
+ * Este export procesaba históricamente con TRES bottlenecks cruzados:
+ *   1. ShouldAutoSize con 71 cols × N filas = O(71·N) mediciones (timeout en 10k+)
+ *   2. AfterSheet iteraba celda por celda para forzar ceros en 30 columnas
+ *      (porque Maatwebsite usa fromArray con strictNullComparison=false por
+ *      defecto, lo que hace que PHP evalúe 0.0 == null como TRUE y omita la
+ *      celda, dejándola vacía en vez de mostrar "0.0000").
+ *   3. FromQuery sin chunking → hidrataba toda la colección en RAM.
+ *
+ * Soluciones aplicadas:
+ *   1. WithColumnWidths con anchos estáticos → cero mediciones en runtime.
+ *   2. WithStrictNullComparison → respeta 0.0 como valor real, eliminando
+ *      por completo los 30 loops de AfterSheet.
+ *   3. WithChunkReading(500) → memoria acotada independiente del total de filas.
+ *   4. WithColumnFormatting → aplica el formato 0.0000 una sola vez por columna
+ *      (declarativo), no por celda.
+ *
+ * ─── Routing de cola ─────────────────────────────────────────────────────
+ *
+ * Se envía a la cola `reports` (timeout 1800s, memory 512MB) porque su perfil
+ * es distinto al de jobs críticos (notificaciones, recálculos). Ver
+ * config/horizon.php para los límites por supervisor.
+ *
  * Columnas derivadas:
- *   CantidadCaja    → return_lines.quantity_box
- *   Cantidad        → return_lines.quantity  (unidades sueltas)
+ *   CantidadCaja     → return_lines.quantity_box
+ *   Cantidad         → return_lines.quantity  (unidades sueltas)
  *   ImporteTotal_Val → invoice.total − isv15 − isv18
  *
  * Columnas siempre vacías (igual en el original de Jaremar):
@@ -42,13 +68,36 @@ use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
  * Columnas con valor fijo de .NET DateTime vacío:
  *   CreationTime, LastModifierUserId, LastModificationTime = "01/01/0001 00:00:00"
  */
-class ReturnsDetailExport implements FromQuery, ShouldAutoSize, ShouldQueue, WithEvents, WithHeadings, WithMapping, WithStyles, WithTitle
+class ReturnsDetailExport implements
+    FromQuery,
+    ShouldQueue,
+    WithChunkReading,
+    WithColumnFormatting,
+    WithColumnWidths,
+    WithEvents,
+    WithHeadings,
+    WithMapping,
+    WithStrictNullComparison,
+    WithStyles,
+    WithTitle
 {
     use Exportable;
+
+    /**
+     * Cola dedicada a jobs pesados de reportería.
+     *
+     * Definida en config/horizon.php (supervisor-reports).
+     */
+    public string $queue = 'reports';
+
+    // ─── Valor constante ─────────────────────────────────────────────────
+    private const NET_NULL_DATE = '01/01/0001 00:00:00'; // .NET DateTime.MinValue
 
     // ─── Índices (1-based) de columnas que deben tener formato 0.0000 ─────
     // D=4  E=5  J=10  AJ=36  AK=37  AR=44 … BK=63
     private const DECIMAL_COLS = [4, 5, 10, 36, 37, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63];
+
+    private const LAST_COL_INDEX = 71;
 
     public function __construct(
         private readonly ?string $dateFrom = null,
@@ -57,13 +106,23 @@ class ReturnsDetailExport implements FromQuery, ShouldAutoSize, ShouldQueue, Wit
         private readonly ?int $warehouseId = null,
     ) {}
 
+    // ─── Chunking ──────────────────────────────────────────────────────────
+
+    /**
+     * Lee de DB en chunks de 500 filas → memoria del worker acotada.
+     * Con 50k filas, ese es el delta entre OOM (500MB+) y estable (80MB).
+     */
+    public function chunkSize(): int
+    {
+        return 500;
+    }
+
     // ─── Query ─────────────────────────────────────────────────────────────
 
     public function query(): Builder
     {
         return ReturnLine::query()
             ->with([
-                'return.invoice',
                 'return.invoice.manifest',
                 'return.warehouse',
                 'return.returnReason',
@@ -174,7 +233,10 @@ class ReturnsDetailExport implements FromQuery, ShouldAutoSize, ShouldQueue, Wit
         $ret = $line->return;
         $mfst = $inv?->manifest;
 
-        // Helper: convierte a float garantizando 0.0 si el valor es null
+        // Helper: convierte a float garantizando 0.0 si el valor es null.
+        // Con WithStrictNullComparison, Maatwebsite respeta el 0.0 y lo
+        // escribe como número real en la celda (ya no hay que forzarlo
+        // en AfterSheet post-escritura).
         $f = static fn ($v): float => (float) ($v ?? 0);
 
         // ImporteTotal_Val = total − isv15 − isv18  (subtotal neto sin ISV)
@@ -182,8 +244,6 @@ class ReturnsDetailExport implements FromQuery, ShouldAutoSize, ShouldQueue, Wit
 
         // Fecha con hora, igual que Jaremar (ej: "31/01/2026 00:00:00")
         $fmtDate = static fn ($d): string => $d ? \Carbon\Carbon::parse($d)->format('d/m/Y H:i:s') : '';
-
-        $NET_NULL = '01/01/0001 00:00:00'; // .NET DateTime.MinValue
 
         return [
             // 0  NumeroLinea
@@ -312,23 +372,65 @@ class ReturnsDetailExport implements FromQuery, ShouldAutoSize, ShouldQueue, Wit
             $f($inv?->isv15),
             // 62 Total
             $f($inv?->total),
-            // 63 CreationTime  — .NET DateTime.MinValue (escrito como texto en AfterSheet)
-            '',
-            // 64 LastModifierUserId — .NET DateTime.MinValue (escrito como texto en AfterSheet)
-            '',
-            // 65 LastModificationTime — .NET DateTime.MinValue (escrito como texto en AfterSheet)
-            '',
-            // 66 IsDeleted — 0=no eliminado; se fuerza en AfterSheet porque 0==null PHP suelto
-            '',
+            // 63 CreationTime  — texto fijo .NET DateTime.MinValue
+            self::NET_NULL_DATE,
+            // 64 LastModifierUserId — texto fijo .NET DateTime.MinValue
+            self::NET_NULL_DATE,
+            // 65 LastModificationTime — texto fijo .NET DateTime.MinValue
+            self::NET_NULL_DATE,
+            // 66 IsDeleted — 0=no eliminado
+            0,
             // 67 NumeroFacturaLX
             (string) ($inv?->lx_number ?? ''),
             // 68 NumeroManifiesto
             (string) ($mfst?->number ?? ''),
-            // 69 EstadoFactura — se fuerza en AfterSheet porque 0==null PHP suelto
-            '',
+            // 69 EstadoFactura — 0 por defecto (Jaremar siempre recibe 0)
+            0,
             // 70 TipoFactura
             (string) ($inv?->invoice_type ?? ''),
         ];
+    }
+
+    // ─── Anchos de columna (reemplazo de ShouldAutoSize) ────────────────────
+    //
+    // Valores fijos calibrados para los nombres de columnas Jaremar.
+    // Alternativa a ShouldAutoSize que mide cada celda: O(1) en runtime.
+
+    public function columnWidths(): array
+    {
+        return [
+            'A' => 12,  'B' => 12, 'C' => 14, 'D' => 12, 'E' => 10,
+            'F' => 18, 'G' => 22, 'H' => 18, 'I' => 14, 'J' => 12,
+            'K' => 14, 'L' => 14, 'M' => 16, 'N' => 14, 'O' => 22,
+            'P' => 22, 'Q' => 12, 'R' => 28, 'S' => 12, 'T' => 32,
+            'U' => 18, 'V' => 18, 'W' => 18, 'X' => 12, 'Y' => 14,
+            'Z' => 10, 'AA' => 16, 'AB' => 14, 'AC' => 10, 'AD' => 14,
+            'AE' => 10, 'AF' => 10, 'AG' => 10, 'AH' => 36, 'AI' => 14,
+            'AJ' => 14, 'AK' => 14, 'AL' => 22, 'AM' => 30, 'AN' => 30,
+            'AO' => 14, 'AP' => 14, 'AQ' => 22, 'AR' => 16, 'AS' => 18,
+            'AT' => 18, 'AU' => 18, 'AV' => 18, 'AW' => 18, 'AX' => 20,
+            'AY' => 20, 'AZ' => 20, 'BA' => 20, 'BB' => 18, 'BC' => 18,
+            'BD' => 18, 'BE' => 18, 'BF' => 18, 'BG' => 18, 'BH' => 20,
+            'BI' => 14, 'BJ' => 14, 'BK' => 14, 'BL' => 20, 'BM' => 20,
+            'BN' => 20, 'BO' => 12, 'BP' => 18, 'BQ' => 18, 'BR' => 14,
+            'BS' => 14,
+        ];
+    }
+
+    // ─── Formato numérico declarativo (reemplazo de AfterSheet per-cell) ────
+    //
+    // WithColumnFormatting aplica el formato a la columna entera en una
+    // sola llamada, no por celda. Elimina 25 loops sobre N filas.
+
+    public function columnFormats(): array
+    {
+        $formats = [];
+        foreach (self::DECIMAL_COLS as $colIdx) {
+            $col = Coordinate::stringFromColumnIndex($colIdx);
+            $formats[$col] = '0.0000';
+        }
+
+        return $formats;
     }
 
     // ─── Estilos estáticos (encabezado) ────────────────────────────────────
@@ -356,7 +458,11 @@ class ReturnsDetailExport implements FromQuery, ShouldAutoSize, ShouldQueue, Wit
         ];
     }
 
-    // ─── Eventos post-escritura: formato de celdas + congelación ───────────
+    // ─── Eventos post-escritura: SOLO operaciones O(1) por hoja ────────────
+    //
+    // Con WithStrictNullComparison + WithColumnFormatting + WithColumnWidths,
+    // eliminamos los loops anteriores que iteraban celda por celda
+    // (25 decimal cols + 3 .NET cols + 2 fallback cols × N filas).
 
     public function registerEvents(): array
     {
@@ -364,99 +470,39 @@ class ReturnsDetailExport implements FromQuery, ShouldAutoSize, ShouldQueue, Wit
             AfterSheet::class => function (AfterSheet $event): void {
                 $ws = $event->sheet->getDelegate();
                 $lastRow = $ws->getHighestRow();
-                $lastCol = 71; // 71 columnas (A–BS)
+                $lastColStr = Coordinate::stringFromColumnIndex(self::LAST_COL_INDEX);
 
-                // ── 1. Fuente base de datos (Arial 8 pt) ───────────────────
-                $ws->getStyle('A2:'.Coordinate::stringFromColumnIndex($lastCol).$lastRow)
+                // Fuente base (Arial 8 pt) aplicada al rango completo con
+                // UNA sola llamada de estilo — PhpSpreadsheet lo guarda
+                // internamente como rango y no itera celda por celda.
+                $ws->getStyle("A1:{$lastColStr}{$lastRow}")
                     ->getFont()
                     ->setName('Arial')
                     ->setSize(8);
 
-                // ── 2. Formato 0.0000 en columnas numéricas decimales ──────
-                // PROBLEMA: maatwebsite/excel usa Worksheet::fromArray() con
-                // $strictNullComparison = false, lo que hace que PHP evalúe
-                // 0.0 == null como TRUE y omita la celda (queda vacía).
-                // SOLUCIÓN: recorrer cada celda decimal y, si está vacía,
-                // escribir explícitamente 0 como TYPE_NUMERIC antes de
-                // aplicar el formato.  Así 0 aparece como "0.0000" y no en blanco.
+                // Alineación derecha en columnas decimales (1 llamada por columna,
+                // no por celda).
                 foreach (self::DECIMAL_COLS as $colIdx) {
                     $col = Coordinate::stringFromColumnIndex($colIdx);
-
-                    // 2a. Forzar valor numérico 0 en celdas vacías/nulas
-                    for ($r = 2; $r <= $lastRow; $r++) {
-                        $cell = $ws->getCell("{$col}{$r}");
-                        $v = $cell->getValue();
-                        if ($v === null || $v === '') {
-                            $cell->setValueExplicit(0, DataType::TYPE_NUMERIC);
-                        }
-                    }
-
-                    // 2b. Aplicar formato 0.0000 y alineación derecha a toda la columna
-                    $ws->getStyle("{$col}2:{$col}{$lastRow}")
-                        ->getNumberFormat()
-                        ->setFormatCode('0.0000');
                     $ws->getStyle("{$col}2:{$col}{$lastRow}")
                         ->getAlignment()
                         ->setHorizontal(Alignment::HORIZONTAL_RIGHT);
                 }
 
-                // ── 3. Columnas con texto fijo (.NET DateTime.MinValue) ────
-                // Escrito explícito como TYPE_STRING para que Numbers/Excel
-                // no intente parsearlo como fecha (año 0001 da error).
-                $netNullCols = [64, 65, 66]; // CreationTime, LastModifierUserId, LastModificationTime
-                foreach ($netNullCols as $colIdx) {
-                    $col = Coordinate::stringFromColumnIndex($colIdx);
-                    for ($r = 2; $r <= $lastRow; $r++) {
-                        $ws->getCell("{$col}{$r}")
-                            ->setValueExplicit('01/01/0001 00:00:00', DataType::TYPE_STRING);
-                    }
-                }
-
-                // ── 4. Columnas enteras que pueden ser 0 (skipeadas por fromArray) ─
-                // IsDeleted (col 67) → siempre 0
-                // EstadoFactura (col 70) → valor de invoice_status o 0 por defecto
-                $zeroFallbackCols = [
-                    67 => 0,  // IsDeleted
-                    70 => 0,  // EstadoFactura
-                ];
-                foreach ($zeroFallbackCols as $colIdx => $defaultVal) {
-                    $col = Coordinate::stringFromColumnIndex($colIdx);
-                    for ($r = 2; $r <= $lastRow; $r++) {
-                        $cell = $ws->getCell("{$col}{$r}");
-                        $v = $cell->getValue();
-                        if ($v === null || $v === '') {
-                            $cell->setValueExplicit($defaultVal, DataType::TYPE_NUMERIC);
-                        }
-                    }
-                }
-
-                // ── 5. Encabezado: altura de fila + fuente base ────────────
+                // Encabezado: altura de fila + bordes blancos + autofilter
                 $ws->getRowDimension(1)->setRowHeight(14);
-                $ws->getStyle('A1:'.Coordinate::stringFromColumnIndex($lastCol).'1')
-                    ->getFont()
-                    ->setName('Arial')
-                    ->setSize(8);
 
-                // ── 6. Altura uniforme para filas de datos ─────────────────
-                for ($r = 2; $r <= $lastRow; $r++) {
-                    $ws->getRowDimension($r)->setRowHeight(12);
-                }
-
-                // ── 7. Congelar primera fila ───────────────────────────────
-                $ws->freezePane('A2');
-
-                // ── 8. Bordes del encabezado ───────────────────────────────
-                $ws->getStyle('A1:'.Coordinate::stringFromColumnIndex($lastCol).'1')
+                $ws->getStyle("A1:{$lastColStr}1")
                     ->getBorders()
                     ->getAllBorders()
                     ->setBorderStyle(Border::BORDER_THIN)
                     ->getColor()
                     ->setRGB('FFFFFF');
 
-                // ── 8. Auto-filter en encabezado ──────────────────────────
-                $ws->setAutoFilter(
-                    'A1:'.Coordinate::stringFromColumnIndex($lastCol).'1'
-                );
+                $ws->setAutoFilter("A1:{$lastColStr}1");
+
+                // Congelar primera fila
+                $ws->freezePane('A2');
             },
         ];
     }

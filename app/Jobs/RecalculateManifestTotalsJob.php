@@ -33,9 +33,24 @@ class RecalculateManifestTotalsJob implements ShouldQueue
 
     public int $timeout = 60;
 
+    /**
+     * Cola `high` — el usuario acaba de registrar/aprobar/cancelar una
+     * devolución y espera ver los totales actualizados al navegar de vuelta
+     * al manifiesto. Ponerlo detrás de exports pesados rompe esa UX.
+     *
+     * El job es ligero (6 queries agregadas + 1 update) y el timeout de
+     * 60s del supervisor-high cubre con margen su perfil real (< 1s).
+     *
+     * Nota: se setea vía onQueue() en vez de `public $queue = 'high'` porque
+     * en PHP 8.3 + Laravel 11 el trait Queueable ya declara `public $queue`
+     * sin valor, y declarar el mismo con valor inicial lanza Fatal error
+     * por conflicto de traits.
+     */
     public function __construct(
         protected int $manifestId,
-    ) {}
+    ) {
+        $this->onQueue('high');
+    }
 
     public function handle(): void
     {
