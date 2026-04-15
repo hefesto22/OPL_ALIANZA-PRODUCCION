@@ -199,7 +199,7 @@ class QueueContractTest extends TestCase
         }
 
         $classes = [];
-        $finder = (new Finder())->files()->in($path)->name('*.php');
+        $finder = (new Finder)->files()->in($path)->name('*.php');
 
         foreach ($finder as $file) {
             $contents = file_get_contents($file->getRealPath());

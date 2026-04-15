@@ -68,18 +68,7 @@ use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
  * Columnas con valor fijo de .NET DateTime vacío:
  *   CreationTime, LastModifierUserId, LastModificationTime = "01/01/0001 00:00:00"
  */
-class ReturnsDetailExport implements
-    FromQuery,
-    ShouldQueue,
-    WithChunkReading,
-    WithColumnFormatting,
-    WithColumnWidths,
-    WithEvents,
-    WithHeadings,
-    WithMapping,
-    WithStrictNullComparison,
-    WithStyles,
-    WithTitle
+class ReturnsDetailExport implements FromQuery, ShouldQueue, WithChunkReading, WithColumnFormatting, WithColumnWidths, WithEvents, WithHeadings, WithMapping, WithStrictNullComparison, WithStyles, WithTitle
 {
     use Exportable;
 

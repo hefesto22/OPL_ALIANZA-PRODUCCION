@@ -24,15 +24,7 @@ use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
  *
  * Cola: `reports` (ver config/horizon.php, supervisor-reports).
  */
-class DepositsExport implements
-    FromQuery,
-    ShouldAutoSize,
-    ShouldQueue,
-    WithChunkReading,
-    WithHeadings,
-    WithMapping,
-    WithStyles,
-    WithTitle
+class DepositsExport implements FromQuery, ShouldAutoSize, ShouldQueue, WithChunkReading, WithHeadings, WithMapping, WithStyles, WithTitle
 {
     use Exportable;
 

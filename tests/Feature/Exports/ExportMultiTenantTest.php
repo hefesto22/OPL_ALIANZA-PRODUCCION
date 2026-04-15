@@ -7,7 +7,6 @@ use App\Exports\ManifestsExport;
 use App\Exports\ReturnsDetailExport;
 use App\Exports\ReturnsExport;
 use App\Models\Deposit;
-use App\Models\Invoice;
 use App\Models\InvoiceReturn;
 use App\Models\Manifest;
 use App\Models\ReturnLine;

@@ -26,15 +26,7 @@ use Maatwebsite\Excel\Events\AfterSheet;
  *
  * Cola: `reports` (misma que los demás exports pesados).
  */
-class ReturnsExport implements
-    FromQuery,
-    ShouldAutoSize,
-    ShouldQueue,
-    WithChunkReading,
-    WithEvents,
-    WithHeadings,
-    WithMapping,
-    WithTitle
+class ReturnsExport implements FromQuery, ShouldAutoSize, ShouldQueue, WithChunkReading, WithEvents, WithHeadings, WithMapping, WithTitle
 {
     use Exportable;
 

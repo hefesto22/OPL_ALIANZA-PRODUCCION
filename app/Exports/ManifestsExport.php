@@ -24,15 +24,7 @@ use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
  *
  * Cola: `reports` (ver config/horizon.php, supervisor-reports).
  */
-class ManifestsExport implements
-    FromQuery,
-    ShouldAutoSize,
-    ShouldQueue,
-    WithChunkReading,
-    WithHeadings,
-    WithMapping,
-    WithStyles,
-    WithTitle
+class ManifestsExport implements FromQuery, ShouldAutoSize, ShouldQueue, WithChunkReading, WithHeadings, WithMapping, WithStyles, WithTitle
 {
     use Exportable;
 
