@@ -93,3 +93,13 @@ Schedule::command('activitylog:prune --days=90')
     ->dailyAt('03:30')
     ->name('limpiar-activity-log')
     ->withoutOverlapping();
+
+// ── Limpieza de exportaciones Excel no descargadas (retención 24h) ──────
+// Las exportaciones generadas en background (ShouldQueue) se almacenan en
+// storage/app/exports/. Se eliminan al descargarse (deleteFileAfterSend),
+// pero si el usuario borra la notificación sin descargar, el archivo queda
+// huérfano. Este comando limpia esos archivos después de 24 horas.
+Schedule::command('exports:clean --hours=24')
+    ->dailyAt('04:00')
+    ->name('limpiar-exports-huerfanos')
+    ->withoutOverlapping();

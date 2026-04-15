@@ -1,9 +1,15 @@
 <?php
 
 use App\Http\Controllers\DepositReceiptController;
+use App\Http\Controllers\ExportDownloadController;
 use App\Http\Controllers\PrintInvoicesController;
 use App\Http\Controllers\PrintReportsController;
 use Illuminate\Support\Facades\Route;
+
+// ── Descarga de exportaciones generadas en background ────────────────────
+Route::get('/exports/download', ExportDownloadController::class)
+    ->middleware(['web', 'auth'])
+    ->name('exports.download');
 
 // ── Comprobante de depósito (imagen privada, solo usuarios autenticados) ──
 // La imagen se guarda en el disco 'local' (fuera del public/) y solo se

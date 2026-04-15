@@ -126,20 +126,29 @@ class User extends Authenticatable implements FilamentUser
         return $this->hasMany(User::class, 'created_by');
     }
 
+    /**
+     * Obtiene los IDs de todos los usuarios descendientes (hijos, nietos, etc.)
+     * usando un CTE recursivo de PostgreSQL — O(1) queries sin importar
+     * la profundidad de la jerarquía.
+     *
+     * Antes: recursión PHP con N+1 queries por nivel (O(n) queries).
+     * Ahora: una sola query independientemente de niveles o cantidad de usuarios.
+     *
+     * @return array<int>
+     */
     public function getDescendantIds(): array
     {
-        $ids = [];
-        $directChildren = static::where('created_by', $this->id)->pluck('id')->toArray();
+        $rows = \Illuminate\Support\Facades\DB::select("
+            WITH RECURSIVE descendants AS (
+                SELECT id FROM users WHERE created_by = ?
+                UNION ALL
+                SELECT u.id FROM users u
+                INNER JOIN descendants d ON u.created_by = d.id
+            )
+            SELECT id FROM descendants
+        ", [$this->id]);
 
-        foreach ($directChildren as $childId) {
-            $ids[] = $childId;
-            $child = static::find($childId);
-            if ($child) {
-                $ids = array_merge($ids, $child->getDescendantIds());
-            }
-        }
-
-        return $ids;
+        return array_map(fn ($row) => (int) $row->id, $rows);
     }
 
     public function getVisibleUserIds(): array

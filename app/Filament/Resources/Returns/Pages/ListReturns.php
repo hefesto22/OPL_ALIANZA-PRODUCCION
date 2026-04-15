@@ -6,22 +6,61 @@ use App\Exports\ReturnsDetailExport;
 use App\Exports\ReturnsExport;
 use App\Filament\Resources\Returns\ReturnResource;
 use App\Filament\Resources\Returns\Tables\ReturnsTable;
+use App\Jobs\NotifyExportReady;
 use App\Models\Warehouse;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Actions\CreateAction;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Select;
+use Filament\Notifications\Notification;
+use Filament\Schemas\Components\Tabs\Tab;
 use Filament\Resources\Pages\ListRecords;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Crypt;
-use Maatwebsite\Excel\Facades\Excel;
 
 class ListReturns extends ListRecords
 {
     protected static string $resource = ReturnResource::class;
 
     protected static ?string $title = 'Devoluciones';
+
+    // ── Tabs de estado ─────────────────────────────────────────────────────
+    public function getTabs(): array
+    {
+        $baseQuery = ReturnResource::getEloquentQuery();
+
+        return [
+            'activas' => Tab::make('Activas')
+                ->icon('heroicon-o-check-circle')
+                ->badge(
+                    (clone $baseQuery)
+                        ->whereIn('status', ['pending', 'approved'])
+                        ->count()
+                )
+                ->badgeColor('success')
+                ->modifyQueryUsing(
+                    fn (Builder $query) => $query->whereIn('status', ['pending', 'approved'])
+                ),
+
+            'canceladas' => Tab::make('Canceladas')
+                ->icon('heroicon-o-x-circle')
+                ->badge(
+                    (clone $baseQuery)
+                        ->where('status', 'cancelled')
+                        ->count()
+                )
+                ->badgeColor('gray')
+                ->modifyQueryUsing(
+                    fn (Builder $query) => $query->where('status', 'cancelled')
+                ),
+
+            'todas' => Tab::make('Todas')
+                ->icon('heroicon-o-list-bullet'),
+        ];
+    }
 
     public function table(Table $table): Table
     {
@@ -55,9 +94,10 @@ class ListReturns extends ListRecords
                             ->label('Estado')
                             ->placeholder('Todos los estados')
                             ->options([
-                                'pending'  => 'Pendiente',
-                                'approved' => 'Aprobada',
-                                'rejected' => 'Rechazada',
+                                'pending'   => 'Pendiente',
+                                'approved'  => 'Aprobada',
+                                'rejected'  => 'Rechazada',
+                                'cancelled' => 'Cancelada',
                             ]),
 
                         Select::make('warehouse_id')
@@ -84,7 +124,7 @@ class ListReturns extends ListRecords
 
                 // ── Export Excel ───────────────────────────────────────
                 Action::make('export_excel')
-                    ->label('Exportar Excel')
+                    ->label('Excel Interno — Resumen simple')
                     ->icon('heroicon-o-document-chart-bar')
                     ->color('success')
                     ->schema([
@@ -102,9 +142,10 @@ class ListReturns extends ListRecords
                             ->label('Estado')
                             ->placeholder('Todos los estados')
                             ->options([
-                                'pending'  => 'Pendiente',
-                                'approved' => 'Aprobada',
-                                'rejected' => 'Rechazada',
+                                'pending'   => 'Pendiente',
+                                'approved'  => 'Aprobada',
+                                'rejected'  => 'Rechazada',
+                                'cancelled' => 'Cancelada',
                             ]),
 
                         Select::make('warehouse_id')
@@ -115,28 +156,38 @@ class ListReturns extends ListRecords
                                     ->pluck('name', 'id')
                             ),
                     ])
-                    ->modalHeading('Exportar Devoluciones — Excel')
-                    ->modalDescription('Seleccioná el período y filtros para exportar.')
+                    ->modalHeading('Exportar Devoluciones — Reporte Interno')
+                    ->modalDescription('Seleccioná el período y filtros. Se generará en segundo plano y te notificaremos cuando esté listo.')
                     ->modalSubmitActionLabel('Exportar')
-                    ->action(function (array $data): mixed {
-                        $filename = 'devoluciones_' . now()->format('Y-m-d') . '.xlsx';
+                    ->action(function (array $data): void {
+                        $fileName = 'devoluciones_interno_' . now()->format('Y-m-d') . '.xlsx';
+                        $filePath = "exports/{$fileName}";
 
-                        return Excel::download(
-                            new ReturnsExport(
-                                status:      $data['status']       ?? null,
-                                warehouseId: $data['warehouse_id'] ?? null,
-                                dateFrom:    $data['date_from']    ?? null,
-                                dateTo:      $data['date_to']      ?? null,
+                        (new ReturnsExport(
+                            status:      $data['status']       ?? null,
+                            warehouseId: $data['warehouse_id'] ?? null,
+                            dateFrom:    $data['date_from']    ?? null,
+                            dateTo:      $data['date_to']      ?? null,
+                        ))->queue($filePath, 'local')->chain([
+                            new NotifyExportReady(
+                                userId:   Auth::id(),
+                                filePath: $filePath,
+                                fileName: $fileName,
                             ),
-                            $filename
-                        );
+                        ]);
+
+                        Notification::make()
+                            ->title('Exportación en proceso')
+                            ->body("El archivo {$fileName} se está generando. Te notificaremos cuando esté listo.")
+                            ->info()
+                            ->send();
                     }),
 
                 // ── Exportación detallada línea por línea (formato Jaremar) ───
                 Action::make('export_excel_detail')
-                    ->label('Exportar Excel (Formato Jaremar)')
+                    ->label('Excel Jaremar — 71 columnas')
                     ->icon('heroicon-o-table-cells')
-                    ->color('success')
+                    ->color('warning')
                     ->schema([
                         DatePicker::make('date_from')
                             ->label('Fecha desde')
@@ -154,9 +205,10 @@ class ListReturns extends ListRecords
                             ->label('Estado')
                             ->placeholder('Todos los estados')
                             ->options([
-                                'pending'  => 'Pendiente',
-                                'approved' => 'Aprobada',
-                                'rejected' => 'Rechazada',
+                                'pending'   => 'Pendiente',
+                                'approved'  => 'Aprobada',
+                                'rejected'  => 'Rechazada',
+                                'cancelled' => 'Cancelada',
                             ]),
 
                         Select::make('warehouse_id')
@@ -170,24 +222,35 @@ class ListReturns extends ListRecords
                     ->modalHeading('Exportar Devoluciones — Formato Jaremar (71 columnas)')
                     ->modalDescription('Genera un Excel con el mismo formato de 71 columnas que provee Jaremar. Cada fila representa una línea de devolución.')
                     ->modalSubmitActionLabel('Exportar')
-                    ->action(function (array $data): mixed {
+                    ->action(function (array $data): void {
                         $from = $data['date_from'] ?? null;
                         $to   = $data['date_to']   ?? null;
 
                         $label    = $from && $to
                             ? \Carbon\Carbon::parse($from)->format('d-m-Y') . ' HASTA ' . \Carbon\Carbon::parse($to)->format('d-m-Y')
                             : now()->format('Y-m-d');
-                        $filename = "Devoluciones_{$label}.xlsx";
+                        $fileName = "Devoluciones_{$label}.xlsx";
+                        $filePath = "exports/{$fileName}";
 
-                        return Excel::download(
-                            new ReturnsDetailExport(
-                                dateFrom:    $from,
-                                dateTo:      $to,
-                                status:      $data['status']       ?? null,
-                                warehouseId: $data['warehouse_id'] ? (int) $data['warehouse_id'] : null,
+                        // Despachar a cola — ReturnsDetailExport implementa ShouldQueue
+                        (new ReturnsDetailExport(
+                            dateFrom:    $from,
+                            dateTo:      $to,
+                            status:      $data['status']       ?? null,
+                            warehouseId: isset($data['warehouse_id']) ? (int) $data['warehouse_id'] : null,
+                        ))->queue($filePath, 'local')->chain([
+                            new NotifyExportReady(
+                                userId:   Auth::id(),
+                                filePath: $filePath,
+                                fileName: $fileName,
                             ),
-                            $filename
-                        );
+                        ]);
+
+                        Notification::make()
+                            ->title('Exportación en proceso')
+                            ->body("El archivo {$fileName} se está generando. Te notificaremos cuando esté listo.")
+                            ->info()
+                            ->send();
                     }),
 
             ])

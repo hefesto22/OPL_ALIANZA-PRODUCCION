@@ -139,6 +139,7 @@ class ActivityLogResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->modifyQueryUsing(fn (Builder $query) => $query->with(['causer:id,name']))
             ->columns([
                 TextColumn::make('log_name')
                     ->label('Tipo')

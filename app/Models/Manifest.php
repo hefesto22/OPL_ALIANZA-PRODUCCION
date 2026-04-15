@@ -216,10 +216,11 @@ class Manifest extends Model
             ")
             ->first();
 
-        // Returns: 2 agregados en 1 query.
+        // Returns: 2 agregados en 1 query (excluye canceladas).
         //   - total_returns: sólo las aprobadas
-        //   - returns_count: todas
+        //   - returns_count: activas (pending + approved)
         $returnStats = $this->returns()
+            ->where('status', '!=', 'cancelled')
             ->selectRaw("
                 COALESCE(SUM(CASE WHEN status = 'approved' THEN total ELSE 0 END), 0) AS total_returns,
                 COUNT(*)                                                              AS returns_count
@@ -264,6 +265,7 @@ class Manifest extends Model
         // en UNA sola query. Antes se lanzaban 2 queries por cada bodega (N×2),
         // causando un problema N+1 cuando hay muchas bodegas en el manifiesto.
         $returnsByWarehouse = $this->returns()
+            ->where('status', '!=', 'cancelled')
             ->selectRaw(
                 'warehouse_id, ' .
                 "COALESCE(SUM(CASE WHEN status = 'approved' THEN total ELSE 0 END), 0) AS total_returns, " .

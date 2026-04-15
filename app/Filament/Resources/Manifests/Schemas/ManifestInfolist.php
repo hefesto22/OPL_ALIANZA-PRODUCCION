@@ -213,6 +213,7 @@ class ManifestInfolist
                                     if ($user->warehouse_id) {
                                         return (int) $record->returns()
                                             ->where('warehouse_id', $user->warehouse_id)
+                                            ->where('status', '!=', 'cancelled')
                                             ->count();
                                     }
                                     return (int) $record->returns_count;

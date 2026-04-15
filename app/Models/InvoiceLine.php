@@ -19,16 +19,18 @@ class InvoiceLine extends Model
         'cost', 'price', 'price_min_sale',
         'subtotal', 'discount', 'discount_percent',
         'tax', 'tax_percent', 'tax18', 'total',
+        'returned_quantity',
         'weight', 'volume',
     ];
 
     protected function casts(): array
     {
         return [
-            'total'    => 'decimal:2',
-            'subtotal' => 'decimal:2',
-            'tax'      => 'decimal:2',
-            'discount' => 'decimal:2',
+            'total'             => 'decimal:2',
+            'subtotal'          => 'decimal:2',
+            'tax'               => 'decimal:2',
+            'discount'          => 'decimal:2',
+            'returned_quantity' => 'decimal:4',
         ];
     }
 
@@ -46,13 +48,18 @@ class InvoiceLine extends Model
 
     // ─── Helpers ──────────────────────────────────────────────
 
-    public function getReturnedQuantityAttribute(): float
-    {
-        return $this->returnLines()->sum('quantity');
-    }
-
+    /**
+     * Cantidad restante disponible para devolución.
+     *
+     * `returned_quantity` es columna pre-calculada en fracciones:
+     * SUM(cajas × conversion_factor + unidades) de devoluciones
+     * aprobadas + pendientes. Se actualiza en ReturnService.
+     *
+     * Antes era un accessor N+1 que además tenía un bug: solo sumaba
+     * unidades sueltas sin considerar cajas × factor de conversión.
+     */
     public function getRemainingQuantityAttribute(): float
     {
-        return $this->quantity_fractions - $this->returned_quantity;
+        return (float) $this->quantity_fractions - (float) $this->returned_quantity;
     }
 }

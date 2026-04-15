@@ -28,6 +28,7 @@ class InvoiceReturn extends Model
         'return_date', 'processed_date', 'processed_time',
         'total', 'rejection_reason',
         'created_by', 'reviewed_by', 'reviewed_at',
+        'cancelled_at', 'cancelled_by', 'cancellation_reason',
     ];
 
     protected function casts(): array
@@ -36,6 +37,7 @@ class InvoiceReturn extends Model
             'return_date'    => 'date',
             'processed_date' => 'date',
             'reviewed_at'    => 'datetime',
+            'cancelled_at'   => 'datetime',
             'total'          => 'decimal:2',
         ];
     }
@@ -63,6 +65,16 @@ class InvoiceReturn extends Model
     public function scopeRejected($query)
     {
         return $query->where('status', 'rejected');
+    }
+
+    public function scopeCancelled($query)
+    {
+        return $query->where('status', 'cancelled');
+    }
+
+    public function scopeActive($query)
+    {
+        return $query->whereIn('status', ['pending', 'approved']);
     }
 
     // ─── Relaciones ───────────────────────────────────────────
@@ -102,6 +114,11 @@ class InvoiceReturn extends Model
         return $this->belongsTo(User::class, 'reviewed_by');
     }
 
+    public function cancelledBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'cancelled_by');
+    }
+
     // ─── Helpers ──────────────────────────────────────────────
 
     public function isPending(): bool
@@ -117,6 +134,11 @@ class InvoiceReturn extends Model
     public function isRejected(): bool
     {
         return $this->status === 'rejected';
+    }
+
+    public function isCancelled(): bool
+    {
+        return $this->status === 'cancelled';
     }
 
     /**

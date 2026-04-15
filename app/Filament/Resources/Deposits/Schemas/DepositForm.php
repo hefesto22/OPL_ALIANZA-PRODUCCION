@@ -29,6 +29,7 @@ class DepositForm
                     Select::make('manifest_id')
                         ->label('Manifiesto')
                         ->required()
+                        ->rules(['exists:manifests,id'])
                         ->options(function (?Deposit $record) {
                             // Manifiestos con saldo pendiente, filtrados por bodega del usuario
                             $query = Manifest::query()

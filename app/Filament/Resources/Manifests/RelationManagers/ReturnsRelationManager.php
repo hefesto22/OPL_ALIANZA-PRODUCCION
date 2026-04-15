@@ -35,6 +35,12 @@ class ReturnsRelationManager extends RelationManager
         $isClosed = $this->getOwnerRecord()->isClosed();
 
         return $table
+            ->modifyQueryUsing(fn ($query) => $query->with([
+                'invoice:id,invoice_number',
+                'warehouse:id,code',
+                'returnReason:id,code,description',
+                'reviewedBy:id,name',
+            ]))
             ->columns([
                 // Prefijo DEV- hace el ID más legible y evita confundirlo
                 // con el número de factura u otros IDs del sistema.

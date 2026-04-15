@@ -27,6 +27,7 @@ class ViewReturn extends ViewRecord
                 ->label('Editar')
                 ->icon('heroicon-o-pencil-square')
                 ->visible(fn (): bool =>
+                    ! $this->record->isCancelled() &&
                     ! $this->record->manifest->isClosed() &&
                     $this->record->isEditableToday()
                 )
@@ -106,22 +107,25 @@ class ViewReturn extends ViewRecord
                             ->label('Estado')
                             ->badge()
                             ->color(fn ($state) => match ($state) {
-                                'pending'  => 'warning',
-                                'approved' => 'success',
-                                'rejected' => 'danger',
-                                default    => 'gray',
+                                'pending'   => 'warning',
+                                'approved'  => 'success',
+                                'rejected'  => 'danger',
+                                'cancelled' => 'gray',
+                                default     => 'gray',
                             })
                             ->formatStateUsing(fn ($state) => match ($state) {
-                                'pending'  => 'Pendiente',
-                                'approved' => 'Aprobada',
-                                'rejected' => 'Rechazada',
-                                default    => $state,
+                                'pending'   => 'Pendiente',
+                                'approved'  => 'Aprobada',
+                                'rejected'  => 'Rechazada',
+                                'cancelled' => 'Cancelada',
+                                default     => $state,
                             })
                             ->icon(fn ($state) => match ($state) {
-                                'pending'  => 'heroicon-m-clock',
-                                'approved' => 'heroicon-m-check-circle',
-                                'rejected' => 'heroicon-m-x-circle',
-                                default    => null,
+                                'pending'   => 'heroicon-m-clock',
+                                'approved'  => 'heroicon-m-check-circle',
+                                'rejected'  => 'heroicon-m-x-circle',
+                                'cancelled' => 'heroicon-m-no-symbol',
+                                default     => null,
                             }),
 
                         TextEntry::make('type')
@@ -217,6 +221,32 @@ class ViewReturn extends ViewRecord
                         ->label('')
                         ->color('danger')
                         ->icon('heroicon-m-chat-bubble-left-ellipsis'),
+                ]),
+
+            // ── Cancelación (condicional) ────────────────────────────────
+            Section::make('Información de Cancelación')
+                ->icon('heroicon-o-no-symbol')
+                ->collapsible()
+                ->visible(fn () => $this->record->isCancelled())
+                ->schema([
+                    Grid::make(3)->schema([
+                        TextEntry::make('cancellation_reason')
+                            ->label('Motivo')
+                            ->icon('heroicon-m-chat-bubble-left-ellipsis')
+                            ->color('gray')
+                            ->columnSpan(2),
+
+                        TextEntry::make('cancelledBy.name')
+                            ->label('Cancelado por')
+                            ->icon('heroicon-m-user')
+                            ->placeholder('—'),
+
+                        TextEntry::make('cancelled_at')
+                            ->label('Fecha de cancelación')
+                            ->dateTime('d/m/Y H:i')
+                            ->icon('heroicon-m-calendar')
+                            ->placeholder('—'),
+                    ]),
                 ]),
 
             // ── Fila 4: Líneas Devueltas ──────────────────────────────────

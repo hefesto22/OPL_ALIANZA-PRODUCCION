@@ -4,6 +4,8 @@ namespace App\Exports;
 
 use App\Models\ReturnLine;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Maatwebsite\Excel\Concerns\Exportable;
 use Maatwebsite\Excel\Concerns\FromQuery;
 use Maatwebsite\Excel\Concerns\ShouldAutoSize;
 use Maatwebsite\Excel\Concerns\WithEvents;
@@ -40,8 +42,10 @@ use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
  * Columnas con valor fijo de .NET DateTime vacío:
  *   CreationTime, LastModifierUserId, LastModificationTime = "01/01/0001 00:00:00"
  */
-class ReturnsDetailExport implements FromQuery, WithHeadings, WithMapping, WithStyles, WithEvents, ShouldAutoSize, WithTitle
+class ReturnsDetailExport implements FromQuery, WithHeadings, WithMapping, WithStyles, WithEvents, ShouldAutoSize, WithTitle, ShouldQueue
 {
+    use Exportable;
+
     // ─── Índices (1-based) de columnas que deben tener formato 0.0000 ─────
     // D=4  E=5  J=10  AJ=36  AK=37  AR=44 … BK=63
     private const DECIMAL_COLS = [4, 5, 10, 36, 37, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63];

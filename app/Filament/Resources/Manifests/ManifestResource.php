@@ -94,7 +94,7 @@ class ManifestResource extends Resource
     {
         $query = parent::getEloquentQuery()
             ->withoutGlobalScopes([SoftDeletingScope::class])
-            ->with(['supplier', 'warehouse', 'warehouseTotals']);
+            ->with(['supplier', 'warehouse', 'warehouseTotals', 'closedBy:id,name']);
 
         /** @var \App\Models\User $user */
         $user = Auth::user();

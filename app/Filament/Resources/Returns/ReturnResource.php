@@ -25,7 +25,7 @@ class ReturnResource extends Resource
     public static function getEloquentQuery(): Builder
     {
         $query = parent::getEloquentQuery()
-            ->with(['invoice', 'returnReason', 'warehouse', 'manifest']);
+            ->with(['invoice', 'returnReason', 'warehouse', 'manifest', 'createdBy:id,name']);
 
         /** @var \App\Models\User $user */
         $user = Auth::user();

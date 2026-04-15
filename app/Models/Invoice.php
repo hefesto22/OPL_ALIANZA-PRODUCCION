@@ -25,7 +25,7 @@ class Invoice extends Model
         'importe_exonerado_desc', 'importe_exonerado_isv18', 'importe_exonerado_isv15',
         'importe_exonerado_total', 'importe_gravado', 'importe_gravado_desc',
         'importe_gravado_isv18', 'importe_gravado_isv15', 'importe_gravado_total',
-        'discounts', 'isv18', 'isv15', 'total', 'is_printed', 'printed_at',
+        'discounts', 'isv18', 'isv15', 'total', 'total_returns', 'is_printed', 'printed_at',
     ];
 
     protected function casts(): array
@@ -37,6 +37,7 @@ class Invoice extends Model
             'printed_at'       => 'datetime',
             'is_printed'       => 'boolean',
             'total'            => 'decimal:2',
+            'total_returns'    => 'decimal:2',
             'longitude'        => 'decimal:7',
             'latitude'         => 'decimal:7',
         ];
@@ -98,13 +99,15 @@ class Invoice extends Model
 
     // ─── Helpers ──────────────────────────────────────────────
 
-    public function getTotalReturnsAttribute(): float
-    {
-        return $this->returns()->sum('total');
-    }
-
+    /**
+     * Saldo neto = total factura - total devuelto (aprobado + pendiente).
+     *
+     * `total_returns` es una columna pre-calculada que se actualiza
+     * en ReturnService cada vez que una devolución cambia de estado.
+     * Antes era un accessor con query N+1; ahora es O(1).
+     */
     public function getNetTotalAttribute(): float
     {
-        return $this->total - $this->total_returns;
+        return (float) $this->total - (float) $this->total_returns;
     }
 }

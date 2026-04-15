@@ -101,6 +101,7 @@ class UserForm
                             ->options(Warehouse::pluck('code', 'id'))
                             ->searchable()
                             ->nullable()
+                            ->rules(['nullable', 'exists:warehouses,id'])
                             ->placeholder('Sin bodega (Admin / Haremar)')
                             ->helperText('Solo asignar bodega a usuarios operadores. Dejar vacío para admins y Haremar.')
                             ->prefixIcon('heroicon-o-building-storefront'),

@@ -166,7 +166,8 @@ class RegistrarDevolucionAction
                                 ->label('Fecha de Devolución')
                                 ->required()
                                 ->default(today())
-                                ->maxDate(today()),
+                                ->disabled()
+                                ->dehydrated(true),
                         ]),
                     ]),
 
@@ -185,10 +186,12 @@ class RegistrarDevolucionAction
                                     $price      = (float) ($line['unit_price'] ?? 0);
 
                                     if ($unitSale === 'CJ') {
-                                        $maxBoxes                      = (int) ($line['available_boxes'] ?? 0);
+                                        $available                     = (float) ($line['available_quantity'] ?? 0);
+                                        $maxBoxes                      = (int) floor($available / $convFactor);
+                                        $looseUnits                    = $available - ($maxBoxes * $convFactor);
                                         $lines[$key]['quantity_box']   = $maxBoxes;
-                                        $lines[$key]['quantity']       = 0;
-                                        $lines[$key]['line_total']     = round($maxBoxes * $convFactor * $price, 2);
+                                        $lines[$key]['quantity']       = max(0, round($looseUnits, 4));
+                                        $lines[$key]['line_total']     = round($available * $price, 2);
                                     } else {
                                         $maxUnits                      = (float) ($line['available_quantity'] ?? 0);
                                         $lines[$key]['quantity']       = $maxUnits;
@@ -225,28 +228,26 @@ class RegistrarDevolucionAction
                                 Hidden::make('conversion_factor'),
                                 Hidden::make('unit_price'),
                                 Hidden::make('price_per_box'),
+                                Hidden::make('unit_sale'),
 
-                                // ── Fila única: identificación + cantidad + total ──
+                                // ── Fila: identificación + cantidades + subtotal ──
+                                // Desktop (lg): #(1)+Cód(2)+Desc(3)+[Cajas(2)+Sueltas(2)|Cant(3)]+Total(2~3)=12
+                                // Móvil (default): todo full-width apilado
                                 Grid::make(12)->schema([
                                     TextInput::make('line_number')
                                         ->label('#')
                                         ->disabled()->dehydrated(true)
-                                        ->columnSpan(1),
+                                        ->columnSpan(['default' => 'full', 'lg' => 1]),
 
                                     TextInput::make('product_id')
                                         ->label('Código')
                                         ->disabled()->dehydrated(true)
-                                        ->columnSpan(2),
+                                        ->columnSpan(['default' => 'full', 'lg' => 2]),
 
                                     TextInput::make('product_description')
                                         ->label('Descripción')
                                         ->disabled()->dehydrated(true)
-                                        ->columnSpan(4),
-
-                                    TextInput::make('unit_sale')
-                                        ->label('Unidad')
-                                        ->disabled()->dehydrated(true)
-                                        ->columnSpan(1),
+                                        ->columnSpan(['default' => 'full', 'lg' => 3]),
 
                                     // ── Cajas (solo CJ) ───────────────────────
                                     TextInput::make('quantity_box')
@@ -259,62 +260,100 @@ class RegistrarDevolucionAction
                                             $pricePerBox = (float) ($get('price_per_box') ?? 0);
                                             $maxBoxes    = (int) ($get('available_boxes') ?? 0);
                                             if ($pricePerBox > 0) {
-                                                return 'L.' . number_format($pricePerBox, 2) . ' / caja  ·  máx: ' . $maxBoxes;
+                                                return 'L' . number_format($pricePerBox, 2) . ' /caja · máx: ' . $maxBoxes;
                                             }
-                                            return 'Bonificación  ·  máx: ' . $maxBoxes;
+                                            return 'Bonificación · máx: ' . $maxBoxes;
                                         })
                                         ->afterStateUpdated(function ($state, Get $get, Set $set): void {
                                             $boxes      = max(0, (int) $state);
                                             $maxBoxes   = (int) ($get('available_boxes') ?? 0);
                                             $convFactor = max(1, (int) ($get('conversion_factor') ?? 1));
                                             $price      = (float) ($get('unit_price') ?? 0);
+                                            $looseUnits = max(0, (float) $get('quantity'));
 
                                             if ($boxes > $maxBoxes) {
                                                 $boxes = $maxBoxes;
                                                 $set('quantity_box', $boxes);
                                             }
 
-                                            // Para CJ: total = cajas × factor × precio_unitario
-                                            $set('line_total', round($boxes * $convFactor * $price, 2));
+                                            $totalFractions = ($boxes * $convFactor) + $looseUnits;
+                                            $available      = (float) $get('available_quantity');
+                                            if ($totalFractions > $available) {
+                                                $looseUnits = max(0, $available - ($boxes * $convFactor));
+                                                $set('quantity', $looseUnits);
+                                            }
+
+                                            $set('line_total', round((($boxes * $convFactor) + $looseUnits) * $price, 2));
                                         })
                                         ->hidden(fn (Get $get) => ($get('unit_sale') ?? 'UN') !== 'CJ')
-                                        ->columnSpan(2),
+                                        ->columnSpan(['default' => 'full', 'lg' => 2]),
 
-                                    // ── Unidades (solo UN) ────────────────────
+                                    // ── Unidades sueltas (CJ) o Cantidad (UN) ──
                                     TextInput::make('quantity')
-                                        ->label('Cant. a Dev.')
+                                        ->label(fn (Get $get) => ($get('unit_sale') ?? 'UN') === 'CJ' ? 'Uds. Sueltas' : 'Cant. a Dev.')
                                         ->numeric()
                                         ->default(0)
                                         ->minValue(0)
                                         ->live(debounce: 500)
                                         ->helperText(function (Get $get): string {
                                             $unitPrice = (float) ($get('unit_price') ?? 0);
-                                            $maxQty    = (float) ($get('available_quantity') ?? 0);
-                                            if ($unitPrice > 0) {
-                                                return 'L.' . number_format($unitPrice, 2) . ' / un.  ·  máx: ' . number_format($maxQty, 0);
+                                            $isCJ      = ($get('unit_sale') ?? 'UN') === 'CJ';
+
+                                            if ($isCJ) {
+                                                $convFactor = max(1, (float) $get('conversion_factor'));
+                                                $boxes      = max(0, (float) $get('quantity_box'));
+                                                $available  = (float) ($get('available_quantity') ?? 0);
+                                                $maxLoose   = max(0, $available - ($boxes * $convFactor));
+                                                $priceLabel = $unitPrice > 0
+                                                    ? 'L' . number_format($unitPrice, 2) . ' /ud.'
+                                                    : 'Bonificación';
+                                                return $priceLabel . ' · máx: ' . number_format($maxLoose, 0);
                                             }
-                                            return 'Bonificación  ·  máx: ' . number_format($maxQty, 0);
+
+                                            $maxQty = (float) ($get('available_quantity') ?? 0);
+                                            if ($unitPrice > 0) {
+                                                return 'L' . number_format($unitPrice, 2) . ' /ud. · máx: ' . number_format($maxQty, 0);
+                                            }
+                                            return 'Bonificación · máx: ' . number_format($maxQty, 0);
                                         })
                                         ->afterStateUpdated(function ($state, Get $get, Set $set): void {
-                                            $qty    = max(0, (float) $state);
-                                            $maxQty = (float) ($get('available_quantity') ?? 0);
-                                            $price  = (float) ($get('unit_price') ?? 0);
+                                            $units = max(0, (float) $state);
+                                            $price = (float) ($get('unit_price') ?? 0);
+                                            $isCJ  = ($get('unit_sale') ?? 'UN') === 'CJ';
 
-                                            if ($qty > $maxQty) {
-                                                $qty = $maxQty;
-                                                $set('quantity', $qty);
+                                            if ($isCJ) {
+                                                $convFactor = max(1, (float) $get('conversion_factor'));
+                                                $boxes      = max(0, (float) $get('quantity_box'));
+                                                $available  = (float) $get('available_quantity');
+                                                $maxLoose   = max(0, $available - ($boxes * $convFactor));
+
+                                                if ($units > $maxLoose) {
+                                                    $units = $maxLoose;
+                                                    $set('quantity', $units);
+                                                }
+
+                                                $set('line_total', round((($boxes * $convFactor) + $units) * $price, 2));
+                                            } else {
+                                                $maxQty = (float) $get('available_quantity');
+                                                if ($units > $maxQty) {
+                                                    $units = $maxQty;
+                                                    $set('quantity', $units);
+                                                }
+
+                                                $set('line_total', round($units * $price, 2));
                                             }
-
-                                            $set('line_total', round($qty * $price, 2));
                                         })
-                                        ->hidden(fn (Get $get) => ($get('unit_sale') ?? 'UN') === 'CJ')
-                                        ->columnSpan(2),
+                                        ->columnSpan(fn (Get $get) => ($get('unit_sale') ?? 'UN') === 'CJ'
+                                            ? ['default' => 'full', 'lg' => 2]
+                                            : ['default' => 'full', 'lg' => 3]),
 
                                     TextInput::make('line_total')
                                         ->label('Total a Dev.')
                                         ->prefix('L.')
                                         ->disabled()->dehydrated(true)
-                                        ->columnSpan(2),
+                                        ->columnSpan(fn (Get $get) => ($get('unit_sale') ?? 'UN') === 'CJ'
+                                            ? ['default' => 'full', 'lg' => 2]
+                                            : ['default' => 'full', 'lg' => 3]),
                                 ]),
                             ])
                             ->addable(false)

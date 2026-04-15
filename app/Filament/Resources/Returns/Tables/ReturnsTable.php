@@ -4,12 +4,15 @@ namespace App\Filament\Resources\Returns\Tables;
 
 use App\Models\InvoiceReturn;
 use App\Models\User;
+use App\Services\ReturnService;
 use Filament\Tables\Table;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Actions\ViewAction;
-use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
+use Filament\Actions\Action;
+use Filament\Forms\Components\Textarea;
+use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\Auth;
 
 class ReturnsTable
@@ -70,16 +73,18 @@ class ReturnsTable
                     ->label('Estado')
                     ->badge()
                     ->formatStateUsing(fn($state) => match($state) {
-                        'pending'  => 'Pendiente',
-                        'approved' => 'Aprobada',
-                        'rejected' => 'Rechazada',
-                        default    => $state,
+                        'pending'   => 'Pendiente',
+                        'approved'  => 'Aprobada',
+                        'rejected'  => 'Rechazada',
+                        'cancelled' => 'Cancelada',
+                        default     => $state,
                     })
                     ->color(fn($state) => match($state) {
-                        'pending'  => 'warning',
-                        'approved' => 'success',
-                        'rejected' => 'danger',
-                        default    => 'gray',
+                        'pending'   => 'warning',
+                        'approved'  => 'success',
+                        'rejected'  => 'danger',
+                        'cancelled' => 'gray',
+                        default     => 'gray',
                     }),
 
                 TextColumn::make('total')
@@ -107,9 +112,10 @@ class ReturnsTable
                 SelectFilter::make('status')
                     ->label('Estado')
                     ->options([
-                        'pending'  => 'Pendiente',
-                        'approved' => 'Aprobada',
-                        'rejected' => 'Rechazada',
+                        'pending'   => 'Pendiente',
+                        'approved'  => 'Aprobada',
+                        'rejected'  => 'Rechazada',
+                        'cancelled' => 'Cancelada',
                     ]),
 
                 SelectFilter::make('type')
@@ -132,9 +138,41 @@ class ReturnsTable
             ->recordActions([
                 ViewAction::make(),
 
-                EditAction::make(),
+                EditAction::make()
+                    ->hidden(fn (InvoiceReturn $record): bool =>
+                        $record->isCancelled() ||
+                        $record->manifest->isClosed() ||
+                        ! $record->isEditableToday()
+                    ),
 
-                DeleteAction::make(),
+                Action::make('cancelar')
+                    ->label('Cancelar')
+                    ->icon('heroicon-o-x-circle')
+                    ->color('danger')
+                    ->requiresConfirmation()
+                    ->modalHeading('Cancelar devolución')
+                    ->modalDescription('¿Estás seguro de cancelar esta devolución? Los totales del manifiesto y el estado de la factura se recalcularán.')
+                    ->schema([
+                        Textarea::make('cancellation_reason')
+                            ->label('Motivo de cancelación')
+                            ->placeholder('Ej: Error en cantidad, producto equivocado, duplicada...')
+                            ->required()
+                            ->maxLength(500)
+                            ->rows(3),
+                    ])
+                    ->action(function (InvoiceReturn $record, array $data): void {
+                        app(ReturnService::class)->cancelReturn($record, $data['cancellation_reason']);
+
+                        Notification::make()
+                            ->title('Devolución cancelada')
+                            ->body('Los totales del manifiesto y el estado de la factura fueron recalculados.')
+                            ->success()
+                            ->send();
+                    })
+                    ->hidden(fn (InvoiceReturn $record): bool =>
+                        $record->isCancelled() ||
+                        $record->manifest->isClosed()
+                    ),
             ])
             ->defaultSort('id', 'desc')
             ->striped();

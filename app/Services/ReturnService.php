@@ -599,24 +599,142 @@ class ReturnService
     {
         $invoice->refresh();
 
-        $totalApproved = (float) $invoice->returns()
-            ->where('status', 'approved')
-            ->sum('total');
+        // ── Recalcular total_returns (columna desnormalizada) ────────
+        // Suma aprobadas + pendientes. Rechazadas = mercadería NO devuelta,
+        // no deben reducir el saldo del cliente.
+        $returnStats = $invoice->returns()
+            ->selectRaw("
+                COALESCE(SUM(CASE WHEN status = 'approved' THEN total ELSE 0 END), 0) AS total_approved,
+                COALESCE(SUM(CASE WHEN status = 'pending'  THEN total ELSE 0 END), 0) AS total_pending,
+                SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending_count
+            ")
+            ->first();
 
-        $hasPending = $invoice->returns()
-            ->where('status', 'pending')
-            ->exists();
+        $totalApproved = (float) ($returnStats->total_approved ?? 0);
+        $totalReturns  = $totalApproved + (float) ($returnStats->total_pending ?? 0);
+        $hasPending    = ((int) ($returnStats->pending_count ?? 0)) > 0;
 
         $hasAvailable = $this->hasAvailableLines($invoice);
 
-        if ($totalApproved <= 0 && !$hasPending) {
-            $invoice->update(['status' => 'imported']);
+        // Determinamos el nuevo status + total_returns en un solo update.
+        $newStatus = match (true) {
+            $totalApproved <= 0 && !$hasPending => 'imported',
+            !$hasAvailable && !$hasPending      => 'returned',
+            default                             => 'partial_return',
+        };
 
-        } elseif (!$hasAvailable && !$hasPending) {
-            $invoice->update(['status' => 'returned']);
+        $invoice->update([
+            'status'        => $newStatus,
+            'total_returns' => $totalReturns,
+        ]);
 
-        } else {
-            $invoice->update(['status' => 'partial_return']);
+        // ── Recalcular returned_quantity en invoice_lines ───────────
+        // Una sola query UPDATE...FROM que recalcula TODAS las líneas
+        // de esta factura de golpe. Fórmula en fracciones:
+        // SUM(cajas × MAX(conversion_factor, 1) + unidades)
+        // Solo devoluciones aprobadas + pendientes, no eliminadas.
+        $this->recalculateLineReturnedQuantities($invoice->id);
+    }
+
+    /**
+     * Recalcula `returned_quantity` para todas las líneas de una factura.
+     *
+     * Usa UPDATE...FROM con subquery agrupada: una sola query para
+     * todas las líneas sin importar cuántas tenga la factura.
+     *
+     * Primero resetea a 0 todas las líneas de la factura (para cubrir
+     * líneas que ya no tienen devoluciones), y luego aplica los valores
+     * calculados desde return_lines.
+     */
+    protected function recalculateLineReturnedQuantities(int $invoiceId): void
+    {
+        // Paso 1: resetear a 0 todas las líneas de la factura.
+        // Esto cubre líneas que antes tenían devoluciones pero ya no
+        // (p.ej. se eliminó la última devolución que las tocaba).
+        DB::table('invoice_lines')
+            ->where('invoice_id', $invoiceId)
+            ->where('returned_quantity', '>', 0)
+            ->update(['returned_quantity' => 0]);
+
+        // Paso 2: calcular y aplicar los valores reales.
+        // CASE WHEN reemplaza GREATEST() por portabilidad (ver nota en
+        // getReturnedQuantitiesForLines).
+        DB::statement("
+            UPDATE invoice_lines
+            SET returned_quantity = sub.total_returned
+            FROM (
+                SELECT
+                    rl.invoice_line_id,
+                    COALESCE(SUM(
+                        rl.quantity_box * (
+                            CASE WHEN COALESCE(il.conversion_factor, 1) < 1
+                                 THEN 1
+                                 ELSE COALESCE(il.conversion_factor, 1)
+                            END
+                        ) + rl.quantity
+                    ), 0) AS total_returned
+                FROM return_lines rl
+                JOIN invoice_lines il ON rl.invoice_line_id = il.id
+                JOIN returns r ON rl.return_id = r.id
+                WHERE r.deleted_at IS NULL
+                  AND r.status IN ('approved', 'pending')
+                  AND il.invoice_id = ?
+                GROUP BY rl.invoice_line_id
+            ) AS sub
+            WHERE invoice_lines.id = sub.invoice_line_id
+        ", [$invoiceId]);
+    }
+
+    // ─── Cancelar devolución ─────────────────────────────────
+
+    /**
+     * Cancela una devolución: cambia status a 'cancelled',
+     * recalcula totales del manifiesto y refresca el status de la factura.
+     *
+     * A diferencia del soft-delete, el registro permanece visible
+     * para trazabilidad y auditoría.
+     */
+    /**
+     * Cancela una devolución y registra quién la canceló, cuándo y por qué.
+     *
+     * @param  InvoiceReturn  $return
+     * @param  string|null    $reason  Motivo de cancelación (obligatorio desde UI)
+     * @return void
+     */
+    public function cancelReturn(InvoiceReturn $return, ?string $reason = null): void
+    {
+        if ($return->isCancelled()) {
+            return;
+        }
+
+        $wasApproved    = $return->isApproved();
+        $processedDate  = $return->processed_date?->toDateString();
+
+        DB::transaction(function () use ($return, $reason) {
+            $return->update([
+                'status'              => 'cancelled',
+                'cancelled_at'        => now(),
+                'cancelled_by'        => auth()->id(),
+                'cancellation_reason' => $reason,
+            ]);
+        });
+
+        // Recalcular returned_quantity de las líneas de la factura
+        $this->recalculateLineReturnedQuantities($return->invoice_id);
+
+        // Recalcular totales del manifiesto
+        Manifest::find($return->manifest_id)?->recalculateTotals();
+        RecalculateManifestTotalsJob::dispatch($return->manifest_id);
+
+        // Refrescar status de la factura (devuelta → parcial → importada)
+        $invoice = $return->invoice()->first();
+        if ($invoice) {
+            $this->refreshInvoiceStatus($invoice);
+        }
+
+        // Invalidar cache de Jaremar si era aprobada
+        if ($wasApproved && $processedDate) {
+            $this->invalidateDevolucionesCache($processedDate);
         }
     }
 }

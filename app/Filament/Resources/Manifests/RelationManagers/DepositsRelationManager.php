@@ -33,6 +33,7 @@ class DepositsRelationManager extends RelationManager
     public function table(Table $table): Table
     {
         return $table
+            ->modifyQueryUsing(fn ($query) => $query->with(['createdBy:id,name']))
             ->columns([
                 TextColumn::make('deposit_date')
                     ->label('Fecha de Depósito')

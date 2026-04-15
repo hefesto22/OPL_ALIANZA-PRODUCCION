@@ -7,8 +7,9 @@ use App\Filament\Resources\Returns\Schemas\ReturnForm;
 use App\Models\Invoice;
 use App\Models\InvoiceReturn;
 use App\Services\ReturnService;
-use Filament\Actions\DeleteAction;
+use Filament\Actions\Action;
 use Filament\Actions\ViewAction;
+use Filament\Forms\Components\Textarea;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
 use Filament\Schemas\Schema;
@@ -24,7 +25,21 @@ class EditReturn extends EditRecord
     {
         parent::mount($record);
 
-        // Guard 1: manifiesto cerrado.
+        // Guard 1: devolución cancelada.
+        if ($this->record->isCancelled()) {
+            Notification::make()
+                ->title('Devolución cancelada')
+                ->body('No se puede editar una devolución cancelada.')
+                ->warning()
+                ->send();
+
+            $this->redirect(
+                $this->getResource()::getUrl('view', ['record' => $this->record])
+            );
+            return;
+        }
+
+        // Guard 2: manifiesto cerrado.
         if ($this->record->manifest->isClosed()) {
             Notification::make()
                 ->title('Manifiesto cerrado')
@@ -38,7 +53,7 @@ class EditReturn extends EditRecord
             return;
         }
 
-        // Guard 2: ventana de edición del día.
+        // Guard 3: ventana de edición del día.
         // Las devoluciones solo pueden editarse el mismo día calendario en que
         // fueron creadas. Después de medianoche Jaremar puede haberlas consumido
         // vía API, por lo que cualquier cambio posterior crearía inconsistencia.
@@ -119,12 +134,15 @@ class EditReturn extends EditRecord
                 $qty          = (float) $existingLine->quantity;
                 $lineTotal    = (float) $existingLine->line_total;
 
+                $unitSale = strtoupper($line->unit_sale ?? 'UN');
+
                 return [
                     'invoice_line_id'     => $line->id,
                     'line_number'         => $line->line_number,
                     'product_id'          => $line->product_id,
                     'product_description' => $line->product_description,
-                    'unit_sale'           => strtoupper($line->unit_sale ?? 'UN'),
+                    'unit_sale'           => $unitSale,
+                    'unit_sale_display'   => $unitSale,
                     'quantity_box'        => $qtyBox,
                     'quantity'            => $qty,
                     'available_quantity'  => $available,
@@ -205,10 +223,37 @@ class EditReturn extends EditRecord
         return [
             ViewAction::make(),
 
-            DeleteAction::make()
+            Action::make('cancelar')
+                ->label('Cancelar Devolución')
+                ->icon('heroicon-o-x-circle')
+                ->color('danger')
+                ->requiresConfirmation()
+                ->modalHeading('Cancelar devolución')
+                ->modalDescription('¿Estás seguro de cancelar esta devolución? Los totales del manifiesto y el estado de la factura se recalcularán.')
+                ->schema([
+                    Textarea::make('cancellation_reason')
+                        ->label('Motivo de cancelación')
+                        ->placeholder('Ej: Error en cantidad, producto equivocado, duplicada...')
+                        ->required()
+                        ->maxLength(500)
+                        ->rows(3),
+                ])
+                ->action(function (array $data): void {
+                    app(ReturnService::class)->cancelReturn($this->record, $data['cancellation_reason']);
+
+                    Notification::make()
+                        ->title('Devolución cancelada')
+                        ->body('Los totales del manifiesto y el estado de la factura fueron recalculados.')
+                        ->success()
+                        ->send();
+
+                    $this->redirect(
+                        $this->getResource()::getUrl('view', ['record' => $this->record])
+                    );
+                })
                 ->hidden(fn (): bool =>
-                    $this->record->manifest->isClosed() ||
-                    ! $this->record->isEditableToday()
+                    $this->record->isCancelled() ||
+                    $this->record->manifest->isClosed()
                 ),
         ];
     }

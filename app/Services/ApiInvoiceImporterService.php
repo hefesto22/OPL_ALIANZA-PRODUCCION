@@ -408,7 +408,7 @@ class ApiInvoiceImporterService
             $affectedIds    = array_keys($warehouseCounts);
             $warehouseNames = Warehouse::whereIn('id', $affectedIds)->pluck('name', 'id');
             $totalInserted  = array_sum($warehouseCounts);
-            $manifestUrl    = '/admin/manifests/' . $manifest->id;
+            $manifestUrl    = route('filament.admin.resources.manifests.view', $manifest);
             $notified       = 0;
 
             // ── Notificar usuarios de cada bodega afectada ───────────

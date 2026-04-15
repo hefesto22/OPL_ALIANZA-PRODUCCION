@@ -3,16 +3,17 @@
 namespace App\Exports;
 
 use App\Models\InvoiceReturn;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\Eloquent\Builder;
 use Maatwebsite\Excel\Concerns\FromQuery;
 use Maatwebsite\Excel\Concerns\ShouldAutoSize;
+use Maatwebsite\Excel\Concerns\WithEvents;
 use Maatwebsite\Excel\Concerns\WithHeadings;
 use Maatwebsite\Excel\Concerns\WithMapping;
-use Maatwebsite\Excel\Concerns\WithStyles;
 use Maatwebsite\Excel\Concerns\WithTitle;
-use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
+use Maatwebsite\Excel\Events\AfterSheet;
 
-class ReturnsExport implements FromQuery, WithHeadings, WithMapping, WithStyles, ShouldAutoSize, WithTitle
+class ReturnsExport implements FromQuery, WithHeadings, WithMapping, ShouldAutoSize, WithTitle, WithEvents, ShouldQueue
 {
     public function __construct(
         private readonly ?string $status = null,
@@ -78,10 +79,11 @@ class ReturnsExport implements FromQuery, WithHeadings, WithMapping, WithStyles,
                 default   => $return->type,
             },
             match($return->status) {
-                'pending'  => 'Pendiente',
-                'approved' => 'Aprobada',
-                'rejected' => 'Rechazada',
-                default    => $return->status,
+                'pending'   => 'Pendiente',
+                'approved'  => 'Aprobada',
+                'rejected'  => 'Rechazada',
+                'cancelled' => 'Cancelada',
+                default     => $return->status,
             },
             number_format($return->total, 2),
             $return->return_date ? \Carbon\Carbon::parse($return->return_date)->format('d/m/Y') : '—',
@@ -90,14 +92,17 @@ class ReturnsExport implements FromQuery, WithHeadings, WithMapping, WithStyles,
         ];
     }
 
-    public function styles(Worksheet $sheet): array
+    public function registerEvents(): array
     {
         return [
-            1 => [
-                'font'      => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
-                'fill'      => ['fillType' => 'solid', 'startColor' => ['rgb' => '1A7A4A']],
-                'alignment' => ['horizontal' => 'center'],
-            ],
+            AfterSheet::class => function (AfterSheet $event) {
+                $sheet = $event->sheet->getDelegate();
+                $sheet->getStyle('A1:L1')->applyFromArray([
+                    'font'      => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
+                    'fill'      => ['fillType' => 'solid', 'startColor' => ['rgb' => '1A7A4A']],
+                    'alignment' => ['horizontal' => 'center'],
+                ]);
+            },
         ];
     }
 

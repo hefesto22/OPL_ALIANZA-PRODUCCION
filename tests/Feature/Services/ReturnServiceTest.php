@@ -491,8 +491,7 @@ class ReturnServiceTest extends TestCase
         $this->assertEqualsWithDelta(600.0, (float) $manifest->total_returns, 0.01);
         $this->assertSame(1, $manifest->returns_count);
 
-        // Cancelamos (soft-delete): el observer debe recalcular
-        $return->delete();
+        $this->service->cancelReturn($return, 'Error en cantidad');
 
         $manifest->refresh();
         $this->assertEqualsWithDelta(0.0, (float) $manifest->total_returns, 0.01);
@@ -508,23 +507,21 @@ class ReturnServiceTest extends TestCase
         $invoice->refresh();
         $this->assertSame('partial_return', $invoice->status);
 
-        $return->delete();
+        $this->service->cancelReturn($return, 'Producto equivocado');
 
         $invoice->refresh();
-        // Sin devoluciones aprobadas ni pendientes → vuelve a 'imported'
         $this->assertSame('imported', $invoice->status);
     }
 
     public function test_canceling_fully_returned_invoice_reverts_to_imported(): void
     {
         $invoice = $this->makeInvoiceWithLines();
-        // Devolución total (10 cajas = toda la factura)
         $return = $this->service->createReturn($this->returnPayload($invoice, boxesToReturn: 10));
 
         $invoice->refresh();
         $this->assertSame('returned', $invoice->status);
 
-        $return->delete();
+        $this->service->cancelReturn($return, 'Devolución duplicada');
 
         $invoice->refresh();
         $this->assertSame('imported', $invoice->status);
@@ -535,7 +532,6 @@ class ReturnServiceTest extends TestCase
         $invoice = $this->makeInvoiceWithLines();
         $return  = $this->service->createReturn($this->returnPayload($invoice, boxesToReturn: 4));
 
-        // Las devoluciones nacen aprobadas con processed_date=hoy
         $this->assertSame('approved', $return->status);
         $cacheDate = $return->processed_date instanceof \DateTimeInterface
             ? $return->processed_date->format('Y-m-d')
@@ -543,9 +539,38 @@ class ReturnServiceTest extends TestCase
         $cacheKey  = "devoluciones:version:{$cacheDate}";
         Cache::put($cacheKey, 42);
 
-        $return->delete();
+        $this->service->cancelReturn($return, 'Test de cache');
 
-        // El observer debe haber incrementado la versión
         $this->assertSame(43, (int) Cache::get($cacheKey));
+    }
+
+    public function test_canceling_return_stores_audit_fields(): void
+    {
+        $invoice = $this->makeInvoiceWithLines();
+        $return  = $this->service->createReturn($this->returnPayload($invoice, boxesToReturn: 3));
+
+        $this->service->cancelReturn($return, 'Cliente rechazó mercadería');
+
+        $return->refresh();
+        $this->assertSame('cancelled', $return->status);
+        $this->assertSame('Cliente rechazó mercadería', $return->cancellation_reason);
+        $this->assertNotNull($return->cancelled_at);
+        $this->assertSame(auth()->id(), $return->cancelled_by);
+    }
+
+    public function test_canceling_already_cancelled_return_is_noop(): void
+    {
+        $invoice = $this->makeInvoiceWithLines();
+        $return  = $this->service->createReturn($this->returnPayload($invoice, boxesToReturn: 3));
+
+        $this->service->cancelReturn($return, 'Primera cancelación');
+        $originalCancelledAt = $return->refresh()->cancelled_at;
+
+        // Intentar cancelar de nuevo no debería cambiar nada
+        $this->service->cancelReturn($return, 'Segunda cancelación');
+        $return->refresh();
+
+        $this->assertSame('Primera cancelación', $return->cancellation_reason);
+        $this->assertTrue($originalCancelledAt->equalTo($return->cancelled_at));
     }
 }
