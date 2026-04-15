@@ -3,6 +3,7 @@
 namespace App\Filament\Widgets;
 
 use App\Models\Manifest;
+use App\Support\WarehouseScope;
 use BezhanSalleh\FilamentShield\Traits\HasWidgetShield;
 use Filament\Widgets\ChartWidget;
 use Illuminate\Support\Facades\Cache;
@@ -30,8 +31,18 @@ class ManifestStatusChart extends ChartWidget
 
     protected function getData(): array
     {
-        $counts = Cache::remember('dashboard:chart:manifest-status', now()->addMinutes(5), function () {
-            return Manifest::selectRaw('status, count(*) as total')
+        // Cache key por-bodega: globales comparten una entrada; cada warehouse
+        // user tiene la suya. Sin esto un encargado vería la caché del admin.
+        $cacheKey = WarehouseScope::cacheKey('dashboard:chart:manifest-status');
+
+        $counts = Cache::remember($cacheKey, now()->addMinutes(5), function () {
+            // Manifest no tiene warehouse_id directo — filtra vía invoices.
+            $query = WarehouseScope::applyViaRelation(
+                Manifest::query(),
+                'invoices'
+            );
+
+            return $query->selectRaw('status, count(*) as total')
                 ->groupBy('status')
                 ->pluck('total', 'status');
         });

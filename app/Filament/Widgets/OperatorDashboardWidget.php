@@ -39,15 +39,19 @@ class OperatorDashboardWidget extends BaseWidget
     protected function getStats(): array
     {
         $user = Auth::user();
-        $warehouseId = $user->warehouse_id;
 
-        if (! $warehouseId) {
+        // Este widget solo tiene sentido para warehouse users — un global
+        // user no tiene "su bodega" que resumir. Shield debe restringir el
+        // permiso, pero el check explícito defiende ante mala configuración.
+        if (! $user || ! $user->isWarehouseUser()) {
             return [
                 Stat::make('Sin Bodega', 'N/A')
                     ->description('No tienes bodega asignada')
                     ->color('gray'),
             ];
         }
+
+        $warehouseId = $user->warehouse_id;
 
         $cacheKey = "dashboard:operator:warehouse:{$warehouseId}";
 

@@ -4,6 +4,7 @@ namespace App\Filament\Widgets;
 
 use App\Models\Deposit;
 use App\Models\Manifest;
+use App\Support\WarehouseScope;
 use BezhanSalleh\FilamentShield\Traits\HasWidgetShield;
 use Filament\Widgets\ChartWidget;
 use Illuminate\Support\Facades\Cache;
@@ -40,12 +41,17 @@ class MonthlySalesVsCollectionsChart extends ChartWidget
 
     protected function getData(): array
     {
-        $data = Cache::remember('dashboard:chart:sales-vs-collections', now()->addMinutes(5), function () {
+        // Cache key por-bodega: cada warehouse user ve sus propios números
+        // y no contamina la caché de otros. Ver WarehouseScope::cacheKey.
+        $cacheKey = WarehouseScope::cacheKey('dashboard:chart:sales-vs-collections');
+
+        $data = Cache::remember($cacheKey, now()->addMinutes(5), function () {
             // Generar los 6 meses incluyendo el actual, del más antiguo al más reciente.
             $months = collect(range(5, 0))->map(fn ($i) => now()->subMonths($i)->startOfMonth());
 
             // ── Ventas netas por mes (fecha del manifiesto) ──────────────
-            $rawSales = Manifest::query()
+            // Manifest no tiene warehouse_id directo — filtra vía invoices.
+            $rawSales = WarehouseScope::applyViaRelation(Manifest::query(), 'invoices')
                 ->whereDate('date', '>=', $months->first()->toDateString())
                 ->select(
                     DB::raw("TO_CHAR(date, 'YYYY-MM') as month_key"),
@@ -56,7 +62,8 @@ class MonthlySalesVsCollectionsChart extends ChartWidget
                 ->pluck('total', 'month_key');
 
             // ── Cobros (depósitos) por mes ────────────────────────────────
-            $rawDeposits = Deposit::query()
+            // Deposit filtra via manifest → invoices (mismo patrón que DepositResource).
+            $rawDeposits = WarehouseScope::applyViaRelation(Deposit::query(), 'manifest')
                 ->whereDate('deposit_date', '>=', $months->first()->toDateString())
                 ->select(
                     DB::raw("TO_CHAR(deposit_date, 'YYYY-MM') as month_key"),

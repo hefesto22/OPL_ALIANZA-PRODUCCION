@@ -3,6 +3,7 @@
 namespace App\Filament\Widgets;
 
 use App\Models\Manifest;
+use App\Support\WarehouseScope;
 use BezhanSalleh\FilamentShield\Traits\HasWidgetShield;
 use Filament\Widgets\ChartWidget;
 use Illuminate\Support\Facades\Cache;
@@ -41,10 +42,15 @@ class MonthlyReturnRateChart extends ChartWidget
 
     protected function getData(): array
     {
-        $data = Cache::remember('dashboard:chart:return-rate', now()->addMinutes(5), function () {
+        // Cache key por-bodega: cada warehouse user ve su propia tasa de
+        // devolución histórica; los globales ven el agregado.
+        $cacheKey = WarehouseScope::cacheKey('dashboard:chart:return-rate');
+
+        $data = Cache::remember($cacheKey, now()->addMinutes(5), function () {
             $months = collect(range(5, 0))->map(fn ($i) => now()->subMonths($i)->startOfMonth());
 
-            $raw = Manifest::query()
+            // Manifest no tiene warehouse_id directo — filtra vía invoices.
+            $raw = WarehouseScope::applyViaRelation(Manifest::query(), 'invoices')
                 ->whereDate('date', '>=', $months->first()->toDateString())
                 ->select(
                     DB::raw("TO_CHAR(date, 'YYYY-MM') as month_key"),

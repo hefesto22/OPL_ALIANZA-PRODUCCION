@@ -5,6 +5,7 @@ namespace App\Filament\Widgets;
 use App\Models\ManifestWarehouseTotal;
 use BezhanSalleh\FilamentShield\Traits\HasWidgetShield;
 use Filament\Widgets\ChartWidget;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
@@ -14,12 +15,27 @@ use Illuminate\Support\Facades\DB;
  * Usa manifest_warehouse_totals que ya tiene los totales pre-calculados,
  * evitando queries pesadas sobre invoices/returns.
  * Una sola query GROUP BY reemplaza el bucle N+1 anterior.
+ *
+ * Aislamiento multi-tenant:
+ *   Este widget compara bodegas entre sí (GROUP BY warehouse), por lo que
+ *   solo tiene sentido para usuarios globales (admin / super_admin / haremar).
+ *   Un usuario de bodega vería una sola barra con sus propios datos — inútil
+ *   como comparativo. Se oculta vía canView() en vez de filtrar.
  */
 class ReturnsByWarehouseChart extends ChartWidget
 {
     use HasWidgetShield;
 
     protected static ?int $sort = 6;
+
+    /**
+     * Solo visible para usuarios globales. Los warehouse users no tienen
+     * contexto útil con un chart comparativo entre bodegas.
+     */
+    public static function canView(): bool
+    {
+        return Auth::user()?->isGlobalUser() ?? false;
+    }
 
     public function getHeading(): string
     {
