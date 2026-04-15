@@ -24,9 +24,9 @@ class AdminUserSeeder extends Seeder
         $admin = User::firstOrCreate(
             ['email' => env('ADMIN_EMAIL', 'admin@gmail.com')],
             [
-                'name'              => env('ADMIN_NAME', 'admin'),
-                'password'          => bcrypt(env('ADMIN_PASSWORD', 'password')),
-                'is_active'         => true,
+                'name' => env('ADMIN_NAME', 'admin'),
+                'password' => bcrypt(env('ADMIN_PASSWORD', 'password')),
+                'is_active' => true,
                 'email_verified_at' => now(),
             ]
         );

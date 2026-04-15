@@ -2,8 +2,6 @@
 
 namespace App\Services;
 
-use Illuminate\Support\Facades\Log;
-
 class JsonValidatorService
 {
     protected array $errors = [];
@@ -42,20 +40,23 @@ class JsonValidatorService
         // 1. ¿Es JSON válido?
         $data = json_decode($content, true);
         if (json_last_error() !== JSON_ERROR_NONE) {
-            $this->errors[] = 'El archivo no es un JSON válido: ' . json_last_error_msg();
+            $this->errors[] = 'El archivo no es un JSON válido: '.json_last_error_msg();
+
             return false;
         }
 
         // 2. ¿Es un array?
-        if (!is_array($data) || empty($data)) {
+        if (! is_array($data) || empty($data)) {
             $this->errors[] = 'El JSON debe ser un array de facturas y no puede estar vacío.';
+
             return false;
         }
 
         // 3. ¿Todas las facturas tienen el mismo NumeroManifiesto?
         $manifestNumbers = array_unique(array_column($data, 'NumeroManifiesto'));
         if (count($manifestNumbers) > 1) {
-            $this->errors[] = 'El JSON contiene facturas de múltiples manifiestos: ' . implode(', ', $manifestNumbers);
+            $this->errors[] = 'El JSON contiene facturas de múltiples manifiestos: '.implode(', ', $manifestNumbers);
+
             return false;
         }
 
@@ -83,13 +84,13 @@ class JsonValidatorService
         }
 
         // Total debe ser numérico y positivo
-        if (isset($invoice['Total']) && (!is_numeric($invoice['Total']) || $invoice['Total'] < 0)) {
+        if (isset($invoice['Total']) && (! is_numeric($invoice['Total']) || $invoice['Total'] < 0)) {
             $this->errors[] = "Factura #{$position} ({$invoiceLabel}): el campo 'Total' debe ser un número positivo.";
         }
 
         // LineasFactura debe ser array no vacío
         if (isset($invoice['LineasFactura'])) {
-            if (!is_array($invoice['LineasFactura']) || empty($invoice['LineasFactura'])) {
+            if (! is_array($invoice['LineasFactura']) || empty($invoice['LineasFactura'])) {
                 $this->errors[] = "Factura #{$position} ({$invoiceLabel}): 'LineasFactura' no puede estar vacío.";
             } else {
                 foreach ($invoice['LineasFactura'] as $lineIndex => $line) {
@@ -105,7 +106,7 @@ class JsonValidatorService
     protected function validateLine(array $line, int $position, string $invoiceNumber): void
     {
         foreach ($this->requiredLineFields as $field) {
-            if (!isset($line[$field])) {
+            if (! isset($line[$field])) {
                 $this->errors[] = "Factura {$invoiceNumber}, Línea #{$position}: falta el campo '{$field}'.";
             }
         }
@@ -117,10 +118,14 @@ class JsonValidatorService
     public function isDuplicate(string $content): bool
     {
         $data = json_decode($content, true);
-        if (!$data) return false;
+        if (! $data) {
+            return false;
+        }
 
         $manifestNumber = $data[0]['NumeroManifiesto'] ?? null;
-        if (!$manifestNumber) return false;
+        if (! $manifestNumber) {
+            return false;
+        }
 
         return \App\Models\Manifest::where('number', $manifestNumber)->exists();
     }
@@ -131,6 +136,7 @@ class JsonValidatorService
     public function getManifestNumber(string $content): ?string
     {
         $data = json_decode($content, true);
+
         return $data[0]['NumeroManifiesto'] ?? null;
     }
 
@@ -140,8 +146,9 @@ class JsonValidatorService
     public function countValidWarehouses(string $content): int
     {
         $data = json_decode($content, true);
+
         return collect($data)
-            ->filter(fn($i) => in_array($i['Almacen'] ?? '', $this->validWarehouses))
+            ->filter(fn ($i) => in_array($i['Almacen'] ?? '', $this->validWarehouses))
             ->count();
     }
 

@@ -33,7 +33,7 @@ class InvoicePdfServiceTest extends TestCase
         return $this->app->make(InvoicePdfService::class);
     }
 
-    public function test_generatePrintUrl_contains_encrypted_manifest_id(): void
+    public function test_generate_print_url_contains_encrypted_manifest_id(): void
     {
         $supplier = Supplier::factory()->create(['is_active' => true]);
         $manifest = Manifest::factory()->create(['supplier_id' => $supplier->id]);
@@ -44,7 +44,7 @@ class InvoicePdfServiceTest extends TestCase
         $this->assertStringContainsString('payload=', $url);
 
         // Extraer y descifrar el payload
-        $parsed  = parse_url($url);
+        $parsed = parse_url($url);
         parse_str($parsed['query'] ?? '', $params);
         $payload = json_decode(Crypt::decryptString($params['payload']), true);
 
@@ -52,14 +52,14 @@ class InvoicePdfServiceTest extends TestCase
         $this->assertSame([], $payload['invoice_ids']);
     }
 
-    public function test_generatePrintUrl_includes_specific_invoice_ids(): void
+    public function test_generate_print_url_includes_specific_invoice_ids(): void
     {
         $supplier = Supplier::factory()->create(['is_active' => true]);
         $manifest = Manifest::factory()->create(['supplier_id' => $supplier->id]);
 
         $url = $this->service()->generatePrintUrl($manifest, [10, 20, 30]);
 
-        $parsed  = parse_url($url);
+        $parsed = parse_url($url);
         parse_str($parsed['query'] ?? '', $params);
         $payload = json_decode(Crypt::decryptString($params['payload']), true);
 
@@ -71,7 +71,7 @@ class InvoicePdfServiceTest extends TestCase
         $supplier = Supplier::factory()->create(['is_active' => true]);
         $manifest = Manifest::factory()->create([
             'supplier_id' => $supplier->id,
-            'number'      => 'MAN-PDF-001',
+            'number' => 'MAN-PDF-001',
         ]);
 
         $filename = $this->service()->filename($manifest);

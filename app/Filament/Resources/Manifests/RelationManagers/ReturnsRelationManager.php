@@ -18,8 +18,11 @@ use Illuminate\Support\Facades\Auth;
 class ReturnsRelationManager extends RelationManager
 {
     protected static string $relationship = 'returns';
-    protected static ?string $title       = 'Devoluciones';
-    protected static ?string $label       = 'Devolución';
+
+    protected static ?string $title = 'Devoluciones';
+
+    protected static ?string $label = 'Devolución';
+
     protected static ?string $pluralLabel = 'Devoluciones';
 
     public static function canViewForRecord(\Illuminate\Database\Eloquent\Model $ownerRecord, string $pageClass): bool
@@ -59,9 +62,9 @@ class ReturnsRelationManager extends RelationManager
                     ->label('Bodega')
                     ->badge()
                     ->color(fn ($state): string => match ($state) {
-                        'OAC'   => 'info',
-                        'OAO'   => 'success',
-                        'OAS'   => 'warning',
+                        'OAC' => 'info',
+                        'OAO' => 'success',
+                        'OAS' => 'warning',
                         default => 'gray',
                     })
                     ->placeholder('—'),
@@ -83,36 +86,36 @@ class ReturnsRelationManager extends RelationManager
                     ->label('Tipo')
                     ->badge()
                     ->formatStateUsing(fn ($state): string => match ($state) {
-                        'total'   => 'Total',
+                        'total' => 'Total',
                         'partial' => 'Parcial',
-                        default   => $state,
+                        default => $state,
                     })
                     ->color(fn ($state): string => match ($state) {
-                        'total'   => 'danger',
+                        'total' => 'danger',
                         'partial' => 'warning',
-                        default   => 'gray',
+                        default => 'gray',
                     }),
 
                 TextColumn::make('status')
                     ->label('Estado')
                     ->badge()
                     ->icon(fn ($state): string => match ($state) {
-                        'pending'  => 'heroicon-o-clock',
+                        'pending' => 'heroicon-o-clock',
                         'approved' => 'heroicon-o-check-circle',
                         'rejected' => 'heroicon-o-x-circle',
-                        default    => 'heroicon-o-question-mark-circle',
+                        default => 'heroicon-o-question-mark-circle',
                     })
                     ->formatStateUsing(fn ($state): string => match ($state) {
-                        'pending'  => 'Pendiente',
+                        'pending' => 'Pendiente',
                         'approved' => 'Aprobada',
                         'rejected' => 'Rechazada',
-                        default    => $state,
+                        default => $state,
                     })
                     ->color(fn ($state): string => match ($state) {
-                        'pending'  => 'warning',
+                        'pending' => 'warning',
                         'approved' => 'success',
                         'rejected' => 'danger',
-                        default    => 'gray',
+                        default => 'gray',
                     }),
 
                 TextColumn::make('total')
@@ -136,7 +139,7 @@ class ReturnsRelationManager extends RelationManager
                 SelectFilter::make('status')
                     ->label('Estado')
                     ->options([
-                        'pending'  => 'Pendiente',
+                        'pending' => 'Pendiente',
                         'approved' => 'Aprobada',
                         'rejected' => 'Rechazada',
                     ]),
@@ -144,7 +147,7 @@ class ReturnsRelationManager extends RelationManager
                 SelectFilter::make('type')
                     ->label('Tipo')
                     ->options([
-                        'total'   => 'Total',
+                        'total' => 'Total',
                         'partial' => 'Parcial',
                     ]),
             ])
@@ -158,14 +161,12 @@ class ReturnsRelationManager extends RelationManager
                     ->label('Editar')
                     ->icon('heroicon-o-pencil-square')
                     ->color('warning')
-                    ->url(fn (InvoiceReturn $record): string =>
-                        \App\Filament\Resources\Returns\ReturnResource::getUrl('edit', ['record' => $record])
+                    ->url(fn (InvoiceReturn $record): string => \App\Filament\Resources\Returns\ReturnResource::getUrl('edit', ['record' => $record])
                     )
                     ->visible(function (InvoiceReturn $record) use ($isClosed): bool {
                         return ! $isClosed && $record->isEditableToday();
                     })
-                    ->tooltip(fn (InvoiceReturn $record): string =>
-                        $record->getEditabilityLabel()
+                    ->tooltip(fn (InvoiceReturn $record): string => $record->getEditabilityLabel()
                     ),
 
                 // Icono de candado — visible al día siguiente para que el usuario
@@ -175,8 +176,7 @@ class ReturnsRelationManager extends RelationManager
                     ->icon('heroicon-o-lock-closed')
                     ->color('gray')
                     ->disabled()
-                    ->tooltip(fn (InvoiceReturn $record): string =>
-                        $record->getEditabilityLabel()
+                    ->tooltip(fn (InvoiceReturn $record): string => $record->getEditabilityLabel()
                     )
                     ->visible(function (InvoiceReturn $record) use ($isClosed): bool {
                         return ! $isClosed && ! $record->isEditableToday();
@@ -190,6 +190,7 @@ class ReturnsRelationManager extends RelationManager
                     ->visible(function (InvoiceReturn $record) use ($isClosed): bool {
                         /** @var User $user */
                         $user = Auth::user();
+
                         return $record->isPending()
                             && ! $isClosed
                             && $user->hasRole('haremar');
@@ -217,6 +218,7 @@ class ReturnsRelationManager extends RelationManager
                     ->visible(function (InvoiceReturn $record) use ($isClosed): bool {
                         /** @var User $user */
                         $user = Auth::user();
+
                         return $record->isPending()
                             && ! $isClosed
                             && $user->hasRole('haremar');
@@ -248,8 +250,7 @@ class ReturnsRelationManager extends RelationManager
                 // Ver detalle completo en el módulo de Devoluciones
                 ViewAction::make()
                     ->label('Ver detalle')
-                    ->url(fn (InvoiceReturn $record): string =>
-                        \App\Filament\Resources\Returns\ReturnResource::getUrl('view', ['record' => $record])
+                    ->url(fn (InvoiceReturn $record): string => \App\Filament\Resources\Returns\ReturnResource::getUrl('view', ['record' => $record])
                     ),
             ])
 

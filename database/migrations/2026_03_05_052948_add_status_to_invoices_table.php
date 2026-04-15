@@ -1,4 +1,5 @@
 <?php
+
 // database/migrations/2026_03_05_000004_add_status_to_invoices_table.php
 
 use Illuminate\Database\Migrations\Migration;

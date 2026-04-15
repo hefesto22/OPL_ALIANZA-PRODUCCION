@@ -4,15 +4,15 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Spatie\Activitylog\Traits\LogsActivity;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Activitylog\LogOptions;
+use Spatie\Activitylog\Traits\LogsActivity;
 
 class Manifest extends Model
 {
-    use HasFactory, SoftDeletes, LogsActivity;
+    use HasFactory, LogsActivity, SoftDeletes;
 
     protected $fillable = [
         'supplier_id', 'warehouse_id', 'number', 'date', 'status',
@@ -24,14 +24,14 @@ class Manifest extends Model
     protected function casts(): array
     {
         return [
-            'date'             => 'date',
-            'closed_at'        => 'datetime',
-            'raw_json'         => 'array',
-            'total_invoices'   => 'decimal:2',
-            'total_returns'    => 'decimal:2',
+            'date' => 'date',
+            'closed_at' => 'datetime',
+            'raw_json' => 'array',
+            'total_invoices' => 'decimal:2',
+            'total_returns' => 'decimal:2',
             'total_to_deposit' => 'decimal:2',
-            'total_deposited'  => 'decimal:2',
-            'difference'       => 'decimal:2',
+            'total_deposited' => 'decimal:2',
+            'difference' => 'decimal:2',
         ];
     }
 
@@ -140,7 +140,7 @@ class Manifest extends Model
     public function close(int $userId): void
     {
         $this->update([
-            'status'    => 'closed',
+            'status' => 'closed',
             'closed_by' => $userId,
             'closed_at' => now(),
         ]);
@@ -152,7 +152,7 @@ class Manifest extends Model
     public function reopen(): void
     {
         $this->update([
-            'status'    => 'imported',
+            'status' => 'imported',
             'closed_by' => null,
             'closed_at' => null,
         ]);
@@ -173,11 +173,11 @@ class Manifest extends Model
         return $query
             ->groupBy('status')
             ->get()
-            ->mapWithKeys(fn($row) => [
+            ->mapWithKeys(fn ($row) => [
                 $row->status => [
                     'count' => (int) $row->count,
                     'total' => (float) $row->total,
-                ]
+                ],
             ])
             ->toArray();
     }
@@ -209,11 +209,11 @@ class Manifest extends Model
         //   - total_invoices / invoices_count: sólo filas con warehouse_id
         //   - clients_count: todas las filas del manifiesto (DISTINCT ignora NULLs)
         $invoiceStats = $this->invoices()
-            ->selectRaw("
+            ->selectRaw('
                 COALESCE(SUM(CASE WHEN warehouse_id IS NOT NULL THEN total ELSE 0 END), 0) AS total_invoices,
                 SUM(CASE WHEN warehouse_id IS NOT NULL THEN 1 ELSE 0 END)                  AS invoices_count,
                 COUNT(DISTINCT client_id)                                                  AS clients_count
-            ")
+            ')
             ->first();
 
         // Returns: 2 agregados en 1 query (excluye canceladas).
@@ -231,17 +231,17 @@ class Manifest extends Model
         $totalDeposited = (float) $this->deposits()->sum('amount');
 
         // ── Asignar resultados al modelo ──────────────────────────────────
-        $this->total_invoices   = (float) ($invoiceStats->total_invoices ?? 0);
-        $this->invoices_count   = (int)   ($invoiceStats->invoices_count ?? 0);
+        $this->total_invoices = (float) ($invoiceStats->total_invoices ?? 0);
+        $this->invoices_count = (int) ($invoiceStats->invoices_count ?? 0);
         // Clientes únicos por client_id (ID interno de Jaremar).
         // Se prefiere client_id sobre client_rtn porque Jaremar siempre lo
         // envía — el RTN puede estar vacío para clientes sin registro fiscal.
-        $this->clients_count    = (int)   ($invoiceStats->clients_count  ?? 0);
-        $this->total_returns    = (float) ($returnStats->total_returns   ?? 0);
-        $this->returns_count    = (int)   ($returnStats->returns_count   ?? 0);
-        $this->total_deposited  = $totalDeposited;
+        $this->clients_count = (int) ($invoiceStats->clients_count ?? 0);
+        $this->total_returns = (float) ($returnStats->total_returns ?? 0);
+        $this->returns_count = (int) ($returnStats->returns_count ?? 0);
+        $this->total_deposited = $totalDeposited;
         $this->total_to_deposit = $this->total_invoices - $this->total_returns;
-        $this->difference       = $this->total_to_deposit - $this->total_deposited;
+        $this->difference = $this->total_to_deposit - $this->total_deposited;
 
         $this->save();
 
@@ -252,12 +252,12 @@ class Manifest extends Model
     {
         $byWarehouse = $this->invoices()
             ->whereNotNull('warehouse_id')
-            ->selectRaw("
+            ->selectRaw('
                 warehouse_id,
                 SUM(total) as total,
                 COUNT(*) as count,
                 COUNT(DISTINCT client_id) as clients_count
-            ")
+            ')
             ->groupBy('warehouse_id')
             ->get();
 
@@ -267,8 +267,8 @@ class Manifest extends Model
         $returnsByWarehouse = $this->returns()
             ->where('status', '!=', 'cancelled')
             ->selectRaw(
-                'warehouse_id, ' .
-                "COALESCE(SUM(CASE WHEN status = 'approved' THEN total ELSE 0 END), 0) AS total_returns, " .
+                'warehouse_id, '.
+                "COALESCE(SUM(CASE WHEN status = 'approved' THEN total ELSE 0 END), 0) AS total_returns, ".
                 'COUNT(*) AS returns_count'
             )
             ->groupBy('warehouse_id')
@@ -276,23 +276,23 @@ class Manifest extends Model
             ->keyBy('warehouse_id');
 
         foreach ($byWarehouse as $row) {
-            $returnData   = $returnsByWarehouse[$row->warehouse_id] ?? null;
-            $returns      = $returnData ? (float) $returnData->total_returns : 0.0;
-            $returnsCount = $returnData ? (int) $returnData->returns_count   : 0;
-            $toDeposit    = (float) $row->total - $returns;
+            $returnData = $returnsByWarehouse[$row->warehouse_id] ?? null;
+            $returns = $returnData ? (float) $returnData->total_returns : 0.0;
+            $returnsCount = $returnData ? (int) $returnData->returns_count : 0;
+            $toDeposit = (float) $row->total - $returns;
 
             ManifestWarehouseTotal::updateOrCreate(
                 [
-                    'manifest_id'  => $this->id,
+                    'manifest_id' => $this->id,
                     'warehouse_id' => $row->warehouse_id,
                 ],
                 [
-                    'total_invoices'   => $row->total,
-                    'total_returns'    => $returns,
+                    'total_invoices' => $row->total,
+                    'total_returns' => $returns,
                     'total_to_deposit' => $toDeposit,
-                    'invoices_count'   => $row->count,
-                    'returns_count'    => $returnsCount,
-                    'clients_count'    => (int) $row->clients_count,
+                    'invoices_count' => $row->count,
+                    'returns_count' => $returnsCount,
+                    'clients_count' => (int) $row->clients_count,
                 ]
             );
         }

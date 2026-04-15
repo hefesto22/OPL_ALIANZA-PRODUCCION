@@ -15,7 +15,7 @@ return new class extends Migration
             $table->unsignedInteger('line_number')->change();
         });
     }
-    
+
     public function down(): void
     {
         Schema::table('invoice_lines', function (Blueprint $table) {

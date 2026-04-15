@@ -22,11 +22,11 @@ class DepositReceiptController extends Controller
      */
     public function show(Deposit $deposit): StreamedResponse|Response
     {
-        if (!$deposit->receipt_image) {
+        if (! $deposit->receipt_image) {
             abort(404, 'Este depósito no tiene comprobante adjunto.');
         }
 
-        if (!Storage::disk('local')->exists($deposit->receipt_image)) {
+        if (! Storage::disk('local')->exists($deposit->receipt_image)) {
             abort(404, 'El archivo del comprobante ya no está disponible.');
         }
 
@@ -37,9 +37,9 @@ class DepositReceiptController extends Controller
             fn () => fpassthru(Storage::disk('local')->readStream($deposit->receipt_image)),
             200,
             [
-                'Content-Type'        => $mime,
-                'Content-Disposition' => 'inline; filename="comprobante-deposito-' . $deposit->id . '.jpg"',
-                'Cache-Control'       => 'private, max-age=3600',
+                'Content-Type' => $mime,
+                'Content-Disposition' => 'inline; filename="comprobante-deposito-'.$deposit->id.'.jpg"',
+                'Cache-Control' => 'private, max-age=3600',
                 'X-Content-Type-Options' => 'nosniff',
             ]
         );

@@ -27,20 +27,20 @@ class InvoiceReturnFactory extends Factory
     public function definition(): array
     {
         return [
-            'manifest_id'      => Manifest::factory(),
-            'invoice_id'       => Invoice::factory(),
+            'manifest_id' => Manifest::factory(),
+            'invoice_id' => Invoice::factory(),
             'return_reason_id' => ReturnReason::factory(),
-            'warehouse_id'     => Warehouse::factory(),
+            'warehouse_id' => Warehouse::factory(),
             'jaremar_return_id' => null,
-            'type'             => 'partial',
-            'status'           => 'pending',
-            'manifest_number'  => null,
-            'client_id'        => fake()->numerify('CLI####'),
-            'client_name'      => fake()->company(),
-            'return_date'      => fake()->dateTimeBetween('-10 days', 'now'),
-            'processed_date'   => null,
-            'processed_time'   => null,
-            'total'            => fake()->randomFloat(2, 50, 5000),
+            'type' => 'partial',
+            'status' => 'pending',
+            'manifest_number' => null,
+            'client_id' => fake()->numerify('CLI####'),
+            'client_name' => fake()->company(),
+            'return_date' => fake()->dateTimeBetween('-10 days', 'now'),
+            'processed_date' => null,
+            'processed_time' => null,
+            'total' => fake()->randomFloat(2, 50, 5000),
             'rejection_reason' => null,
         ];
     }
@@ -48,7 +48,7 @@ class InvoiceReturnFactory extends Factory
     public function approved(): static
     {
         return $this->state(fn () => [
-            'status'      => 'approved',
+            'status' => 'approved',
             'reviewed_at' => now(),
         ]);
     }
@@ -56,9 +56,9 @@ class InvoiceReturnFactory extends Factory
     public function rejected(string $reason = 'No aplica'): static
     {
         return $this->state(fn () => [
-            'status'           => 'rejected',
+            'status' => 'rejected',
             'rejection_reason' => $reason,
-            'reviewed_at'      => now(),
+            'reviewed_at' => now(),
         ]);
     }
 

@@ -44,10 +44,10 @@ class ListDeposits extends ListRecords
                     ->action(function (array $data): void {
                         $payload = Crypt::encryptString(json_encode([
                             'date_from' => $data['date_from'] ?? null,
-                            'date_to'   => $data['date_to']   ?? null,
+                            'date_to' => $data['date_to'] ?? null,
                         ]));
 
-                        $this->js("window.open('/imprimir/reportes/depositos?payload=" . urlencode($payload) . "', '_blank')");
+                        $this->js("window.open('/imprimir/reportes/depositos?payload=".urlencode($payload)."', '_blank')");
                     }),
 
                 // ── Export Excel ───────────────────────────────────────
@@ -70,12 +70,12 @@ class ListDeposits extends ListRecords
                     ->modalDescription('Seleccioná el período para exportar.')
                     ->modalSubmitActionLabel('Exportar')
                     ->action(function (array $data): mixed {
-                        $filename = 'depositos_' . now()->format('Y-m-d') . '.xlsx';
+                        $filename = 'depositos_'.now()->format('Y-m-d').'.xlsx';
 
                         return Excel::download(
                             new DepositsExport(
                                 dateFrom: $data['date_from'] ?? null,
-                                dateTo:   $data['date_to']   ?? null,
+                                dateTo: $data['date_to'] ?? null,
                             ),
                             $filename
                         );

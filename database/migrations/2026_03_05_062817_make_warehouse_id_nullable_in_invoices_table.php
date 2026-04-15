@@ -20,7 +20,7 @@ return new class extends Migration
                 ->nullOnDelete();
         });
     }
-    
+
     public function down(): void
     {
         Schema::table('invoices', function (Blueprint $table) {

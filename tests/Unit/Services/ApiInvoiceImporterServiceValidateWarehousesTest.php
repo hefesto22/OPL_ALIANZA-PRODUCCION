@@ -45,6 +45,7 @@ class ApiInvoiceImporterServiceValidateWarehousesTest extends TestCase
         $method = (new ReflectionClass(ApiInvoiceImporterService::class))
             ->getMethod('validateWarehouses');
         $method->setAccessible(true);
+
         return $method->invoke($svc, $invoices);
     }
 
@@ -93,7 +94,7 @@ class ApiInvoiceImporterServiceValidateWarehousesTest extends TestCase
         ]);
 
         $this->assertSame(['F001', 'F002'], $errors['ZZZ']);
-        $this->assertSame(['F003'],          $errors['YYY']);
+        $this->assertSame(['F003'], $errors['YYY']);
     }
 
     public function test_empty_input_returns_empty_array(): void

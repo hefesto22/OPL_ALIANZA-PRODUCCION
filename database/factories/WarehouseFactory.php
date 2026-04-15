@@ -22,22 +22,22 @@ class WarehouseFactory extends Factory
         // necesiten una bodega concreta deben llamar a ->oac(), ->oas() o
         // ->oao() para evitar colisiones con el unique constraint del code.
         return [
-            'code'       => strtoupper(fake()->unique()->bothify('???')),
-            'name'       => 'Bodega ' . fake()->city(),
-            'city'       => fake()->city(),
+            'code' => strtoupper(fake()->unique()->bothify('???')),
+            'name' => 'Bodega '.fake()->city(),
+            'city' => fake()->city(),
             'department' => fake()->state(),
-            'address'    => fake()->address(),
-            'phone'      => fake()->numerify('2###-####'),
-            'is_active'  => true,
+            'address' => fake()->address(),
+            'phone' => fake()->numerify('2###-####'),
+            'is_active' => true,
         ];
     }
 
     public function oac(): static
     {
         return $this->state(fn () => [
-            'code'       => 'OAC',
-            'name'       => 'Oficina Administrativa Copán',
-            'city'       => 'Santa Rosa de Copán',
+            'code' => 'OAC',
+            'name' => 'Oficina Administrativa Copán',
+            'city' => 'Santa Rosa de Copán',
             'department' => 'Copán',
         ]);
     }
@@ -45,9 +45,9 @@ class WarehouseFactory extends Factory
     public function oas(): static
     {
         return $this->state(fn () => [
-            'code'       => 'OAS',
-            'name'       => 'Oficina Administrativa Santa Bárbara',
-            'city'       => 'Santa Bárbara',
+            'code' => 'OAS',
+            'name' => 'Oficina Administrativa Santa Bárbara',
+            'city' => 'Santa Bárbara',
             'department' => 'Santa Bárbara',
         ]);
     }
@@ -55,9 +55,9 @@ class WarehouseFactory extends Factory
     public function oao(): static
     {
         return $this->state(fn () => [
-            'code'       => 'OAO',
-            'name'       => 'Oficina Administrativa Ocotepeque',
-            'city'       => 'Ocotepeque',
+            'code' => 'OAO',
+            'name' => 'Oficina Administrativa Ocotepeque',
+            'city' => 'Ocotepeque',
             'department' => 'Ocotepeque',
         ]);
     }

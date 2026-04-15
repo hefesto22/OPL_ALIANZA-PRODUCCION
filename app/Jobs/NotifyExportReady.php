@@ -24,7 +24,7 @@ class NotifyExportReady implements ShouldQueue
     use Queueable;
 
     public function __construct(
-        protected int    $userId,
+        protected int $userId,
         protected string $filePath,
         protected string $fileName,
     ) {}
@@ -32,12 +32,14 @@ class NotifyExportReady implements ShouldQueue
     public function handle(): void
     {
         $user = User::find($this->userId);
-        if (!$user) return;
+        if (! $user) {
+            return;
+        }
 
         // Verificar que el archivo realmente se generó
-        if (!Storage::disk('local')->exists($this->filePath)) {
+        if (! Storage::disk('local')->exists($this->filePath)) {
             Log::warning('NotifyExportReady: archivo no encontrado', [
-                'user_id'   => $this->userId,
+                'user_id' => $this->userId,
                 'file_path' => $this->filePath,
             ]);
 

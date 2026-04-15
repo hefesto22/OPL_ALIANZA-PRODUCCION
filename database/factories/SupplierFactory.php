@@ -15,12 +15,12 @@ class SupplierFactory extends Factory
     public function definition(): array
     {
         return [
-            'name'      => fake()->company(),
-            'rtn'       => fake()->numerify('##############'),
-            'email'     => fake()->unique()->safeEmail(),
-            'phone'     => fake()->numerify('9###-####'),
-            'address'   => fake()->streetAddress(),
-            'api_url'   => 'https://api.example.test',
+            'name' => fake()->company(),
+            'rtn' => fake()->numerify('##############'),
+            'email' => fake()->unique()->safeEmail(),
+            'phone' => fake()->numerify('9###-####'),
+            'address' => fake()->streetAddress(),
+            'api_url' => 'https://api.example.test',
             // Importante: el modelo Supplier cifra api_key con el cast
             // 'encrypted', y el resultado cifrado es ~6× más largo que
             // el input (base64 de iv+value+mac+tag). La columna en BD es
@@ -29,7 +29,7 @@ class SupplierFactory extends Factory
             // NOTA (bug latente de producción): si algún día llega un
             // api_key real de Jaremar de 40+ chars, la columna debería
             // migrarse a TEXT para evitar truncamiento en prod.
-            'api_key'   => \Illuminate\Support\Str::random(16),
+            'api_key' => \Illuminate\Support\Str::random(16),
             'is_active' => true,
         ];
     }

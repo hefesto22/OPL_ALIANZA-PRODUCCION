@@ -8,7 +8,6 @@ use App\Models\User;
 use App\Services\InvoicePdfService;
 use Filament\Actions\BulkAction;
 use Filament\Actions\BulkActionGroup;
-use Illuminate\Support\Facades\Crypt;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
@@ -16,13 +15,17 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Crypt;
 use Livewire\Attributes\On;
 
 class InvoicesRelationManager extends RelationManager
 {
     protected static string $relationship = 'invoices';
-    protected static ?string $title       = 'Facturas';
-    protected static ?string $label       = 'Factura';
+
+    protected static ?string $title = 'Facturas';
+
+    protected static ?string $label = 'Factura';
+
     protected static ?string $pluralLabel = 'Facturas';
 
     public array $statusesFilter = [];
@@ -42,9 +45,9 @@ class InvoicesRelationManager extends RelationManager
                     ->label('Almacén')
                     ->badge()
                     ->color(fn ($state) => match ($state) {
-                        'OAC'   => 'info',
-                        'OAO'   => 'success',
-                        'OAS'   => 'warning',
+                        'OAC' => 'info',
+                        'OAO' => 'success',
+                        'OAS' => 'warning',
                         default => 'gray',
                     })
                     ->placeholder('—')
@@ -101,18 +104,18 @@ class InvoicesRelationManager extends RelationManager
                     ->label('Estado')
                     ->badge()
                     ->color(fn (string $state) => match ($state) {
-                        'imported'       => 'success',
+                        'imported' => 'success',
                         'partial_return' => 'info',
-                        'returned'       => 'danger',
-                        'rejected'       => 'gray',
-                        default          => 'gray',
+                        'returned' => 'danger',
+                        'rejected' => 'gray',
+                        default => 'gray',
                     })
                     ->formatStateUsing(fn (string $state) => match ($state) {
-                        'imported'       => 'Importada',
+                        'imported' => 'Importada',
                         'partial_return' => 'Dev. Parcial',
-                        'returned'       => 'Devuelta',
-                        'rejected'       => 'Rechazada',
-                        default          => $state,
+                        'returned' => 'Devuelta',
+                        'rejected' => 'Rechazada',
+                        default => $state,
                     })
                     ->toggleable(isToggledHiddenByDefault: false),
             ])
@@ -120,9 +123,9 @@ class InvoicesRelationManager extends RelationManager
                 SelectFilter::make('status')
                     ->label('Estado')
                     ->options([
-                        'imported'       => 'Importada',
+                        'imported' => 'Importada',
                         'partial_return' => 'Dev. Parcial',
-                        'returned'       => 'Devuelta',
+                        'returned' => 'Devuelta',
                     ]),
 
                 SelectFilter::make('warehouse_id')
@@ -161,7 +164,7 @@ class InvoicesRelationManager extends RelationManager
                         ->color('info')
                         ->action(function (Collection $records): void {
                             /** @var \App\Models\Manifest $manifest */
-                            $manifest   = $this->getOwnerRecord();
+                            $manifest = $this->getOwnerRecord();
                             $invoiceIds = $records->pluck('id')->toArray();
 
                             $url = app(InvoicePdfService::class)
@@ -185,7 +188,7 @@ class InvoicesRelationManager extends RelationManager
                             ];
 
                             $payload = Crypt::encryptString(json_encode($payloadData));
-                            $this->js("window.open('/imprimir/reportes/productos?payload=" . urlencode($payload) . "', '_blank')");
+                            $this->js("window.open('/imprimir/reportes/productos?payload=".urlencode($payload)."', '_blank')");
                         })
                         ->deselectRecordsAfterCompletion(),
 
@@ -203,7 +206,7 @@ class InvoicesRelationManager extends RelationManager
                             ];
 
                             $payload = Crypt::encryptString(json_encode($payloadData));
-                            $this->js("window.open('/imprimir/reportes/facturas-checklist?payload=" . urlencode($payload) . "', '_blank')");
+                            $this->js("window.open('/imprimir/reportes/facturas-checklist?payload=".urlencode($payload)."', '_blank')");
                         })
                         ->deselectRecordsAfterCompletion(),
                 ]),
@@ -221,7 +224,7 @@ class InvoicesRelationManager extends RelationManager
                     $query->where('warehouse_id', $user->warehouse_id);
                 }
 
-                if (!empty($this->statusesFilter)) {
+                if (! empty($this->statusesFilter)) {
                     $query->whereIn('status', $this->statusesFilter);
                 }
             })

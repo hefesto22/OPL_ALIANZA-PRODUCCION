@@ -1,8 +1,8 @@
 <?php
 
+use App\Http\Controllers\Api\V1\DevolucionesController;
 use App\Http\Controllers\Api\V1\ManifestApiController;
 use App\Http\Middleware\ValidateApiKey;
-use App\Http\Controllers\Api\V1\DevolucionesController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -23,9 +23,9 @@ use Illuminate\Support\Facades\Route;
 // ── Health check (sin autenticación) ─────────────────────────────────────
 Route::get('v1/ping', function () {
     return response()->json([
-        'status'    => 'ok',
-        'service'   => 'Distribuidora Hosana API',
-        'version'   => 'v1',
+        'status' => 'ok',
+        'service' => 'Distribuidora Hosana API',
+        'version' => 'v1',
         'timestamp' => now()->toIso8601String(),
     ]);
 })->name('api.v1.ping');

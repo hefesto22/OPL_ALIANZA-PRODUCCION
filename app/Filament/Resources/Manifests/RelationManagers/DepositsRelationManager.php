@@ -7,8 +7,8 @@ use App\Services\DepositService;
 use Filament\Actions\Action;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\FileUpload;
-use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
@@ -18,8 +18,11 @@ use Illuminate\Support\Facades\Auth;
 class DepositsRelationManager extends RelationManager
 {
     protected static string $relationship = 'deposits';
-    protected static ?string $title       = 'Depósitos';
-    protected static ?string $label       = 'Depósito';
+
+    protected static ?string $title = 'Depósitos';
+
+    protected static ?string $label = 'Depósito';
+
     protected static ?string $pluralLabel = 'Depósitos';
 
     public static function canViewForRecord(\Illuminate\Database\Eloquent\Model $ownerRecord, string $pageClass): bool
@@ -112,11 +115,11 @@ class DepositsRelationManager extends RelationManager
                     ->modalHeading('Editar Depósito')
                     ->modalSubmitActionLabel('Guardar Cambios')
                     ->fillForm(fn (Deposit $record): array => [
-                        'amount'        => $record->amount,
-                        'deposit_date'  => $record->deposit_date,
-                        'bank'          => $record->bank,
-                        'reference'     => $record->reference,
-                        'observations'  => $record->observations,
+                        'amount' => $record->amount,
+                        'deposit_date' => $record->deposit_date,
+                        'bank' => $record->bank,
+                        'reference' => $record->reference,
+                        'observations' => $record->observations,
                         'receipt_image' => $record->receipt_image,
                     ])
                     ->schema(fn (Deposit $record): array => $this->getDepositFormSchema($record))
@@ -150,7 +153,7 @@ class DepositsRelationManager extends RelationManager
     private function getDepositFormSchema(?Deposit $record = null): array
     {
         $depositService = app(DepositService::class);
-        $manifest       = $this->getOwnerRecord();
+        $manifest = $this->getOwnerRecord();
 
         // Al editar, el saldo disponible = pendiente actual + monto del depósito que se está editando.
         // Esto evita que el usuario no pueda cambiar el monto aunque no lo esté aumentando.
@@ -168,7 +171,7 @@ class DepositsRelationManager extends RelationManager
                 ->maxValue($pending + 0.01)
                 ->prefix('HNL')
                 ->placeholder('0.00')
-                ->helperText('Saldo disponible: HNL ' . number_format($pending, 2)),
+                ->helperText('Saldo disponible: HNL '.number_format($pending, 2)),
 
             DatePicker::make('deposit_date')
                 ->label('Fecha de Depósito')

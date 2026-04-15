@@ -36,6 +36,7 @@ class EditReturn extends EditRecord
             $this->redirect(
                 $this->getResource()::getUrl('view', ['record' => $this->record])
             );
+
             return;
         }
 
@@ -50,6 +51,7 @@ class EditReturn extends EditRecord
             $this->redirect(
                 $this->getResource()::getUrl('view', ['record' => $this->record])
             );
+
             return;
         }
 
@@ -61,8 +63,8 @@ class EditReturn extends EditRecord
             Notification::make()
                 ->title('Devolución bloqueada')
                 ->body(
-                    'Esta devolución fue registrada el ' .
-                    $this->record->created_at->format('d/m/Y') .
+                    'Esta devolución fue registrada el '.
+                    $this->record->created_at->format('d/m/Y').
                     ' y ya no puede modificarse. Si necesitas correcciones, crea una nueva devolución.'
                 )
                 ->warning()
@@ -104,7 +106,7 @@ class EditReturn extends EditRecord
         }
 
         $returnService = app(ReturnService::class);
-        $lineIds       = $invoice->lines->pluck('id')->toArray();
+        $lineIds = $invoice->lines->pluck('id')->toArray();
 
         // Cantidades devueltas por OTRAS devoluciones (excluye la actual).
         $returnedByOthers = $returnService->getReturnedQuantitiesForLinesExcluding(
@@ -122,35 +124,35 @@ class EditReturn extends EditRecord
             ->filter(fn ($line) => $existingLines->has($line->id))
             ->map(function ($line) use ($returnedByOthers, $existingLines) {
                 $otherReturnsQty = (float) ($returnedByOthers[$line->id] ?? 0);
-                $available       = max(0, (float) $line->quantity_fractions - $otherReturnsQty);
+                $available = max(0, (float) $line->quantity_fractions - $otherReturnsQty);
                 // Null → usar price; 0 → bonificación (gratis). No usar ?: porque 0 es falsy.
-                $unitPrice       = $line->price_min_sale !== null ? (float) $line->price_min_sale : (float) $line->price;
-                $convFactor      = max(1, (float) ($line->conversion_factor ?? 1));
-                $availableBoxes  = (int) floor($available / $convFactor);
-                $pricePerBox     = round($convFactor * $unitPrice, 2);
+                $unitPrice = $line->price_min_sale !== null ? (float) $line->price_min_sale : (float) $line->price;
+                $convFactor = max(1, (float) ($line->conversion_factor ?? 1));
+                $availableBoxes = (int) floor($available / $convFactor);
+                $pricePerBox = round($convFactor * $unitPrice, 2);
 
                 $existingLine = $existingLines->get($line->id);
-                $qtyBox       = (float) $existingLine->quantity_box;
-                $qty          = (float) $existingLine->quantity;
-                $lineTotal    = (float) $existingLine->line_total;
+                $qtyBox = (float) $existingLine->quantity_box;
+                $qty = (float) $existingLine->quantity;
+                $lineTotal = (float) $existingLine->line_total;
 
                 $unitSale = strtoupper($line->unit_sale ?? 'UN');
 
                 return [
-                    'invoice_line_id'     => $line->id,
-                    'line_number'         => $line->line_number,
-                    'product_id'          => $line->product_id,
+                    'invoice_line_id' => $line->id,
+                    'line_number' => $line->line_number,
+                    'product_id' => $line->product_id,
                     'product_description' => $line->product_description,
-                    'unit_sale'           => $unitSale,
-                    'unit_sale_display'   => $unitSale,
-                    'quantity_box'        => $qtyBox,
-                    'quantity'            => $qty,
-                    'available_quantity'  => $available,
-                    'available_boxes'     => $availableBoxes,
-                    'conversion_factor'   => $convFactor,
-                    'unit_price'          => $unitPrice,
-                    'price_per_box'       => $pricePerBox,
-                    'line_total'          => $lineTotal,
+                    'unit_sale' => $unitSale,
+                    'unit_sale_display' => $unitSale,
+                    'quantity_box' => $qtyBox,
+                    'quantity' => $qty,
+                    'available_quantity' => $available,
+                    'available_boxes' => $availableBoxes,
+                    'conversion_factor' => $convFactor,
+                    'unit_price' => $unitPrice,
+                    'price_per_box' => $pricePerBox,
+                    'line_total' => $lineTotal,
                 ];
             })->values()->toArray();
 
@@ -161,12 +163,12 @@ class EditReturn extends EditRecord
             ->sum('total');
         $availableTotal = max(0, round((float) $invoice->total - (float) $otherReturnsTotal, 2));
 
-        $data['lines']            = $lines;
-        $data['client_name']      = $invoice->client_name;
-        $data['invoice_number']   = $invoice->invoice_number;
-        $data['invoice_total']    = round((float) $invoice->total, 2);
-        $data['available_total']  = $availableTotal;
-        $data['manifest_number']  = $invoice->manifest?->number ?? '';
+        $data['lines'] = $lines;
+        $data['client_name'] = $invoice->client_name;
+        $data['invoice_number'] = $invoice->invoice_number;
+        $data['invoice_total'] = round((float) $invoice->total, 2);
+        $data['available_total'] = $availableTotal;
+        $data['manifest_number'] = $invoice->manifest?->number ?? '';
 
         return $data;
     }
@@ -251,8 +253,7 @@ class EditReturn extends EditRecord
                         $this->getResource()::getUrl('view', ['record' => $this->record])
                     );
                 })
-                ->hidden(fn (): bool =>
-                    $this->record->isCancelled() ||
+                ->hidden(fn (): bool => $this->record->isCancelled() ||
                     $this->record->manifest->isClosed()
                 ),
         ];

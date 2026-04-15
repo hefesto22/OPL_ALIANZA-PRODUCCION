@@ -18,7 +18,7 @@ class ManifestApiController extends Controller
 {
     public function __construct(
         private readonly ApiInvoiceValidatorService $validator,
-        private readonly ApiInvoiceImporterService  $importer,
+        private readonly ApiInvoiceImporterService $importer,
     ) {}
 
     /**
@@ -38,15 +38,15 @@ class ManifestApiController extends Controller
      */
     public function insertar(Request $request): JsonResponse
     {
-        $apiKey  = $request->header('ApiKey', '');
+        $apiKey = $request->header('ApiKey', '');
         $keyHint = substr($apiKey, 0, 8);
 
         // ── 1. Parsear el body ─────────────────────────────────────────
         $invoices = $request->json()->all();
 
-        if (!is_array($invoices) || empty($invoices)) {
+        if (! is_array($invoices) || empty($invoices)) {
             Log::warning('API Jaremar: body inválido recibido.', [
-                'ip'       => $request->ip(),
+                'ip' => $request->ip(),
                 'key_hint' => $keyHint,
             ]);
 
@@ -57,9 +57,9 @@ class ManifestApiController extends Controller
         }
 
         // ── 2. Validar estructura del payload ──────────────────────────
-        if (!$this->validator->validate($invoices)) {
+        if (! $this->validator->validate($invoices)) {
             Log::warning('API Jaremar: validación de estructura fallida.', [
-                'ip'     => $request->ip(),
+                'ip' => $request->ip(),
                 'errors' => $this->validator->getErrors(),
             ]);
 
@@ -92,44 +92,44 @@ class ManifestApiController extends Controller
         );
 
         if ($fechaValidacion['tiene_errores']) {
-            $invalidos       = $fechaValidacion['manifiestos_invalidos'];
-            $validos         = $fechaValidacion['manifiestos_validos'];
+            $invalidos = $fechaValidacion['manifiestos_invalidos'];
+            $validos = $fechaValidacion['manifiestos_validos'];
             $totalRechazadas = array_sum(array_column($invalidos, 'total_facturas'));
-            $totalValidas    = array_sum(array_column($validos, 'total_facturas'));
+            $totalValidas = array_sum(array_column($validos, 'total_facturas'));
 
             $this->notifyAdmins($invalidos, 'pre-persistencia');
 
             Log::warning('API Jaremar: batch rechazado por manifiestos de días anteriores.', [
-                'ip'               => $request->ip(),
-                'key_hint'         => $keyHint,
+                'ip' => $request->ip(),
+                'key_hint' => $keyHint,
                 'manifiestos_invalidos' => array_column($invalidos, 'manifiesto'),
-                'manifiestos_validos'   => array_column($validos, 'manifiesto'),
+                'manifiestos_validos' => array_column($validos, 'manifiesto'),
                 'total_rechazadas' => $totalRechazadas,
             ]);
 
             $response = [
-                'success'          => false,
-                'message'          => 'Batch rechazado completamente. Contiene facturas de manifiestos creados en días anteriores que ya no aceptan nuevas facturas.',
-                'motivo'           => 'MANIFIESTOS_FECHA_INVALIDA',
+                'success' => false,
+                'message' => 'Batch rechazado completamente. Contiene facturas de manifiestos creados en días anteriores que ya no aceptan nuevas facturas.',
+                'motivo' => 'MANIFIESTOS_FECHA_INVALIDA',
                 'accion_requerida' => 'Corrija el batch separando los manifiestos afectados. Los manifiestos válidos deben reenviarse en un batch independiente sin mezclar con los del día anterior.',
-                'resumen'          => [
-                    'total_recibidas'  => count($invoices),
+                'resumen' => [
+                    'total_recibidas' => count($invoices),
                     'total_rechazadas' => $totalRechazadas,
-                    'total_validas'    => $totalValidas,
-                    'insertadas'       => 0,
+                    'total_validas' => $totalValidas,
+                    'insertadas' => 0,
                 ],
                 'manifiestos_rechazados' => $invalidos,
             ];
 
             // Informar cuáles manifiestos SÍ eran válidos para que
             // Jaremar los reenvíe solos sin tener que buscarlos
-            if (!empty($validos)) {
+            if (! empty($validos)) {
                 $response['manifiestos_no_afectados'] = array_map(
                     fn ($v) => [
-                        'manifiesto'     => $v['manifiesto'],
+                        'manifiesto' => $v['manifiesto'],
                         'total_facturas' => $v['total_facturas'],
-                        'facturas'       => $v['facturas'],
-                        'nota'           => "Este manifiesto es válido pero fue rechazado por venir en el mismo batch que manifiestos de días anteriores. Reenvíelo en un batch independiente.",
+                        'facturas' => $v['facturas'],
+                        'nota' => 'Este manifiesto es válido pero fue rechazado por venir en el mismo batch que manifiestos de días anteriores. Reenvíelo en un batch independiente.',
                     ],
                     $validos
                 );
@@ -142,36 +142,36 @@ class ManifestApiController extends Controller
         // Solo llegamos aquí si todas las fechas son válidas.
         // Aplica únicamente para batches procesados hoy.
         $payloadHash = hash('sha256', $request->getContent());
-        $duplicate   = ApiInvoiceImport::where('payload_hash', $payloadHash)
-                                       ->where('status', '!=', 'failed')
-                                       ->whereDate('created_at', today())
-                                       ->first();
+        $duplicate = ApiInvoiceImport::where('payload_hash', $payloadHash)
+            ->where('status', '!=', 'failed')
+            ->whereDate('created_at', today())
+            ->first();
 
         if ($duplicate) {
             return new JsonResponse([
-                'success'    => true,
-                'message'    => 'Este batch ya fue procesado anteriormente el día de hoy.',
+                'success' => true,
+                'message' => 'Este batch ya fue procesado anteriormente el día de hoy.',
                 'batch_uuid' => $duplicate->batch_uuid,
-                'resumen'    => [
-                    'recibidas'           => $duplicate->total_received,
-                    'insertadas'          => $duplicate->invoices_inserted,
-                    'actualizadas'        => $duplicate->invoices_updated,
-                    'sin_cambios'         => $duplicate->invoices_unchanged,
+                'resumen' => [
+                    'recibidas' => $duplicate->total_received,
+                    'insertadas' => $duplicate->invoices_inserted,
+                    'actualizadas' => $duplicate->invoices_updated,
+                    'sin_cambios' => $duplicate->invoices_unchanged,
                     'pendientes_revision' => $duplicate->invoices_pending_review,
-                    'rechazadas'          => $duplicate->invoices_rejected,
+                    'rechazadas' => $duplicate->invoices_rejected,
                 ],
             ], 200);
         }
 
         // ── 5. Persistir el payload crudo ──────────────────────────────
         $importRecord = ApiInvoiceImport::create([
-            'batch_uuid'     => Str::uuid()->toString(),
-            'api_key_hint'   => $keyHint,
-            'ip_address'     => $request->ip(),
+            'batch_uuid' => Str::uuid()->toString(),
+            'api_key_hint' => $keyHint,
+            'ip_address' => $request->ip(),
             'total_received' => count($invoices),
-            'raw_payload'    => $invoices,
-            'payload_hash'   => $payloadHash,
-            'status'         => 'received',
+            'raw_payload' => $invoices,
+            'payload_hash' => $payloadHash,
+            'status' => 'received',
         ]);
 
         // ── 6. Procesar el batch ───────────────────────────────────────
@@ -181,12 +181,12 @@ class ManifestApiController extends Controller
 
             Log::info('API Jaremar: batch procesado correctamente.', [
                 'batch_uuid' => $importRecord->batch_uuid,
-                'ip'         => $request->ip(),
-                'summary'    => $summary,
+                'ip' => $request->ip(),
+                'summary' => $summary,
             ]);
 
             // Notificar a admins si hubo rechazos por almacén desconocido
-            if (!empty($summary['manifiestos_rechazados'])) {
+            if (! empty($summary['manifiestos_rechazados'])) {
                 $this->notifyAdmins(
                     $summary['manifiestos_rechazados'],
                     $importRecord->batch_uuid
@@ -201,32 +201,32 @@ class ManifestApiController extends Controller
                 ->all();
 
             $response = [
-                'success'     => true,
-                'message'     => 'Facturas procesadas correctamente.',
-                'batch_uuid'  => $importRecord->batch_uuid,
+                'success' => true,
+                'message' => 'Facturas procesadas correctamente.',
+                'batch_uuid' => $importRecord->batch_uuid,
                 'manifiestos' => $manifiestos,
-                'resumen'     => [
-                    'recibidas'           => count($invoices),
-                    'insertadas'          => $summary['invoices_inserted'],
-                    'actualizadas'        => $summary['invoices_updated'],
-                    'sin_cambios'         => $summary['invoices_unchanged'],
+                'resumen' => [
+                    'recibidas' => count($invoices),
+                    'insertadas' => $summary['invoices_inserted'],
+                    'actualizadas' => $summary['invoices_updated'],
+                    'sin_cambios' => $summary['invoices_unchanged'],
                     'pendientes_revision' => $summary['invoices_pending_review'],
-                    'rechazadas'          => $summary['invoices_rejected'],
+                    'rechazadas' => $summary['invoices_rejected'],
                 ],
             ];
 
             // Detalle de manifiestos rechazados por almacén desconocido
-            if (!empty($summary['manifiestos_rechazados'])) {
+            if (! empty($summary['manifiestos_rechazados'])) {
                 $response['success'] = false;
                 $response['message'] = 'Uno o más manifiestos fueron rechazados por contener almacenes no registrados en el sistema.';
-                $response['motivo']  = 'ALMACENES_DESCONOCIDOS';
+                $response['motivo'] = 'ALMACENES_DESCONOCIDOS';
                 $response['manifiestos_rechazados'] = array_map(
                     fn ($r) => [
-                        'manifiesto'             => $r['manifiesto'],
-                        'total_facturas'         => $r['total_facturas'],
+                        'manifiesto' => $r['manifiesto'],
+                        'total_facturas' => $r['total_facturas'],
                         'almacenes_desconocidos' => array_map(
                             fn ($codigo, $facturas) => [
-                                'almacen'  => $codigo,
+                                'almacen' => $codigo,
                                 'facturas' => $facturas,
                                 'cantidad' => count($facturas),
                             ],
@@ -238,15 +238,15 @@ class ManifestApiController extends Controller
                 );
             }
 
-            if (!empty($summary['warnings'])) {
+            if (! empty($summary['warnings'])) {
                 $response['advertencias'] = $summary['warnings'];
             }
 
-            if (!empty($summary['errors'])) {
+            if (! empty($summary['errors'])) {
                 $response['rechazadas_detalle'] = $summary['errors'];
             }
 
-            $statusCode = !empty($summary['manifiestos_rechazados']) ? 422 : 200;
+            $statusCode = ! empty($summary['manifiestos_rechazados']) ? 422 : 200;
 
             return new JsonResponse($response, $statusCode);
 
@@ -255,14 +255,14 @@ class ManifestApiController extends Controller
 
             Log::error('API Jaremar: error procesando batch.', [
                 'batch_uuid' => $importRecord->batch_uuid,
-                'ip'         => $request->ip(),
-                'error'      => $e->getMessage(),
-                'trace'      => $e->getTraceAsString(),
+                'ip' => $request->ip(),
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
             ]);
 
             return new JsonResponse([
-                'success'    => false,
-                'message'    => 'Error interno al procesar las facturas. El equipo técnico ha sido notificado.',
+                'success' => false,
+                'message' => 'Error interno al procesar las facturas. El equipo técnico ha sido notificado.',
                 'batch_uuid' => $importRecord->batch_uuid,
             ], 500);
         }
@@ -275,7 +275,7 @@ class ManifestApiController extends Controller
     {
         $manifest = Manifest::where('number', $numero)->first();
 
-        if (!$manifest) {
+        if (! $manifest) {
             return new JsonResponse([
                 'success' => false,
                 'message' => "El manifiesto #{$numero} no existe en el sistema.",
@@ -283,13 +283,13 @@ class ManifestApiController extends Controller
         }
 
         return new JsonResponse([
-            'success'    => true,
+            'success' => true,
             'manifiesto' => $numero,
-            'estado'     => $manifest->status,
-            'resumen'    => [
+            'estado' => $manifest->status,
+            'resumen' => [
                 'total_facturas' => $manifest->invoices_count,
-                'total_importe'  => (float) $manifest->total_invoices,
-                'fecha_ingreso'  => $manifest->created_at->toDateTimeString(),
+                'total_importe' => (float) $manifest->total_invoices,
+                'fecha_ingreso' => $manifest->created_at->toDateTimeString(),
             ],
         ], 200);
     }
@@ -311,16 +311,16 @@ class ManifestApiController extends Controller
 
             if (isset($rechazado['fecha_original'])) {
                 $titulo = "Manifiesto #{$manifiesto} rechazado — fecha inválida";
-                $cuerpo = "Jaremar intentó agregar {$rechazado['total_facturas']} factura(s) al manifiesto #{$manifiesto} " .
-                          "el día {$rechazado['fecha_intento']}, pero ese manifiesto fue creado el {$rechazado['fecha_original']} " .
-                          "y ya no acepta facturas nuevas. Se rechazó el batch completo.";
+                $cuerpo = "Jaremar intentó agregar {$rechazado['total_facturas']} factura(s) al manifiesto #{$manifiesto} ".
+                          "el día {$rechazado['fecha_intento']}, pero ese manifiesto fue creado el {$rechazado['fecha_original']} ".
+                          'y ya no acepta facturas nuevas. Se rechazó el batch completo.';
             } else {
-                $total   = $rechazado['total_facturas'];
+                $total = $rechazado['total_facturas'];
                 $codigos = implode(', ', array_keys($rechazado['almacenes_desconocidos']));
-                $titulo  = "Manifiesto #{$manifiesto} rechazado — almacén desconocido";
-                $cuerpo  = "El manifiesto #{$manifiesto} fue rechazado. " .
-                           "Contiene {$total} factura(s) con almacén(es) no registrado(s): {$codigos}. " .
-                           "Jaremar debe registrar el almacén o corregir el código y reenviar.";
+                $titulo = "Manifiesto #{$manifiesto} rechazado — almacén desconocido";
+                $cuerpo = "El manifiesto #{$manifiesto} fue rechazado. ".
+                           "Contiene {$total} factura(s) con almacén(es) no registrado(s): {$codigos}. ".
+                           'Jaremar debe registrar el almacén o corregir el código y reenviar.';
             }
 
             foreach ($admins as $admin) {
@@ -333,8 +333,8 @@ class ManifestApiController extends Controller
         }
 
         Log::info('API Jaremar: notificación enviada a admins por manifiestos rechazados.', [
-            'batch_uuid'         => $batchUuid,
-            'manifiestos'        => array_column($manifistosRechazados, 'manifiesto'),
+            'batch_uuid' => $batchUuid,
+            'manifiestos' => array_column($manifistosRechazados, 'manifiesto'),
             'admins_notificados' => $admins->pluck('name')->toArray(),
         ]);
     }

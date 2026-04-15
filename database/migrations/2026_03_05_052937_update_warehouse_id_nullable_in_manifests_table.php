@@ -1,4 +1,5 @@
 <?php
+
 // database/migrations/2026_03_05_000002_update_warehouse_id_nullable_in_manifests_table.php
 
 use Illuminate\Database\Migrations\Migration;

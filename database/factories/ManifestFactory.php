@@ -28,21 +28,21 @@ class ManifestFactory extends Factory
     public function definition(): array
     {
         return [
-            'supplier_id'      => Supplier::factory(),
-            'warehouse_id'     => Warehouse::factory(),
+            'supplier_id' => Supplier::factory(),
+            'warehouse_id' => Warehouse::factory(),
             // Formato típico de Jaremar: MAN + 6 dígitos. Unique para no
             // chocar con el constraint de la columna `number`.
-            'number'           => 'MAN' . fake()->unique()->numerify('######'),
-            'date'             => fake()->dateTimeBetween('-30 days', 'now'),
-            'status'           => 'imported',
-            'total_invoices'   => 0,
-            'total_returns'    => 0,
+            'number' => 'MAN'.fake()->unique()->numerify('######'),
+            'date' => fake()->dateTimeBetween('-30 days', 'now'),
+            'status' => 'imported',
+            'total_invoices' => 0,
+            'total_returns' => 0,
             'total_to_deposit' => 0,
-            'total_deposited'  => 0,
-            'difference'       => 0,
-            'invoices_count'   => 0,
-            'returns_count'    => 0,
-            'raw_json'         => null,
+            'total_deposited' => 0,
+            'difference' => 0,
+            'invoices_count' => 0,
+            'returns_count' => 0,
+            'raw_json' => null,
         ];
     }
 
@@ -59,7 +59,7 @@ class ManifestFactory extends Factory
     public function closed(): static
     {
         return $this->state(fn () => [
-            'status'    => 'closed',
+            'status' => 'closed',
             'closed_at' => now(),
         ]);
     }

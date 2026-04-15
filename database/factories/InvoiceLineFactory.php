@@ -24,38 +24,38 @@ class InvoiceLineFactory extends Factory
 
     public function definition(): array
     {
-        $boxes            = 10;
+        $boxes = 10;
         $conversionFactor = 12;
-        $pricePerUnit     = 10.0;
-        $fractions        = $boxes * $conversionFactor;    // 120
-        $lineTotal        = $fractions * $pricePerUnit;    // 1200
+        $pricePerUnit = 10.0;
+        $fractions = $boxes * $conversionFactor;    // 120
+        $lineTotal = $fractions * $pricePerUnit;    // 1200
 
         return [
-            'invoice_id'          => Invoice::factory(),
-            'jaremar_line_id'     => fake()->numerify('L####'),
-            'invoice_jaremar_id'  => fake()->numberBetween(1, 99999),
-            'line_number'         => fake()->numberBetween(1, 50),
-            'product_id'          => fake()->bothify('PRD###'),
+            'invoice_id' => Invoice::factory(),
+            'jaremar_line_id' => fake()->numerify('L####'),
+            'invoice_jaremar_id' => fake()->numberBetween(1, 99999),
+            'line_number' => fake()->numberBetween(1, 50),
+            'product_id' => fake()->bothify('PRD###'),
             'product_description' => fake()->words(3, true),
-            'product_type'        => 'A',
-            'unit_sale'           => 'UN',
-            'quantity_fractions'  => $fractions,
-            'quantity_decimal'    => $boxes,
-            'quantity_box'        => $boxes,
-            'quantity_min_sale'   => $fractions,
-            'conversion_factor'   => $conversionFactor,
-            'cost'                => $pricePerUnit * 0.7,
-            'price'               => $pricePerUnit * $conversionFactor, // precio por caja
-            'price_min_sale'      => $pricePerUnit,                      // precio por unidad
-            'subtotal'            => $lineTotal,
-            'discount'            => 0,
-            'discount_percent'    => 0,
-            'tax'                 => 0,
-            'tax_percent'         => 0,
-            'tax18'               => 0,
-            'total'               => $lineTotal,
-            'weight'              => 0,
-            'volume'              => 0,
+            'product_type' => 'A',
+            'unit_sale' => 'UN',
+            'quantity_fractions' => $fractions,
+            'quantity_decimal' => $boxes,
+            'quantity_box' => $boxes,
+            'quantity_min_sale' => $fractions,
+            'conversion_factor' => $conversionFactor,
+            'cost' => $pricePerUnit * 0.7,
+            'price' => $pricePerUnit * $conversionFactor, // precio por caja
+            'price_min_sale' => $pricePerUnit,                      // precio por unidad
+            'subtotal' => $lineTotal,
+            'discount' => 0,
+            'discount_percent' => 0,
+            'tax' => 0,
+            'tax_percent' => 0,
+            'tax18' => 0,
+            'total' => $lineTotal,
+            'weight' => 0,
+            'volume' => 0,
         ];
     }
 
@@ -70,15 +70,15 @@ class InvoiceLineFactory extends Factory
         $lineTotal = $fractions * $pricePerUnit;
 
         return $this->state(fn () => [
-            'quantity_box'        => $boxes,
-            'quantity_fractions'  => $fractions,
-            'quantity_min_sale'   => $fractions,
-            'quantity_decimal'    => $boxes,
-            'conversion_factor'   => $conversionFactor,
-            'price_min_sale'      => $pricePerUnit,
-            'price'               => $pricePerUnit * $conversionFactor,
-            'subtotal'            => $lineTotal,
-            'total'               => $lineTotal,
+            'quantity_box' => $boxes,
+            'quantity_fractions' => $fractions,
+            'quantity_min_sale' => $fractions,
+            'quantity_decimal' => $boxes,
+            'conversion_factor' => $conversionFactor,
+            'price_min_sale' => $pricePerUnit,
+            'price' => $pricePerUnit * $conversionFactor,
+            'subtotal' => $lineTotal,
+            'total' => $lineTotal,
         ]);
     }
 }

@@ -4,7 +4,6 @@ namespace App\Filament\Resources\Manifests\Pages;
 
 use App\Exports\ManifestsExport;
 use App\Filament\Resources\Manifests\ManifestResource;
-use Carbon\Carbon;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Actions\CreateAction;
@@ -63,27 +62,27 @@ class ListManifests extends ListRecords
     private function resolvePeriodDates(array $data): array
     {
         return match ($data['period_type'] ?? null) {
-            'today'  => [
+            'today' => [
                 'date_from' => today()->toDateString(),
-                'date_to'   => today()->toDateString(),
+                'date_to' => today()->toDateString(),
             ],
-            'week'   => [
+            'week' => [
                 'date_from' => now()->startOfWeek()->toDateString(),
-                'date_to'   => now()->endOfWeek()->toDateString(),
+                'date_to' => now()->endOfWeek()->toDateString(),
             ],
-            'month'  => [
+            'month' => [
                 'date_from' => now()->startOfMonth()->toDateString(),
-                'date_to'   => now()->endOfMonth()->toDateString(),
+                'date_to' => now()->endOfMonth()->toDateString(),
             ],
-            'date'   => [
+            'date' => [
                 'date_from' => $data['specific_date'] ?? null,
-                'date_to'   => $data['specific_date'] ?? null,
+                'date_to' => $data['specific_date'] ?? null,
             ],
             'custom' => [
                 'date_from' => $data['date_from'] ?? null,
-                'date_to'   => $data['date_to']   ?? null,
+                'date_to' => $data['date_to'] ?? null,
             ],
-            default  => ['date_from' => null, 'date_to' => null],
+            default => ['date_from' => null, 'date_to' => null],
         };
     }
 
@@ -99,10 +98,10 @@ class ListManifests extends ListRecords
                 ->label('Período')
                 ->placeholder('Todos los manifiestos')
                 ->options([
-                    'today'  => 'Hoy',
-                    'week'   => 'Esta semana',
-                    'month'  => 'Este mes',
-                    'date'   => 'Fecha específica',
+                    'today' => 'Hoy',
+                    'week' => 'Esta semana',
+                    'month' => 'Este mes',
+                    'date' => 'Fecha específica',
                     'custom' => 'Rango personalizado',
                 ])
                 ->live(),
@@ -130,7 +129,7 @@ class ListManifests extends ListRecords
                 ->placeholder('Todos los estados')
                 ->options([
                     'imported' => 'Importado',
-                    'closed'   => 'Cerrado',
+                    'closed' => 'Cerrado',
                 ]),
         ];
 
@@ -139,7 +138,7 @@ class ListManifests extends ListRecords
             $fields[] = Select::make('date_field')
                 ->label('Filtrar por fecha de')
                 ->options([
-                    'date'      => 'Fecha del manifiesto (Jaremar)',
+                    'date' => 'Fecha del manifiesto (Jaremar)',
                     'closed_at' => 'Fecha de cierre (Hozana)',
                 ])
                 ->default('date')
@@ -158,6 +157,7 @@ class ListManifests extends ListRecords
                 ->visible(function (): bool {
                     /** @var \App\Models\User $user */
                     $user = Auth::user();
+
                     return $user->hasAnyRole(['super_admin', 'admin']);
                 }),
 
@@ -176,11 +176,11 @@ class ListManifests extends ListRecords
 
                         $payload = Crypt::encryptString(json_encode([
                             'date_from' => $from,
-                            'date_to'   => $to,
-                            'status'    => $data['status'] ?? null,
+                            'date_to' => $to,
+                            'status' => $data['status'] ?? null,
                         ]));
 
-                        $this->js("window.open('/imprimir/reportes/manifiestos?payload=" . urlencode($payload) . "', '_blank')");
+                        $this->js("window.open('/imprimir/reportes/manifiestos?payload=".urlencode($payload)."', '_blank')");
                     }),
 
                 // ── Reporte PDF Sin ISV ────────────────────────────────
@@ -197,11 +197,11 @@ class ListManifests extends ListRecords
 
                         $payload = Crypt::encryptString(json_encode([
                             'date_from' => $from,
-                            'date_to'   => $to,
-                            'status'    => $data['status'] ?? null,
+                            'date_to' => $to,
+                            'status' => $data['status'] ?? null,
                         ]));
 
-                        $this->js("window.open('/imprimir/reportes/manifiestos-sin-isv?payload=" . urlencode($payload) . "', '_blank')");
+                        $this->js("window.open('/imprimir/reportes/manifiestos-sin-isv?payload=".urlencode($payload)."', '_blank')");
                     }),
 
                 // ── Reporte por Bodega ─────────────────────────────────
@@ -217,13 +217,13 @@ class ListManifests extends ListRecords
                         ['date_from' => $from, 'date_to' => $to] = $this->resolvePeriodDates($data);
 
                         $payload = Crypt::encryptString(json_encode([
-                            'date_from'  => $from,
-                            'date_to'    => $to,
-                            'status'     => $data['status'] ?? null,
+                            'date_from' => $from,
+                            'date_to' => $to,
+                            'status' => $data['status'] ?? null,
                             'date_field' => $data['date_field'] ?? 'date',
                         ]));
 
-                        $this->js("window.open('/imprimir/reportes/ventas-por-bodega?payload=" . urlencode($payload) . "', '_blank')");
+                        $this->js("window.open('/imprimir/reportes/ventas-por-bodega?payload=".urlencode($payload)."', '_blank')");
                     }),
 
                 // ── Export Excel ───────────────────────────────────────
@@ -238,13 +238,13 @@ class ListManifests extends ListRecords
                     ->action(function (array $data): mixed {
                         ['date_from' => $from, 'date_to' => $to] = $this->resolvePeriodDates($data);
 
-                        $filename = 'manifiestos_' . now()->format('Y-m-d') . '.xlsx';
+                        $filename = 'manifiestos_'.now()->format('Y-m-d').'.xlsx';
 
                         return Excel::download(
                             new ManifestsExport(
-                                status:   $data['status'] ?? null,
+                                status: $data['status'] ?? null,
                                 dateFrom: $from,
-                                dateTo:   $to,
+                                dateTo: $to,
                             ),
                             $filename
                         );
@@ -256,6 +256,7 @@ class ListManifests extends ListRecords
                 ->visible(function (): bool {
                     /** @var \App\Models\User $user */
                     $user = Auth::user();
+
                     return $user->hasAnyRole(['super_admin', 'admin']);
                 }),
         ];

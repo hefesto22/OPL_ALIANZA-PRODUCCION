@@ -3,8 +3,8 @@
 namespace App\Exports;
 
 use App\Models\ReturnLine;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Database\Eloquent\Builder;
 use Maatwebsite\Excel\Concerns\Exportable;
 use Maatwebsite\Excel\Concerns\FromQuery;
 use Maatwebsite\Excel\Concerns\ShouldAutoSize;
@@ -42,7 +42,7 @@ use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
  * Columnas con valor fijo de .NET DateTime vacío:
  *   CreationTime, LastModifierUserId, LastModificationTime = "01/01/0001 00:00:00"
  */
-class ReturnsDetailExport implements FromQuery, WithHeadings, WithMapping, WithStyles, WithEvents, ShouldAutoSize, WithTitle, ShouldQueue
+class ReturnsDetailExport implements FromQuery, ShouldAutoSize, ShouldQueue, WithEvents, WithHeadings, WithMapping, WithStyles, WithTitle
 {
     use Exportable;
 
@@ -51,10 +51,10 @@ class ReturnsDetailExport implements FromQuery, WithHeadings, WithMapping, WithS
     private const DECIMAL_COLS = [4, 5, 10, 36, 37, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63];
 
     public function __construct(
-        private readonly ?string $dateFrom    = null,
-        private readonly ?string $dateTo      = null,
-        private readonly ?string $status      = null,
-        private readonly ?int    $warehouseId = null,
+        private readonly ?string $dateFrom = null,
+        private readonly ?string $dateTo = null,
+        private readonly ?string $status = null,
+        private readonly ?int $warehouseId = null,
     ) {}
 
     // ─── Query ─────────────────────────────────────────────────────────────
@@ -170,8 +170,8 @@ class ReturnsDetailExport implements FromQuery, WithHeadings, WithMapping, WithS
 
     public function map($line): array
     {
-        $inv  = $line->return?->invoice;
-        $ret  = $line->return;
+        $inv = $line->return?->invoice;
+        $ret = $line->return;
         $mfst = $inv?->manifest;
 
         // Helper: convierte a float garantizando 0.0 si el valor es null
@@ -187,7 +187,7 @@ class ReturnsDetailExport implements FromQuery, WithHeadings, WithMapping, WithS
 
         return [
             // 0  NumeroLinea
-            (int)   $line->line_number,
+            (int) $line->line_number,
             // 1  ProductoId
             $line->product_id,
             // 2  Nfactura
@@ -201,7 +201,7 @@ class ReturnsDetailExport implements FromQuery, WithHeadings, WithMapping, WithS
             // 6  FechaFacturaConvertida
             $fmtDate($inv?->invoice_date),
             // 7  IdDetalleDevolucion
-            (int)   $line->id,
+            (int) $line->id,
             // 8  Id_Jaremar_DD  (= id_fac_encabezado en Jaremar)
             $inv?->jaremar_id,
             // 9  LineTotal
@@ -237,7 +237,7 @@ class ReturnsDetailExport implements FromQuery, WithHeadings, WithMapping, WithS
             // 24 TipoPago
             (string) ($inv?->payment_type ?? ''),
             // 25 DiasCred
-            (int)   ($inv?->credit_days ?? 0),
+            (int) ($inv?->credit_days ?? 0),
             // 26 Rtn
             (string) ($inv?->client_rtn ?? ''),
             // 27 Cai
@@ -338,19 +338,19 @@ class ReturnsDetailExport implements FromQuery, WithHeadings, WithMapping, WithS
         return [
             1 => [
                 'font' => [
-                    'name'  => 'Arial',
-                    'bold'  => true,
-                    'size'  => 8,
+                    'name' => 'Arial',
+                    'bold' => true,
+                    'size' => 8,
                     'color' => ['rgb' => 'FFFFFF'],
                 ],
                 'fill' => [
-                    'fillType'   => Fill::FILL_SOLID,
+                    'fillType' => Fill::FILL_SOLID,
                     'startColor' => ['rgb' => '1A7A4A'],
                 ],
                 'alignment' => [
                     'horizontal' => Alignment::HORIZONTAL_CENTER,
-                    'vertical'   => Alignment::VERTICAL_CENTER,
-                    'wrapText'   => false,
+                    'vertical' => Alignment::VERTICAL_CENTER,
+                    'wrapText' => false,
                 ],
             ],
         ];
@@ -362,12 +362,12 @@ class ReturnsDetailExport implements FromQuery, WithHeadings, WithMapping, WithS
     {
         return [
             AfterSheet::class => function (AfterSheet $event): void {
-                $ws       = $event->sheet->getDelegate();
-                $lastRow  = $ws->getHighestRow();
-                $lastCol  = 71; // 71 columnas (A–BS)
+                $ws = $event->sheet->getDelegate();
+                $lastRow = $ws->getHighestRow();
+                $lastCol = 71; // 71 columnas (A–BS)
 
                 // ── 1. Fuente base de datos (Arial 8 pt) ───────────────────
-                $ws->getStyle('A2:' . Coordinate::stringFromColumnIndex($lastCol) . $lastRow)
+                $ws->getStyle('A2:'.Coordinate::stringFromColumnIndex($lastCol).$lastRow)
                     ->getFont()
                     ->setName('Arial')
                     ->setSize(8);
@@ -385,7 +385,7 @@ class ReturnsDetailExport implements FromQuery, WithHeadings, WithMapping, WithS
                     // 2a. Forzar valor numérico 0 en celdas vacías/nulas
                     for ($r = 2; $r <= $lastRow; $r++) {
                         $cell = $ws->getCell("{$col}{$r}");
-                        $v    = $cell->getValue();
+                        $v = $cell->getValue();
                         if ($v === null || $v === '') {
                             $cell->setValueExplicit(0, DataType::TYPE_NUMERIC);
                         }
@@ -408,7 +408,7 @@ class ReturnsDetailExport implements FromQuery, WithHeadings, WithMapping, WithS
                     $col = Coordinate::stringFromColumnIndex($colIdx);
                     for ($r = 2; $r <= $lastRow; $r++) {
                         $ws->getCell("{$col}{$r}")
-                           ->setValueExplicit('01/01/0001 00:00:00', DataType::TYPE_STRING);
+                            ->setValueExplicit('01/01/0001 00:00:00', DataType::TYPE_STRING);
                     }
                 }
 
@@ -423,7 +423,7 @@ class ReturnsDetailExport implements FromQuery, WithHeadings, WithMapping, WithS
                     $col = Coordinate::stringFromColumnIndex($colIdx);
                     for ($r = 2; $r <= $lastRow; $r++) {
                         $cell = $ws->getCell("{$col}{$r}");
-                        $v    = $cell->getValue();
+                        $v = $cell->getValue();
                         if ($v === null || $v === '') {
                             $cell->setValueExplicit($defaultVal, DataType::TYPE_NUMERIC);
                         }
@@ -432,7 +432,7 @@ class ReturnsDetailExport implements FromQuery, WithHeadings, WithMapping, WithS
 
                 // ── 5. Encabezado: altura de fila + fuente base ────────────
                 $ws->getRowDimension(1)->setRowHeight(14);
-                $ws->getStyle('A1:' . Coordinate::stringFromColumnIndex($lastCol) . '1')
+                $ws->getStyle('A1:'.Coordinate::stringFromColumnIndex($lastCol).'1')
                     ->getFont()
                     ->setName('Arial')
                     ->setSize(8);
@@ -446,7 +446,7 @@ class ReturnsDetailExport implements FromQuery, WithHeadings, WithMapping, WithS
                 $ws->freezePane('A2');
 
                 // ── 8. Bordes del encabezado ───────────────────────────────
-                $ws->getStyle('A1:' . Coordinate::stringFromColumnIndex($lastCol) . '1')
+                $ws->getStyle('A1:'.Coordinate::stringFromColumnIndex($lastCol).'1')
                     ->getBorders()
                     ->getAllBorders()
                     ->setBorderStyle(Border::BORDER_THIN)
@@ -455,7 +455,7 @@ class ReturnsDetailExport implements FromQuery, WithHeadings, WithMapping, WithS
 
                 // ── 8. Auto-filter en encabezado ──────────────────────────
                 $ws->setAutoFilter(
-                    'A1:' . Coordinate::stringFromColumnIndex($lastCol) . '1'
+                    'A1:'.Coordinate::stringFromColumnIndex($lastCol).'1'
                 );
             },
         ];

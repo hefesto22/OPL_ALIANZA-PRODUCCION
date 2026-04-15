@@ -41,33 +41,33 @@ class ReturnExporter
 
             foreach ($data as $item) {
                 $dev = $xml->addChild('devolucion');
-                $dev->addChild('devolucion',       htmlspecialchars($item['devolucion']));
-                $dev->addChild('factura',          htmlspecialchars($item['factura']));
-                $dev->addChild('clienteid',        htmlspecialchars($item['clienteid']));
-                $dev->addChild('cliente',          htmlspecialchars($item['cliente']));
-                $dev->addChild('fecha',            $item['fecha']);
-                $dev->addChild('total',            $item['total']);
-                $dev->addChild('almacen',          htmlspecialchars($item['almacen']));
-                $dev->addChild('idConcepto',       htmlspecialchars($item['idConcepto']));
-                $dev->addChild('concepto',         htmlspecialchars($item['concepto']));
+                $dev->addChild('devolucion', htmlspecialchars($item['devolucion']));
+                $dev->addChild('factura', htmlspecialchars($item['factura']));
+                $dev->addChild('clienteid', htmlspecialchars($item['clienteid']));
+                $dev->addChild('cliente', htmlspecialchars($item['cliente']));
+                $dev->addChild('fecha', $item['fecha']);
+                $dev->addChild('total', $item['total']);
+                $dev->addChild('almacen', htmlspecialchars($item['almacen']));
+                $dev->addChild('idConcepto', htmlspecialchars($item['idConcepto']));
+                $dev->addChild('concepto', htmlspecialchars($item['concepto']));
                 $dev->addChild('numeroManifiesto', htmlspecialchars($item['numeroManifiesto']));
-                $dev->addChild('fechaProcesado',   $item['fechaProcesado'] ?? '');
-                $dev->addChild('horaProcesado',    $item['horaProcesado'] ?? '');
+                $dev->addChild('fechaProcesado', $item['fechaProcesado'] ?? '');
+                $dev->addChild('horaProcesado', $item['horaProcesado'] ?? '');
 
                 $lineas = $dev->addChild('lineasDevolucion');
                 foreach ($item['lineasDevolucion'] as $linea) {
                     $l = $lineas->addChild('linea');
-                    $l->addChild('productoId',  htmlspecialchars($linea['productoId']));
-                    $l->addChild('producto',    htmlspecialchars($linea['producto']));
-                    $l->addChild('cantidad',    $linea['cantidad']);
+                    $l->addChild('productoId', htmlspecialchars($linea['productoId']));
+                    $l->addChild('producto', htmlspecialchars($linea['producto']));
+                    $l->addChild('cantidad', $linea['cantidad']);
                     $l->addChild('numeroLinea', htmlspecialchars($linea['numeroLinea']));
-                    $l->addChild('lineTotal',   $linea['lineTotal']);
+                    $l->addChild('lineTotal', $linea['lineTotal']);
                 }
             }
 
             $dom = new \DOMDocument('1.0', 'UTF-8');
             $dom->preserveWhiteSpace = false;
-            $dom->formatOutput       = true;
+            $dom->formatOutput = true;
             $dom->loadXML($xml->asXML());
             echo $dom->saveXML();
 
@@ -83,7 +83,7 @@ class ReturnExporter
         return response()->streamDownload(function () use ($data) {
             $handle = fopen('php://output', 'w');
 
-            fprintf($handle, chr(0xEF) . chr(0xBB) . chr(0xBF));
+            fprintf($handle, chr(0xEF).chr(0xBB).chr(0xBF));
 
             fputcsv($handle, [
                 'devolucion', 'factura', 'clienteid', 'cliente', 'fecha',
@@ -119,7 +119,7 @@ class ReturnExporter
 
             fclose($handle);
         }, $filename, [
-            'Content-Type'        => 'text/csv; charset=UTF-8',
+            'Content-Type' => 'text/csv; charset=UTF-8',
             'Content-Disposition' => "attachment; filename=\"{$filename}\"",
         ]);
     }
@@ -146,6 +146,7 @@ class ReturnExporter
                         $linea[$field] = (float) $linea[$field];
                     }
                 }
+
                 return $linea;
             }, $item['lineasDevolucion']);
 

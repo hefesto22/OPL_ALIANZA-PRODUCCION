@@ -7,7 +7,6 @@ use App\Filament\Resources\Manifests\ManifestResource;
 use Filament\Actions\EditAction;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Pages\ViewRecord;
-use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Support\Enums\FontWeight;
@@ -22,7 +21,7 @@ class ViewDeposit extends ViewRecord
     {
         return [
             EditAction::make()
-                ->hidden(fn() => $this->record->manifest->isClosed()),
+                ->hidden(fn () => $this->record->manifest->isClosed()),
         ];
     }
 
@@ -37,25 +36,25 @@ class ViewDeposit extends ViewRecord
                     TextEntry::make('manifest.number')
                         ->label('# Manifiesto')
                         ->weight(FontWeight::Bold)
-                        ->url(fn() => ManifestResource::getUrl('view', ['record' => $this->record->manifest_id]))
+                        ->url(fn () => ManifestResource::getUrl('view', ['record' => $this->record->manifest_id]))
                         ->color('primary'),
 
                     TextEntry::make('manifest.status')
                         ->label('Estado Manifiesto')
                         ->badge()
-                        ->color(fn(string $state) => match($state) {
-                            'pending'    => 'gray',
+                        ->color(fn (string $state) => match ($state) {
+                            'pending' => 'gray',
                             'processing' => 'warning',
-                            'imported'   => 'info',
-                            'closed'     => 'success',
-                            default      => 'gray',
+                            'imported' => 'info',
+                            'closed' => 'success',
+                            default => 'gray',
                         })
-                        ->formatStateUsing(fn(string $state) => match($state) {
-                            'pending'    => 'Pendiente',
+                        ->formatStateUsing(fn (string $state) => match ($state) {
+                            'pending' => 'Pendiente',
                             'processing' => 'Procesando',
-                            'imported'   => 'Importado',
-                            'closed'     => 'Cerrado',
-                            default      => $state,
+                            'imported' => 'Importado',
+                            'closed' => 'Cerrado',
+                            default => $state,
                         }),
 
                     TextEntry::make('deposit_date')

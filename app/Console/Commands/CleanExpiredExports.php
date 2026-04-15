@@ -27,16 +27,17 @@ class CleanExpiredExports extends Command
 
     public function handle(): int
     {
-        $hours  = (int) $this->option('hours');
+        $hours = (int) $this->option('hours');
         $cutoff = now()->subHours($hours)->timestamp;
-        $disk   = Storage::disk('local');
+        $disk = Storage::disk('local');
 
-        if (!$disk->exists('exports')) {
+        if (! $disk->exists('exports')) {
             $this->info('No hay directorio de exportaciones. Nada que limpiar.');
+
             return self::SUCCESS;
         }
 
-        $files   = $disk->files('exports');
+        $files = $disk->files('exports');
         $deleted = 0;
 
         foreach ($files as $file) {

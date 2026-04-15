@@ -2,13 +2,13 @@
 
 namespace App\Providers;
 
+use App\Listeners\RecordUserLogin;
 use App\Models\InvoiceReturn;
 use App\Observers\InvoiceReturnObserver;
 use Illuminate\Auth\Events\Login;
-use App\Listeners\RecordUserLogin;
-use Illuminate\Support\Facades\Event;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 

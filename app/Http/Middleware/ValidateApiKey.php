@@ -3,8 +3,8 @@
 namespace App\Http\Middleware;
 
 use Closure;
-use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 class ValidateApiKey
@@ -30,7 +30,7 @@ class ValidateApiKey
             ], 503);
         }
 
-        if (!hash_equals($validKey, $apiKey)) {
+        if (! hash_equals($validKey, $apiKey)) {
             return new JsonResponse([
                 'success' => false,
                 'message' => 'ApiKey inválido.',

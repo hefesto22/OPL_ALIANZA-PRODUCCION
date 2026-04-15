@@ -18,18 +18,18 @@ class ReturnReasonFactory extends Factory
     public function definition(): array
     {
         return [
-            'jaremar_id'  => fake()->numerify('####'),
-            'code'        => 'BE-' . fake()->unique()->numerify('##'),
-            'category'    => 'BE',
+            'jaremar_id' => fake()->numerify('####'),
+            'code' => 'BE-'.fake()->unique()->numerify('##'),
+            'category' => 'BE',
             'description' => fake()->sentence(4),
-            'is_active'   => true,
+            'is_active' => true,
         ];
     }
 
     public function pnc(): static
     {
         return $this->state(fn () => [
-            'code'     => 'PNC-' . fake()->numerify('##'),
+            'code' => 'PNC-'.fake()->numerify('##'),
             'category' => 'PNC',
         ]);
     }
@@ -37,7 +37,7 @@ class ReturnReasonFactory extends Factory
     public function general(): static
     {
         return $this->state(fn () => [
-            'code'     => 'GEN-' . fake()->numerify('##'),
+            'code' => 'GEN-'.fake()->numerify('##'),
             'category' => 'GEN',
         ]);
     }

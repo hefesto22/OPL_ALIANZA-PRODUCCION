@@ -4,7 +4,6 @@ namespace App\Filament\Widgets;
 
 use App\Models\Invoice;
 use App\Models\Manifest;
-use App\Support\WarehouseScope;
 use BezhanSalleh\FilamentShield\Traits\HasWidgetShield;
 use Filament\Widgets\StatsOverviewWidget as BaseWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
@@ -39,7 +38,7 @@ class OperatorDashboardWidget extends BaseWidget
 
     protected function getStats(): array
     {
-        $user        = Auth::user();
+        $user = Auth::user();
         $warehouseId = $user->warehouse_id;
 
         if (! $warehouseId) {
@@ -54,13 +53,13 @@ class OperatorDashboardWidget extends BaseWidget
 
         $data = Cache::remember($cacheKey, now()->addMinutes(3), function () use ($warehouseId) {
             $thisMonth = now()->month;
-            $thisYear  = now()->year;
+            $thisYear = now()->year;
 
             $activeStatuses = ['pending', 'processing', 'imported'];
 
             // Manifiestos activos con facturas en esta bodega
             $activeManifests = Manifest::whereIn('status', $activeStatuses)
-                ->whereHas('invoices', fn($q) => $q->where('warehouse_id', $warehouseId))
+                ->whereHas('invoices', fn ($q) => $q->where('warehouse_id', $warehouseId))
                 ->count();
 
             // Facturas del mes en esta bodega
@@ -74,17 +73,17 @@ class OperatorDashboardWidget extends BaseWidget
             $closedManifests = Manifest::where('status', 'closed')
                 ->whereMonth('date', $thisMonth)
                 ->whereYear('date', $thisYear)
-                ->whereHas('invoices', fn($q) => $q->where('warehouse_id', $warehouseId))
+                ->whereHas('invoices', fn ($q) => $q->where('warehouse_id', $warehouseId))
                 ->count();
 
             // Último manifiesto con facturas en esta bodega
-            $lastManifest = Manifest::whereHas('invoices', fn($q) => $q->where('warehouse_id', $warehouseId))
+            $lastManifest = Manifest::whereHas('invoices', fn ($q) => $q->where('warehouse_id', $warehouseId))
                 ->latest('date')
                 ->first();
 
             $lastManifestNumber = $lastManifest?->number ?? '—';
             $lastManifestStatus = $lastManifest?->status ?? 'pending';
-            $lastManifestDate   = $lastManifest?->date?->format('d/m/Y') ?? '—';
+            $lastManifestDate = $lastManifest?->date?->format('d/m/Y') ?? '—';
 
             return compact(
                 'activeManifests',
@@ -97,19 +96,19 @@ class OperatorDashboardWidget extends BaseWidget
         });
 
         $statusLabel = match ($data['lastManifestStatus']) {
-            'pending'    => 'Pendiente',
+            'pending' => 'Pendiente',
             'processing' => 'En Proceso',
-            'imported'   => 'Importado',
-            'closed'     => 'Cerrado',
-            default      => $data['lastManifestStatus'],
+            'imported' => 'Importado',
+            'closed' => 'Cerrado',
+            default => $data['lastManifestStatus'],
         };
 
         $statusColor = match ($data['lastManifestStatus']) {
-            'pending'    => 'gray',
+            'pending' => 'gray',
             'processing' => 'info',
-            'imported'   => 'warning',
-            'closed'     => 'success',
-            default      => 'gray',
+            'imported' => 'warning',
+            'closed' => 'success',
+            default => 'gray',
         };
 
         $mesActual = now()->locale('es')->translatedFormat('F');

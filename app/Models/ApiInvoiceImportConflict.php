@@ -25,7 +25,7 @@ class ApiInvoiceImportConflict extends Model
         return [
             'previous_values' => 'array',
             'incoming_values' => 'array',
-            'resolved_at'     => 'datetime',
+            'resolved_at' => 'datetime',
         ];
     }
 
@@ -61,9 +61,9 @@ class ApiInvoiceImportConflict extends Model
         $this->invoice->update($this->incoming_values);
 
         $this->update([
-            'resolution'       => 'accepted',
-            'resolved_by'      => $userId,
-            'resolved_at'      => now(),
+            'resolution' => 'accepted',
+            'resolved_by' => $userId,
+            'resolved_at' => now(),
             'resolution_notes' => $notes,
         ]);
 
@@ -75,9 +75,9 @@ class ApiInvoiceImportConflict extends Model
     {
         // No se toca la factura — se mantienen los valores anteriores
         $this->update([
-            'resolution'       => 'rejected',
-            'resolved_by'      => $userId,
-            'resolved_at'      => now(),
+            'resolution' => 'rejected',
+            'resolved_by' => $userId,
+            'resolved_at' => now(),
             'resolution_notes' => $notes,
         ]);
     }

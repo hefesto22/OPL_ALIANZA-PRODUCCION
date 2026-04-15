@@ -8,8 +8,8 @@ use App\Support\WarehouseScope;
 use Carbon\Carbon;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Select;
-use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
@@ -45,40 +45,43 @@ class DepositForm
                             // En edición: asegurar que el manifiesto actual siempre aparezca
                             if ($record && $record->manifest_id) {
                                 $current = Manifest::find($record->manifest_id);
-                                if ($current && !$manifests->contains('id', $current->id)) {
+                                if ($current && ! $manifests->contains('id', $current->id)) {
                                     $manifests->prepend($current);
                                 }
                             }
 
-                            return $manifests->mapWithKeys(fn($m) => [
+                            return $manifests->mapWithKeys(fn ($m) => [
                                 $m->id => sprintf(
                                     '#%s  |  %s  |  Pendiente: HNL %s',
                                     $m->number,
                                     Carbon::parse($m->date)->format('d/m/Y'),
                                     number_format(
-                                        max(0, (float)$m->total_to_deposit - (float)$m->total_deposited),
+                                        max(0, (float) $m->total_to_deposit - (float) $m->total_deposited),
                                         2
                                     )
-                                )
+                                ),
                             ]);
                         })
                         ->live()
                         ->afterStateUpdated(function ($state, Set $set) {
-                            if (!$state) {
-                                $set('_manifest_total',     null);
+                            if (! $state) {
+                                $set('_manifest_total', null);
                                 $set('_manifest_deposited', null);
-                                $set('_manifest_pending',   null);
+                                $set('_manifest_pending', null);
+
                                 return;
                             }
 
                             $manifest = Manifest::find($state);
-                            if (!$manifest) return;
+                            if (! $manifest) {
+                                return;
+                            }
 
-                            $pending = max(0, (float)$manifest->total_to_deposit - (float)$manifest->total_deposited);
+                            $pending = max(0, (float) $manifest->total_to_deposit - (float) $manifest->total_deposited);
 
-                            $set('_manifest_total',     'HNL ' . number_format($manifest->total_to_deposit, 2));
-                            $set('_manifest_deposited', 'HNL ' . number_format($manifest->total_deposited, 2));
-                            $set('_manifest_pending',   'HNL ' . number_format($pending, 2));
+                            $set('_manifest_total', 'HNL '.number_format($manifest->total_to_deposit, 2));
+                            $set('_manifest_deposited', 'HNL '.number_format($manifest->total_deposited, 2));
+                            $set('_manifest_pending', 'HNL '.number_format($pending, 2));
                         })
                         ->columnSpanFull(),
 
@@ -103,12 +106,12 @@ class DepositForm
                                 ->dehydrated(false)
                                 ->placeholder('—'),
                         ])
-                        ->hidden(fn(Get $get) => !$get('manifest_id')),
+                        ->hidden(fn (Get $get) => ! $get('manifest_id')),
                 ]),
 
             // ── Datos del depósito ─────────────────────────────────────
             Section::make('Datos del Depósito')
-                ->hidden(fn(Get $get) => !$get('manifest_id'))
+                ->hidden(fn (Get $get) => ! $get('manifest_id'))
                 ->schema([
                     Grid::make(2)->schema([
 

@@ -17,19 +17,19 @@ class CreateManifest extends CreateRecord
     {
         $file = $data['json_file'] ?? null;
 
-        if (!$file) {
+        if (! $file) {
             $this->halt();
         }
 
-        $path = storage_path('app/private/' . (is_array($file) ? $file[0] : $file));
+        $path = storage_path('app/private/'.(is_array($file) ? $file[0] : $file));
 
         $success = ManifestForm::processUpload($path, Auth::id());
 
-        if (!$success) {
+        if (! $success) {
             $this->halt();
         }
 
-        return new \App\Models\Manifest();
+        return new \App\Models\Manifest;
     }
 
     protected function getRedirectUrl(): string

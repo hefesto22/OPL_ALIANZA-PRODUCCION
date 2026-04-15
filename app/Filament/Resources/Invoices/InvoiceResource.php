@@ -5,7 +5,6 @@ namespace App\Filament\Resources\Invoices;
 use App\Models\Invoice;
 use App\Support\WarehouseScope;
 use Filament\Resources\Resource;
-use Filament\Schemas\Schema;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;

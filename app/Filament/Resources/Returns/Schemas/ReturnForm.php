@@ -23,10 +23,10 @@ use Illuminate\Support\HtmlString;
 class ReturnForm
 {
     /**
-     * @param bool $editing  Cuando es true, el campo Factura queda bloqueado
-     *                       (no se puede cambiar la factura de una devolución existente)
-     *                       y las líneas se pre-cargan vía mutateFormDataBeforeFill()
-     *                       en EditReturn, no via afterStateUpdated.
+     * @param  bool  $editing  Cuando es true, el campo Factura queda bloqueado
+     *                         (no se puede cambiar la factura de una devolución existente)
+     *                         y las líneas se pre-cargan vía mutateFormDataBeforeFill()
+     *                         en EditReturn, no via afterStateUpdated.
      */
     public static function make(Schema $schema, bool $editing = false): Schema
     {
@@ -43,19 +43,18 @@ class ReturnForm
                 return Invoice::query()
                     ->where(function ($q) use ($search) {
                         $q->where('invoice_number', 'like', "%{$search}%")
-                          ->orWhere('client_name', 'like', "%{$search}%");
+                            ->orWhere('client_name', 'like', "%{$search}%");
                     })
-                    ->when($user->isWarehouseUser(), fn($q) =>
-                        $q->where('warehouse_id', $user->warehouse_id)
+                    ->when($user->isWarehouseUser(), fn ($q) => $q->where('warehouse_id', $user->warehouse_id)
                     )
                     ->whereIn('status', ['imported', 'partial_return'])
                     ->limit(20)
                     ->get()
-                    ->mapWithKeys(fn($inv) => [
-                        $inv->id => "#{$inv->invoice_number} — {$inv->client_name}"
+                    ->mapWithKeys(fn ($inv) => [
+                        $inv->id => "#{$inv->invoice_number} — {$inv->client_name}",
                     ]);
             })
-            ->getOptionLabelUsing(fn($value) => optional(Invoice::find($value))->invoice_number);
+            ->getOptionLabelUsing(fn ($value) => optional(Invoice::find($value))->invoice_number);
 
         if ($editing) {
             // En modo edición: factura bloqueada, sin afterStateUpdated.
@@ -66,48 +65,51 @@ class ReturnForm
             $invoiceField = $invoiceField
                 ->live()
                 ->afterStateUpdated(function ($state, Set $set) {
-                    if (!$state) {
+                    if (! $state) {
                         $set('lines', []);
                         $set('client_name', null);
                         $set('invoice_number', null);
                         $set('invoice_total', 0);
                         $set('available_total', 0);
+
                         return;
                     }
 
                     $invoice = Invoice::with('lines')->find($state);
-                    if (!$invoice) return;
+                    if (! $invoice) {
+                        return;
+                    }
 
-                    $returnService  = app(ReturnService::class);
-                    $lineIds        = $invoice->lines->pluck('id')->toArray();
+                    $returnService = app(ReturnService::class);
+                    $lineIds = $invoice->lines->pluck('id')->toArray();
                     $returnedByLine = $returnService->getReturnedQuantitiesForLines($lineIds);
 
                     $lines = $invoice->lines
                         ->map(function ($line) use ($returnedByLine) {
-                            $alreadyReturned = (float)($returnedByLine[$line->id] ?? 0);
-                            $available       = max(0, (float)$line->quantity_fractions - $alreadyReturned);
-                            $convFactor      = max(1, (float)($line->conversion_factor ?? 1));
-                            $unitSale        = strtoupper($line->unit_sale ?? 'UN');
+                            $alreadyReturned = (float) ($returnedByLine[$line->id] ?? 0);
+                            $available = max(0, (float) $line->quantity_fractions - $alreadyReturned);
+                            $convFactor = max(1, (float) ($line->conversion_factor ?? 1));
+                            $unitSale = strtoupper($line->unit_sale ?? 'UN');
                             // Null → usar price; 0 → bonificación (gratis). No usar ?: porque 0 es falsy.
-                            $unitPrice       = $line->price_min_sale !== null ? (float)$line->price_min_sale : (float)$line->price;
-                            $availableBoxes  = (int) floor($available / $convFactor);
-                            $pricePerBox     = round($convFactor * $unitPrice, 2);
+                            $unitPrice = $line->price_min_sale !== null ? (float) $line->price_min_sale : (float) $line->price;
+                            $availableBoxes = (int) floor($available / $convFactor);
+                            $pricePerBox = round($convFactor * $unitPrice, 2);
 
                             return [
-                                'invoice_line_id'     => $line->id,
-                                'line_number'         => $line->line_number,
-                                'product_id'          => $line->product_id,
+                                'invoice_line_id' => $line->id,
+                                'line_number' => $line->line_number,
+                                'product_id' => $line->product_id,
                                 'product_description' => $line->product_description,
-                                'unit_sale'           => $unitSale,
-                                'unit_sale_display'   => $unitSale,
-                                'quantity_box'        => 0,
-                                'quantity'            => 0,
-                                'available_quantity'  => $available,
-                                'available_boxes'     => $availableBoxes,
-                                'conversion_factor'   => $convFactor,
-                                'unit_price'          => $unitPrice,
-                                'price_per_box'       => $pricePerBox,
-                                'line_total'          => 0,
+                                'unit_sale' => $unitSale,
+                                'unit_sale_display' => $unitSale,
+                                'quantity_box' => 0,
+                                'quantity' => 0,
+                                'available_quantity' => $available,
+                                'available_boxes' => $availableBoxes,
+                                'conversion_factor' => $convFactor,
+                                'unit_price' => $unitPrice,
+                                'price_per_box' => $pricePerBox,
+                                'line_total' => 0,
                             ];
                         })->values()->toArray();
 
@@ -144,19 +146,19 @@ class ReturnForm
                     Placeholder::make('invoice_totals_display')
                         ->label('')
                         ->content(function (Get $get): HtmlString {
-                            $invoiceNumber   = htmlspecialchars($get('invoice_number')  ?? '');
-                            $clientName      = htmlspecialchars($get('client_name')     ?? '');
-                            $manifestNumber  = htmlspecialchars($get('manifest_number') ?? '');
-                            $invoiceTotal    = (float) ($get('invoice_total')           ?? 0);
-                            $availableTotal  = (float) ($get('available_total')         ?? 0);
+                            $invoiceNumber = htmlspecialchars($get('invoice_number') ?? '');
+                            $clientName = htmlspecialchars($get('client_name') ?? '');
+                            $manifestNumber = htmlspecialchars($get('manifest_number') ?? '');
+                            $invoiceTotal = (float) ($get('invoice_total') ?? 0);
+                            $availableTotal = (float) ($get('available_total') ?? 0);
 
                             // Sin factura seleccionada: no mostrar nada
-                            if (!$invoiceNumber && !$clientName) {
+                            if (! $invoiceNumber && ! $clientName) {
                                 return new HtmlString('');
                             }
 
-                            $invoiceTotalFmt   = 'L.' . number_format($invoiceTotal,   2);
-                            $availableTotalFmt = 'L.' . number_format($availableTotal, 2);
+                            $invoiceTotalFmt = 'L.'.number_format($invoiceTotal, 2);
+                            $availableTotalFmt = 'L.'.number_format($availableTotal, 2);
 
                             $manifestBadge = $manifestNumber ? "
                                 <div style=\"
@@ -218,7 +220,7 @@ class ReturnForm
                             ->label('Cliente')
                             ->disabled()
                             ->dehydrated(false)
-                            ->afterStateHydrated(fn($component, Get $get) => $component->state($get('client_name') ?? '—'))
+                            ->afterStateHydrated(fn ($component, Get $get) => $component->state($get('client_name') ?? '—'))
                             ->columnSpan(1),
                     ]),
 
@@ -275,17 +277,18 @@ class ReturnForm
                                     ->live(debounce: 500)
                                     ->helperText(function (Get $get): string {
                                         $pricePerBox = (float) ($get('price_per_box') ?? 0);
-                                        $maxBoxes    = (int)   ($get('available_boxes') ?? 0);
+                                        $maxBoxes = (int) ($get('available_boxes') ?? 0);
                                         if ($pricePerBox > 0) {
-                                            return 'L' . number_format($pricePerBox, 2) . ' /caja · máx: ' . $maxBoxes;
+                                            return 'L'.number_format($pricePerBox, 2).' /caja · máx: '.$maxBoxes;
                                         }
-                                        return 'Bonificación · máx: ' . $maxBoxes;
+
+                                        return 'Bonificación · máx: '.$maxBoxes;
                                     })
                                     ->afterStateUpdated(function ($state, Get $get, Set $set): void {
-                                        $boxes      = max(0, (float) $state);
-                                        $maxBoxes   = (float) $get('available_boxes');
+                                        $boxes = max(0, (float) $state);
+                                        $maxBoxes = (float) $get('available_boxes');
                                         $convFactor = max(1, (float) $get('conversion_factor'));
-                                        $price      = (float) $get('unit_price');
+                                        $price = (float) $get('unit_price');
                                         $looseUnits = max(0, (float) $get('quantity'));
 
                                         if ($boxes > $maxBoxes) {
@@ -294,7 +297,7 @@ class ReturnForm
                                         }
 
                                         $totalFractions = ($boxes * $convFactor) + $looseUnits;
-                                        $available      = (float) $get('available_quantity');
+                                        $available = (float) $get('available_quantity');
                                         if ($totalFractions > $available) {
                                             $looseUnits = max(0, $available - ($boxes * $convFactor));
                                             $set('quantity', $looseUnits);
@@ -314,35 +317,37 @@ class ReturnForm
                                     ->live(debounce: 500)
                                     ->helperText(function (Get $get): string {
                                         $unitPrice = (float) ($get('unit_price') ?? 0);
-                                        $isCJ      = ($get('unit_sale') ?? 'UN') === 'CJ';
+                                        $isCJ = ($get('unit_sale') ?? 'UN') === 'CJ';
 
                                         if ($isCJ) {
                                             $convFactor = max(1, (float) $get('conversion_factor'));
-                                            $boxes      = max(0, (float) $get('quantity_box'));
-                                            $available  = (float) ($get('available_quantity') ?? 0);
-                                            $maxLoose   = max(0, $available - ($boxes * $convFactor));
+                                            $boxes = max(0, (float) $get('quantity_box'));
+                                            $available = (float) ($get('available_quantity') ?? 0);
+                                            $maxLoose = max(0, $available - ($boxes * $convFactor));
                                             $priceLabel = $unitPrice > 0
-                                                ? 'L' . number_format($unitPrice, 2) . ' /ud.'
+                                                ? 'L'.number_format($unitPrice, 2).' /ud.'
                                                 : 'Bonificación';
-                                            return $priceLabel . ' · máx: ' . number_format($maxLoose, 0);
+
+                                            return $priceLabel.' · máx: '.number_format($maxLoose, 0);
                                         }
 
                                         $maxUnits = (float) ($get('available_quantity') ?? 0);
                                         if ($unitPrice > 0) {
-                                            return 'L' . number_format($unitPrice, 2) . ' /ud. · máx: ' . number_format($maxUnits, 0);
+                                            return 'L'.number_format($unitPrice, 2).' /ud. · máx: '.number_format($maxUnits, 0);
                                         }
-                                        return 'Bonificación · máx: ' . number_format($maxUnits, 0);
+
+                                        return 'Bonificación · máx: '.number_format($maxUnits, 0);
                                     })
                                     ->afterStateUpdated(function ($state, Get $get, Set $set): void {
                                         $units = max(0, (float) $state);
                                         $price = (float) $get('unit_price');
-                                        $isCJ  = ($get('unit_sale') ?? 'UN') === 'CJ';
+                                        $isCJ = ($get('unit_sale') ?? 'UN') === 'CJ';
 
                                         if ($isCJ) {
                                             $convFactor = max(1, (float) $get('conversion_factor'));
-                                            $boxes      = max(0, (float) $get('quantity_box'));
-                                            $available  = (float) $get('available_quantity');
-                                            $maxLoose   = max(0, $available - ($boxes * $convFactor));
+                                            $boxes = max(0, (float) $get('quantity_box'));
+                                            $available = (float) $get('available_quantity');
+                                            $maxLoose = max(0, $available - ($boxes * $convFactor));
 
                                             if ($units > $maxLoose) {
                                                 $units = $maxLoose;
@@ -386,9 +391,8 @@ class ReturnForm
                             $lines = $get('lines') ?? [];
 
                             $selectedLines = collect($lines)->filter(
-                                fn ($l) =>
-                                    (float) ($l['quantity_box'] ?? 0) > 0 ||
-                                    (float) ($l['quantity']     ?? 0) > 0
+                                fn ($l) => (float) ($l['quantity_box'] ?? 0) > 0 ||
+                                    (float) ($l['quantity'] ?? 0) > 0
                             );
 
                             if ($selectedLines->isEmpty()) {
@@ -411,19 +415,19 @@ class ReturnForm
                                 ');
                             }
 
-                            $rows       = '';
+                            $rows = '';
                             $grandTotal = 0.0;
-                            $lineCount  = 0;
+                            $lineCount = 0;
 
                             foreach ($selectedLines as $line) {
                                 $lineCount++;
-                                $unitSale    = strtoupper($line['unit_sale']   ?? 'UN');
-                                $unitPrice   = (float) ($line['unit_price']    ?? 0);
+                                $unitSale = strtoupper($line['unit_sale'] ?? 'UN');
+                                $unitPrice = (float) ($line['unit_price'] ?? 0);
                                 $pricePerBox = (float) ($line['price_per_box'] ?? 0);
-                                $convFactor  = max(1, (int) ($line['conversion_factor'] ?? 1));
-                                $boxes       = (float) ($line['quantity_box']  ?? 0);
-                                $units       = (float) ($line['quantity']      ?? 0);
-                                $lineTotal   = (float) ($line['line_total']    ?? 0);
+                                $convFactor = max(1, (int) ($line['conversion_factor'] ?? 1));
+                                $boxes = (float) ($line['quantity_box'] ?? 0);
+                                $units = (float) ($line['quantity'] ?? 0);
+                                $lineTotal = (float) ($line['line_total'] ?? 0);
                                 $description = htmlspecialchars($line['product_description'] ?? '—');
                                 $grandTotal += $lineTotal;
 
@@ -431,20 +435,20 @@ class ReturnForm
 
                                 // Armar etiqueta de cantidad
                                 if ($boxes > 0 && $units > 0) {
-                                    $qtyBadge = number_format($boxes, 0) . ' caj. + ' . number_format($units, 0) . ' und.';
-                                    $priceStr = $isBonif ? '' : '× L.' . number_format($unitPrice, 2) . '/und.';
+                                    $qtyBadge = number_format($boxes, 0).' caj. + '.number_format($units, 0).' und.';
+                                    $priceStr = $isBonif ? '' : '× L.'.number_format($unitPrice, 2).'/und.';
                                 } elseif ($boxes > 0) {
-                                    $qtyBadge = number_format($boxes, 0) . ' caja' . ($boxes != 1 ? 's' : '');
-                                    $priceStr = $isBonif ? '' : '× L.' . number_format($pricePerBox, 2) . '/caja';
+                                    $qtyBadge = number_format($boxes, 0).' caja'.($boxes != 1 ? 's' : '');
+                                    $priceStr = $isBonif ? '' : '× L.'.number_format($pricePerBox, 2).'/caja';
                                 } else {
-                                    $qtyBadge = number_format($units, 0) . ' und.';
-                                    $priceStr = $isBonif ? '' : '× L.' . number_format($unitPrice, 2) . '/und.';
+                                    $qtyBadge = number_format($units, 0).' und.';
+                                    $priceStr = $isBonif ? '' : '× L.'.number_format($unitPrice, 2).'/und.';
                                 }
 
-                                $bgRow    = ($lineCount % 2 === 0) ? '#f9fafb' : '#ffffff';
+                                $bgRow = ($lineCount % 2 === 0) ? '#f9fafb' : '#ffffff';
                                 $totalStr = $isBonif
                                     ? '<span style="font-size:11px;background:#e5e7eb;color:#6b7280;padding:2px 6px;border-radius:4px;">Bonificación</span>'
-                                    : '<strong style="color:#111827;">L.' . number_format($lineTotal, 2) . '</strong>';
+                                    : '<strong style="color:#111827;">L.'.number_format($lineTotal, 2).'</strong>';
 
                                 $rows .= "
                                     <tr style=\"background:{$bgRow};\">
@@ -458,8 +462,8 @@ class ReturnForm
                                 ";
                             }
 
-                            $grandTotalFmt = 'L.' . number_format($grandTotal, 2);
-                            $itemLabel     = $lineCount === 1 ? '1 producto' : "{$lineCount} productos";
+                            $grandTotalFmt = 'L.'.number_format($grandTotal, 2);
+                            $itemLabel = $lineCount === 1 ? '1 producto' : "{$lineCount} productos";
 
                             return new HtmlString("
                                 <div style=\"border-radius:10px;overflow:hidden;border:1px solid #e5e7eb;box-shadow:0 1px 3px rgba(0,0,0,.06);margin-top:4px;\">
@@ -490,7 +494,7 @@ class ReturnForm
                             ");
                         }),
                 ])
-                ->hidden(fn(Get $get) => !$get('invoice_id')),
+                ->hidden(fn (Get $get) => ! $get('invoice_id')),
         ]);
     }
 }

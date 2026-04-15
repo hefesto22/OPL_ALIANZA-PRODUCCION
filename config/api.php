@@ -36,8 +36,8 @@ return [
     //   Jaremar puede llegar a 40 llamadas en cierre de mes.
     //   10/min permite ráfagas sin saturar el servidor.
     //
-    'rate_limit_per_minute'              => env('API_RATE_LIMIT', 60),
-    'rate_limit_insertar_per_minute'     => env('API_RATE_LIMIT_INSERTAR', 5),
+    'rate_limit_per_minute' => env('API_RATE_LIMIT', 60),
+    'rate_limit_insertar_per_minute' => env('API_RATE_LIMIT_INSERTAR', 5),
     'rate_limit_devoluciones_per_minute' => env('API_RATE_LIMIT_DEVOLUCIONES', 10),
 
 ];

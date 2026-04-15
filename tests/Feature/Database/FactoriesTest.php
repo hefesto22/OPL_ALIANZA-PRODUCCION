@@ -138,7 +138,7 @@ class FactoriesTest extends TestCase
         // Verifica que el pipeline completo funciona end-to-end: factory crea
         // modelos, se construyen relaciones consistentes, recalculateTotals()
         // (el método optimizado en B1) produce los agregados esperados.
-        $manifest  = Manifest::factory()->create();
+        $manifest = Manifest::factory()->create();
         $warehouse = $manifest->warehouse;
 
         Invoice::factory()

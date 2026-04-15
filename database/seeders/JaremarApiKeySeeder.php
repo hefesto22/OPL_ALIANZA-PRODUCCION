@@ -13,9 +13,10 @@ class JaremarApiKeySeeder extends Seeder
         $envContent = file_get_contents($envPath);
 
         // Verificar si ya existe una key configurada
-        if (str_contains($envContent, 'JAREMAR_API_KEY=') && !str_contains($envContent, 'JAREMAR_API_KEY=\n') && !str_contains($envContent, 'JAREMAR_API_KEY=""')) {
+        if (str_contains($envContent, 'JAREMAR_API_KEY=') && ! str_contains($envContent, 'JAREMAR_API_KEY=\n') && ! str_contains($envContent, 'JAREMAR_API_KEY=""')) {
             $this->command->warn('JAREMAR_API_KEY ya está configurado en .env. No se generó uno nuevo.');
             $this->command->warn('Si desea regenerarlo, elimine manualmente la línea JAREMAR_API_KEY del .env y ejecute este seeder nuevamente.');
+
             return;
         }
 
@@ -43,7 +44,7 @@ class JaremarApiKeySeeder extends Seeder
                 ['Guardado en', '.env → JAREMAR_API_KEY'],
                 ['Endpoint POST', url('api/v1/facturas/insertar')],
                 ['Endpoint GET',  url('api/v1/manifiestos/{numero}/estado')],
-                ['Header requerido', 'ApiKey: ' . $apiKey],
+                ['Header requerido', 'ApiKey: '.$apiKey],
             ]
         );
         $this->command->newLine();

@@ -37,25 +37,25 @@ class ManifestInfolist
                         ->label('Estado')
                         ->badge()
                         ->color(fn (string $state): string => match ($state) {
-                            'pending'    => 'gray',
+                            'pending' => 'gray',
                             'processing' => 'warning',
-                            'imported'   => 'info',
-                            'closed'     => 'success',
-                            default      => 'gray',
+                            'imported' => 'info',
+                            'closed' => 'success',
+                            default => 'gray',
                         })
                         ->icon(fn (string $state): string => match ($state) {
-                            'pending'    => 'heroicon-o-clock',
+                            'pending' => 'heroicon-o-clock',
                             'processing' => 'heroicon-o-arrow-path',
-                            'imported'   => 'heroicon-o-inbox-arrow-down',
-                            'closed'     => 'heroicon-o-lock-closed',
-                            default      => 'heroicon-o-question-mark-circle',
+                            'imported' => 'heroicon-o-inbox-arrow-down',
+                            'closed' => 'heroicon-o-lock-closed',
+                            default => 'heroicon-o-question-mark-circle',
                         })
                         ->formatStateUsing(fn (string $state): string => match ($state) {
-                            'pending'    => 'Pendiente',
+                            'pending' => 'Pendiente',
                             'processing' => 'Procesando',
-                            'imported'   => 'Importado',
-                            'closed'     => 'Cerrado',
-                            default      => $state,
+                            'imported' => 'Importado',
+                            'closed' => 'Cerrado',
+                            default => $state,
                         }),
 
                     TextEntry::make('supplier.name')
@@ -66,9 +66,9 @@ class ManifestInfolist
                         ->label('Bodega Principal')
                         ->badge()
                         ->color(fn ($state) => match ($state) {
-                            'OAC'   => 'info',
-                            'OAO'   => 'success',
-                            'OAS'   => 'warning',
+                            'OAC' => 'info',
+                            'OAO' => 'success',
+                            'OAS' => 'warning',
                             default => 'gray',
                         })
                         ->placeholder('—'),
@@ -116,12 +116,13 @@ class ManifestInfolist
                                     if ($user->warehouse_id) {
                                         $query->where('warehouse_id', $user->warehouse_id);
                                     }
+
                                     return $query->count();
                                 })
                                 ->extraAttributes([
-                                    'class'      => 'cursor-pointer select-none rounded-lg px-3 py-2 transition-all hover:bg-gray-100 dark:hover:bg-white/5',
+                                    'class' => 'cursor-pointer select-none rounded-lg px-3 py-2 transition-all hover:bg-gray-100 dark:hover:bg-white/5',
                                     'wire:click' => "\$dispatch('filterInvoicesByStatus', { statuses: [] })",
-                                    'title'      => 'Ver todas las facturas',
+                                    'title' => 'Ver todas las facturas',
                                 ]),
 
                             TextEntry::make('invoices_summary_accepted')
@@ -133,14 +134,15 @@ class ManifestInfolist
                                     /** @var User $user */
                                     $user = Auth::user();
                                     $summary = $record->getInvoicesSummary($user->warehouse_id);
+
                                     return ($summary['imported']['count'] ?? 0)
                                          + ($summary['partial_return']['count'] ?? 0)
                                          + ($summary['returned']['count'] ?? 0);
                                 })
                                 ->extraAttributes([
-                                    'class'      => 'cursor-pointer select-none rounded-lg px-3 py-2 transition-all hover:bg-success-50 dark:hover:bg-success-500/10',
+                                    'class' => 'cursor-pointer select-none rounded-lg px-3 py-2 transition-all hover:bg-success-50 dark:hover:bg-success-500/10',
                                     'wire:click' => "\$dispatch('filterInvoicesByStatus', { statuses: ['imported','partial_return','returned'] })",
-                                    'title'      => 'Ver facturas aceptadas',
+                                    'title' => 'Ver facturas aceptadas',
                                 ]),
 
                             TextEntry::make('invoices_summary_pending')
@@ -151,12 +153,13 @@ class ManifestInfolist
                                 ->state(function ($record): int {
                                     /** @var User $user */
                                     $user = Auth::user();
+
                                     return $record->getInvoicesSummary($user->warehouse_id)['pending_warehouse']['count'] ?? 0;
                                 })
                                 ->extraAttributes([
-                                    'class'      => 'cursor-pointer select-none rounded-lg px-3 py-2 transition-all hover:bg-warning-50 dark:hover:bg-warning-500/10',
+                                    'class' => 'cursor-pointer select-none rounded-lg px-3 py-2 transition-all hover:bg-warning-50 dark:hover:bg-warning-500/10',
                                     'wire:click' => "\$dispatch('filterInvoicesByStatus', { statuses: ['pending_warehouse'] })",
-                                    'title'      => 'Ver facturas pendientes de revisión',
+                                    'title' => 'Ver facturas pendientes de revisión',
                                 ]),
 
                             TextEntry::make('invoices_summary_rejected')
@@ -167,12 +170,13 @@ class ManifestInfolist
                                 ->state(function ($record): int {
                                     /** @var User $user */
                                     $user = Auth::user();
+
                                     return $record->getInvoicesSummary($user->warehouse_id)['rejected']['count'] ?? 0;
                                 })
                                 ->extraAttributes([
-                                    'class'      => 'cursor-pointer select-none rounded-lg px-3 py-2 transition-all hover:bg-danger-50 dark:hover:bg-danger-500/10',
+                                    'class' => 'cursor-pointer select-none rounded-lg px-3 py-2 transition-all hover:bg-danger-50 dark:hover:bg-danger-500/10',
                                     'wire:click' => "\$dispatch('filterInvoicesByStatus', { statuses: ['rejected'] })",
-                                    'title'      => 'Ver facturas rechazadas',
+                                    'title' => 'Ver facturas rechazadas',
                                 ]),
                         ]),
 
@@ -191,7 +195,8 @@ class ManifestInfolist
                                     if ($user->warehouse_id) {
                                         $query->where('warehouse_id', $user->warehouse_id);
                                     }
-                                    return ' de ' . $query->count() . ' enviadas';
+
+                                    return ' de '.$query->count().' enviadas';
                                 })
                                 ->state(function ($record): int {
                                     /** @var User $user */
@@ -202,6 +207,7 @@ class ManifestInfolist
                                             ->whereNotNull('warehouse_id')
                                             ->count();
                                     }
+
                                     return (int) $record->invoices_count;
                                 }),
 
@@ -216,6 +222,7 @@ class ManifestInfolist
                                             ->where('status', '!=', 'cancelled')
                                             ->count();
                                     }
+
                                     return (int) $record->returns_count;
                                 })
                                 ->color(fn ($state): string => $state > 0 ? 'warning' : 'gray'),
@@ -237,8 +244,11 @@ class ManifestInfolist
                                         $toDeposit = (float) $record->total_to_deposit;
                                         $deposited = (float) $record->total_deposited;
                                     }
-                                    if ($toDeposit <= 0) return 'Sin monto a depositar';
+                                    if ($toDeposit <= 0) {
+                                        return 'Sin monto a depositar';
+                                    }
                                     $pct = min(100, round(($deposited / $toDeposit) * 100, 1));
+
                                     return "{$pct}%";
                                 })
                                 ->color(function ($record): string {
@@ -254,10 +264,17 @@ class ManifestInfolist
                                         $toDeposit = (float) $record->total_to_deposit;
                                         $deposited = (float) $record->total_deposited;
                                     }
-                                    if ($toDeposit <= 0) return 'gray';
+                                    if ($toDeposit <= 0) {
+                                        return 'gray';
+                                    }
                                     $pct = ($deposited / $toDeposit) * 100;
-                                    if ($pct >= 100) return 'success';
-                                    if ($pct >= 50)  return 'warning';
+                                    if ($pct >= 100) {
+                                        return 'success';
+                                    }
+                                    if ($pct >= 50) {
+                                        return 'warning';
+                                    }
+
                                     return 'danger';
                                 }),
                         ]),
@@ -287,6 +304,7 @@ class ManifestInfolist
                                     ->where('warehouse_id', $user->warehouse_id)
                                     ->first()?->total_invoices ?? 0);
                             }
+
                             return (float) $record->total_invoices;
                         }),
 
@@ -302,6 +320,7 @@ class ManifestInfolist
                                     ->where('warehouse_id', $user->warehouse_id)
                                     ->first()?->total_returns ?? 0);
                             }
+
                             return (float) $record->total_returns;
                         }),
 
@@ -318,6 +337,7 @@ class ManifestInfolist
                                     ->where('warehouse_id', $user->warehouse_id)
                                     ->first()?->total_to_deposit ?? 0);
                             }
+
                             return (float) $record->total_to_deposit;
                         }),
 
@@ -333,6 +353,7 @@ class ManifestInfolist
                                     ->where('warehouse_id', $user->warehouse_id)
                                     ->first()?->total_deposited ?? 0);
                             }
+
                             return (float) $record->total_deposited;
                         }),
 
@@ -348,6 +369,7 @@ class ManifestInfolist
                                     ->where('warehouse_id', $user->warehouse_id)
                                     ->first()?->difference ?? 0);
                             }
+
                             return (float) $record->difference;
                         })
                         ->color(fn ($state): string => ($state ?? 1) == 0 ? 'success' : 'danger')

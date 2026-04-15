@@ -10,14 +10,14 @@ return new class extends Migration
     {
         Schema::table('returns', function (Blueprint $table) {
             $table->enum('status', ['pending', 'approved', 'rejected'])
-                  ->default('pending')
-                  ->after('type');
+                ->default('pending')
+                ->after('type');
 
             $table->text('rejection_reason')->nullable()->after('status');
 
             $table->foreignId('reviewed_by')->nullable()
-                  ->constrained('users')->nullOnDelete()
-                  ->after('rejection_reason');
+                ->constrained('users')->nullOnDelete()
+                ->after('rejection_reason');
 
             $table->timestamp('reviewed_at')->nullable()->after('reviewed_by');
         });

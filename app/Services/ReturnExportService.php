@@ -17,34 +17,34 @@ class ReturnExportService
     {
         return $returns->map(function (InvoiceReturn $return) {
             return [
-                'devolucion'       => $return->jaremar_return_id ?? (string) $return->id,
-                'factura'          => $return->invoice->invoice_number ?? '',
-                'clienteid'        => $return->client_id ?? '',
-                'cliente'          => $return->client_name ?? '',
-                'fecha'            => $return->return_date
+                'devolucion' => $return->jaremar_return_id ?? (string) $return->id,
+                'factura' => $return->invoice->invoice_number ?? '',
+                'clienteid' => $return->client_id ?? '',
+                'cliente' => $return->client_name ?? '',
+                'fecha' => $return->return_date
                     ? Carbon::parse($return->return_date)->format('Y-m-d\TH:i:s')
                     : '',
-                'total'            => $this->n6($return->total),
-                'almacen'          => $return->warehouse->code ?? '',
-                'idConcepto'       => $return->returnReason->jaremar_id
+                'total' => $this->n6($return->total),
+                'almacen' => $return->warehouse->code ?? '',
+                'idConcepto' => $return->returnReason->jaremar_id
                     ?? $return->returnReason->code
                     ?? '',
-                'concepto'         => $return->returnReason->description ?? '',
+                'concepto' => $return->returnReason->description ?? '',
                 'numeroManifiesto' => $return->manifest_number
                     ?? $return->manifest->number
                     ?? '',
-                'fechaProcesado'   => $return->processed_date
+                'fechaProcesado' => $return->processed_date
                     ? Carbon::parse($return->processed_date)->format('Y-m-d\TH:i:s')
                     : null,
-                'horaProcesado'    => $return->processed_time
+                'horaProcesado' => $return->processed_time
                     ? Carbon::parse($return->processed_time)->format('H:i:s')
                     : null,
-                'lineasDevolucion' => $return->lines->map(fn($line) => [
-                    'productoId'  => $line->product_id,
-                    'producto'    => $line->product_description,
-                    'cantidad'    => $this->n6($line->quantity),
+                'lineasDevolucion' => $return->lines->map(fn ($line) => [
+                    'productoId' => $line->product_id,
+                    'producto' => $line->product_description,
+                    'cantidad' => $this->n6($line->quantity),
                     'numeroLinea' => (string) $line->line_number,
-                    'lineTotal'   => $this->n6($line->line_total),
+                    'lineTotal' => $this->n6($line->line_total),
                 ])->toArray(),
             ];
         })->toArray();

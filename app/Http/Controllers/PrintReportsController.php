@@ -31,13 +31,13 @@ class PrintReportsController extends Controller
             ->with(['warehouse'])
             ->orderBy('date', 'desc');
 
-        if (!empty($data['date_from'])) {
+        if (! empty($data['date_from'])) {
             $query->whereDate('date', '>=', $data['date_from']);
         }
-        if (!empty($data['date_to'])) {
+        if (! empty($data['date_to'])) {
             $query->whereDate('date', '<=', $data['date_to']);
         }
-        if (!empty($data['status'])) {
+        if (! empty($data['status'])) {
             $query->where('status', $data['status']);
         }
 
@@ -45,25 +45,25 @@ class PrintReportsController extends Controller
         $manifests = $query->get();
 
         $totals = [
-            'total_invoices'    => $manifests->sum('total_invoices'),
-            'total_returns'     => $manifests->sum('total_returns'),
-            'total_to_deposit'  => $manifests->sum('total_to_deposit'),
-            'total_deposited'   => $manifests->sum('total_deposited'),
-            'difference'        => $manifests->sum('difference'),
-            'invoices_count'    => $manifests->sum('invoices_count'),
-            'clients_count'     => $manifests->sum('clients_count'),
-            'closed_count'      => $manifests->where('status', 'closed')->count(),
-            'open_count'        => $manifests->whereNotIn('status', ['closed'])->count(),
+            'total_invoices' => $manifests->sum('total_invoices'),
+            'total_returns' => $manifests->sum('total_returns'),
+            'total_to_deposit' => $manifests->sum('total_to_deposit'),
+            'total_deposited' => $manifests->sum('total_deposited'),
+            'difference' => $manifests->sum('difference'),
+            'invoices_count' => $manifests->sum('invoices_count'),
+            'clients_count' => $manifests->sum('clients_count'),
+            'closed_count' => $manifests->where('status', 'closed')->count(),
+            'open_count' => $manifests->whereNotIn('status', ['closed'])->count(),
         ];
 
-        $reportNumber = 'MAN-' . now()->format('Ymd-His');
+        $reportNumber = 'MAN-'.now()->format('Ymd-His');
 
         $html = view('pdf.report-manifests', [
-            'manifests'    => $manifests,
-            'totals'       => $totals,
-            'filters'      => $data,
-            'supplier'     => Supplier::first(),
-            'generatedAt'  => now()->format('d/m/Y H:i:s'),
+            'manifests' => $manifests,
+            'totals' => $totals,
+            'filters' => $data,
+            'supplier' => Supplier::first(),
+            'generatedAt' => now()->format('d/m/Y H:i:s'),
             'reportNumber' => $reportNumber,
         ])->render();
 
@@ -92,13 +92,13 @@ class PrintReportsController extends Controller
             ->with(['warehouse'])
             ->orderBy('date', 'desc');
 
-        if (!empty($data['date_from'])) {
+        if (! empty($data['date_from'])) {
             $query->whereDate('date', '>=', $data['date_from']);
         }
-        if (!empty($data['date_to'])) {
+        if (! empty($data['date_to'])) {
             $query->whereDate('date', '<=', $data['date_to']);
         }
-        if (!empty($data['status'])) {
+        if (! empty($data['status'])) {
             $query->where('status', $data['status']);
         }
 
@@ -124,56 +124,56 @@ class PrintReportsController extends Controller
         $rows = $manifests->map(function (Manifest $m) use ($isvByManifest) {
             $isv = $isvByManifest->get($m->id);
 
-            $isv15      = $isv ? (float)$isv->total_isv15 : 0.0;
-            $isv18      = $isv ? (float)$isv->total_isv18 : 0.0;
-            $totalIsv   = $isv15 + $isv18;
-            $totalBruto = $isv ? (float)$isv->total_bruto : 0.0;
+            $isv15 = $isv ? (float) $isv->total_isv15 : 0.0;
+            $isv18 = $isv ? (float) $isv->total_isv18 : 0.0;
+            $totalIsv = $isv15 + $isv18;
+            $totalBruto = $isv ? (float) $isv->total_bruto : 0.0;
 
             $totalSinIsv = $totalBruto - $totalIsv;
 
             // Proporción ISV del manifiesto para aplicar a devoluciones.
-            $isvRatio        = $totalBruto > 0 ? $totalIsv / $totalBruto : 0.0;
-            $returnsSinIsv   = (float)$m->total_returns * (1 - $isvRatio);
+            $isvRatio = $totalBruto > 0 ? $totalIsv / $totalBruto : 0.0;
+            $returnsSinIsv = (float) $m->total_returns * (1 - $isvRatio);
             $depositarSinIsv = $totalSinIsv - $returnsSinIsv;
 
             return [
-                'manifest'          => $m,
-                'total_bruto'       => round($totalBruto,      2),
-                'total_isv15'       => round($isv15,           2),
-                'total_isv18'       => round($isv18,           2),
-                'total_isv'         => round($totalIsv,        2),
-                'total_sin_isv'     => round($totalSinIsv,     2),
-                'returns_sin_isv'   => round($returnsSinIsv,   2),
+                'manifest' => $m,
+                'total_bruto' => round($totalBruto, 2),
+                'total_isv15' => round($isv15, 2),
+                'total_isv18' => round($isv18, 2),
+                'total_isv' => round($totalIsv, 2),
+                'total_sin_isv' => round($totalSinIsv, 2),
+                'returns_sin_isv' => round($returnsSinIsv, 2),
                 'depositar_sin_isv' => round($depositarSinIsv, 2),
-                'isv_ratio'         => $isvRatio,
-                'clients_count'     => (int)$m->clients_count,
+                'isv_ratio' => $isvRatio,
+                'clients_count' => (int) $m->clients_count,
             ];
         });
 
         $totals = [
-            'total_bruto'       => $rows->sum('total_bruto'),
-            'total_isv15'       => $rows->sum('total_isv15'),
-            'total_isv18'       => $rows->sum('total_isv18'),
-            'total_isv'         => $rows->sum('total_isv'),
-            'total_sin_isv'     => $rows->sum('total_sin_isv'),
-            'returns_sin_isv'   => $rows->sum('returns_sin_isv'),
+            'total_bruto' => $rows->sum('total_bruto'),
+            'total_isv15' => $rows->sum('total_isv15'),
+            'total_isv18' => $rows->sum('total_isv18'),
+            'total_isv' => $rows->sum('total_isv'),
+            'total_sin_isv' => $rows->sum('total_sin_isv'),
+            'returns_sin_isv' => $rows->sum('returns_sin_isv'),
             'depositar_sin_isv' => $rows->sum('depositar_sin_isv'),
-            'invoices_count'    => $manifests->sum('invoices_count'),
-            'clients_count'     => $manifests->sum('clients_count'),
-            'closed_count'      => $manifests->where('status', 'closed')->count(),
-            'open_count'        => $manifests->whereNotIn('status', ['closed'])->count(),
-            'manifests_count'   => $manifests->count(),
+            'invoices_count' => $manifests->sum('invoices_count'),
+            'clients_count' => $manifests->sum('clients_count'),
+            'closed_count' => $manifests->where('status', 'closed')->count(),
+            'open_count' => $manifests->whereNotIn('status', ['closed'])->count(),
+            'manifests_count' => $manifests->count(),
         ];
 
         // Número de correlativo único para trazabilidad / auditoría.
-        $reportNumber = 'SINISV-' . now()->format('Ymd-His');
+        $reportNumber = 'SINISV-'.now()->format('Ymd-His');
 
         $html = view('pdf.report-manifests-sin-isv', [
-            'rows'         => $rows,
-            'totals'       => $totals,
-            'filters'      => $data,
-            'supplier'     => Supplier::first(),
-            'generatedAt'  => now()->format('d/m/Y H:i:s'),
+            'rows' => $rows,
+            'totals' => $totals,
+            'filters' => $data,
+            'supplier' => Supplier::first(),
+            'generatedAt' => now()->format('d/m/Y H:i:s'),
             'reportNumber' => $reportNumber,
         ])->render();
 
@@ -188,7 +188,7 @@ class PrintReportsController extends Controller
      */
     public function invoices(Request $request): Response
     {
-        $data     = $this->decryptPayload($request);
+        $data = $this->decryptPayload($request);
         $manifest = Manifest::with(['warehouse', 'supplier'])->findOrFail((int) ($data['manifest_id'] ?? 0));
 
         $invoiceQuery = $manifest->invoices()
@@ -196,7 +196,7 @@ class PrintReportsController extends Controller
             ->where('status', '!=', 'rejected');
 
         // Filtrar por bodega cuando el usuario tiene bodega asignada (operador)
-        if (!empty($data['warehouse_id'])) {
+        if (! empty($data['warehouse_id'])) {
             $invoiceQuery->where('warehouse_id', (int) $data['warehouse_id']);
         }
 
@@ -210,14 +210,14 @@ class PrintReportsController extends Controller
         // Agrupar por ruta con subtotales
         $byRoute = $invoices->groupBy('route_number')->map(function ($group) {
             return [
-                'invoices'    => $group,
-                'subtotal'    => $group->sum('total'),
-                'count'       => $group->count(),
+                'invoices' => $group,
+                'subtotal' => $group->sum('total'),
+                'count' => $group->count(),
             ];
         })->sortKeys();
 
         // Si se filtra por bodega, recalcular devoluciones y neto solo para esa bodega
-        $warehouseFiltered = !empty($data['warehouse_id']);
+        $warehouseFiltered = ! empty($data['warehouse_id']);
         $totalReturns = $warehouseFiltered
             ? $manifest->returns()
                 ->where('warehouse_id', (int) $data['warehouse_id'])
@@ -228,19 +228,19 @@ class PrintReportsController extends Controller
         $totalInvoices = $invoices->sum('total');
 
         $totals = [
-            'total'          => $totalInvoices,
-            'count'          => $invoices->count(),
-            'total_isv15'    => $invoices->sum('isv15'),
-            'total_isv18'    => $invoices->sum('isv18'),
-            'total_returns'  => $totalReturns,
-            'net'            => $totalInvoices - $totalReturns,
+            'total' => $totalInvoices,
+            'count' => $invoices->count(),
+            'total_isv15' => $invoices->sum('isv15'),
+            'total_isv18' => $invoices->sum('isv18'),
+            'total_returns' => $totalReturns,
+            'net' => $totalInvoices - $totalReturns,
         ];
 
         $html = view('pdf.report-invoices', [
-            'manifest'    => $manifest,
-            'byRoute'     => $byRoute,
-            'totals'      => $totals,
-            'supplier'    => Supplier::first(),
+            'manifest' => $manifest,
+            'byRoute' => $byRoute,
+            'totals' => $totals,
+            'supplier' => Supplier::first(),
             'generatedAt' => now()->format('d/m/Y H:i:s'),
         ])->render();
 
@@ -263,7 +263,7 @@ class PrintReportsController extends Controller
 
         // Cargar el manifiesto específico si viene del botón en ViewManifest
         $manifest = null;
-        if (!empty($data['manifest_id'])) {
+        if (! empty($data['manifest_id'])) {
             $manifest = Manifest::with(['supplier', 'warehouse'])->find((int) $data['manifest_id']);
         }
 
@@ -272,19 +272,19 @@ class PrintReportsController extends Controller
             ->orderBy('return_date', 'desc');
 
         // Filtro por manifiesto (usado desde ViewManifest)
-        if (!empty($data['manifest_id'])) {
+        if (! empty($data['manifest_id'])) {
             $query->where('manifest_id', (int) $data['manifest_id']);
         }
-        if (!empty($data['date_from'])) {
+        if (! empty($data['date_from'])) {
             $query->whereDate('return_date', '>=', $data['date_from']);
         }
-        if (!empty($data['date_to'])) {
+        if (! empty($data['date_to'])) {
             $query->whereDate('return_date', '<=', $data['date_to']);
         }
-        if (!empty($data['status'])) {
+        if (! empty($data['status'])) {
             $query->where('status', $data['status']);
         }
-        if (!empty($data['warehouse_id'])) {
+        if (! empty($data['warehouse_id'])) {
             $query->where('warehouse_id', $data['warehouse_id']);
         }
 
@@ -294,31 +294,31 @@ class PrintReportsController extends Controller
         // Agrupar por manifiesto con subtotales
         $byManifest = $returns->groupBy('manifest.number')->map(function ($group) {
             return [
-                'returns'  => $group,
+                'returns' => $group,
                 'subtotal' => $group->sum('total'),
-                'count'    => $group->count(),
+                'count' => $group->count(),
             ];
         })->sortKeys();
 
         $approved = $returns->where('status', 'approved');
-        $pending  = $returns->where('status', 'pending');
+        $pending = $returns->where('status', 'pending');
 
         $totals = [
-            'total'           => $returns->sum('total'),
-            'count'           => $returns->count(),
-            'approved'        => $approved->count(),
-            'pending'         => $pending->count(),
-            'rejected'        => $returns->where('status', 'rejected')->count(),
+            'total' => $returns->sum('total'),
+            'count' => $returns->count(),
+            'approved' => $approved->count(),
+            'pending' => $pending->count(),
+            'rejected' => $returns->where('status', 'rejected')->count(),
             'approved_amount' => $approved->sum('total'),
-            'pending_amount'  => $pending->sum('total'),
+            'pending_amount' => $pending->sum('total'),
         ];
 
         $html = view('pdf.report-returns', [
-            'byManifest'  => $byManifest,
-            'totals'      => $totals,
-            'filters'     => $data,
-            'manifest'    => $manifest,
-            'supplier'    => Supplier::first(),
+            'byManifest' => $byManifest,
+            'totals' => $totals,
+            'filters' => $data,
+            'manifest' => $manifest,
+            'supplier' => Supplier::first(),
             'generatedAt' => now()->format('d/m/Y H:i:s'),
         ])->render();
 
@@ -340,10 +340,10 @@ class PrintReportsController extends Controller
             ->with(['manifest', 'createdBy'])
             ->orderBy('deposit_date', 'desc');
 
-        if (!empty($data['date_from'])) {
+        if (! empty($data['date_from'])) {
             $query->whereDate('deposit_date', '>=', $data['date_from']);
         }
-        if (!empty($data['date_to'])) {
+        if (! empty($data['date_to'])) {
             $query->whereDate('deposit_date', '<=', $data['date_to']);
         }
 
@@ -355,20 +355,20 @@ class PrintReportsController extends Controller
             return [
                 'deposits' => $group,
                 'subtotal' => $group->sum('amount'),
-                'count'    => $group->count(),
+                'count' => $group->count(),
             ];
         })->sortKeys();
 
         $totals = [
-            'total'   => $deposits->sum('amount'),
-            'count'   => $deposits->count(),
+            'total' => $deposits->sum('amount'),
+            'count' => $deposits->count(),
         ];
 
         $html = view('pdf.report-deposits', [
-            'byBank'      => $byBank,
-            'totals'      => $totals,
-            'filters'     => $data,
-            'supplier'    => Supplier::first(),
+            'byBank' => $byBank,
+            'totals' => $totals,
+            'filters' => $data,
+            'supplier' => Supplier::first(),
             'generatedAt' => now()->format('d/m/Y H:i:s'),
         ])->render();
 
@@ -390,7 +390,7 @@ class PrintReportsController extends Controller
      */
     public function warehouseSales(Request $request): Response
     {
-        $data      = $this->decryptPayload($request);
+        $data = $this->decryptPayload($request);
         $dateField = in_array($data['date_field'] ?? 'date', ['date', 'closed_at']) ? $data['date_field'] : 'date';
 
         // ── Construir query sobre manifest_warehouse_totals ──────────────────
@@ -398,7 +398,7 @@ class PrintReportsController extends Controller
         // JOIN con warehouses para nombre/código.
         // Agrupamos por bodega y sumamos todos los manifiestos del período.
         $query = ManifestWarehouseTotal::query()
-            ->join('manifests',  'manifest_warehouse_totals.manifest_id',  '=', 'manifests.id')
+            ->join('manifests', 'manifest_warehouse_totals.manifest_id', '=', 'manifests.id')
             ->join('warehouses', 'manifest_warehouse_totals.warehouse_id', '=', 'warehouses.id')
             ->whereNull('manifests.deleted_at')
             ->select(
@@ -419,14 +419,14 @@ class PrintReportsController extends Controller
             ->orderByDesc('total_neto');
 
         // Filtro por período
-        if (!empty($data['date_from'])) {
+        if (! empty($data['date_from'])) {
             $query->whereDate("manifests.{$dateField}", '>=', $data['date_from']);
         }
-        if (!empty($data['date_to'])) {
+        if (! empty($data['date_to'])) {
             $query->whereDate("manifests.{$dateField}", '<=', $data['date_to']);
         }
         // Filtro por estado del manifiesto
-        if (!empty($data['status'])) {
+        if (! empty($data['status'])) {
             $query->where('manifests.status', $data['status']);
         }
 
@@ -438,28 +438,28 @@ class PrintReportsController extends Controller
         // ── Totales globales ─────────────────────────────────────────────────
         $totals = [
             'manifests_count' => $rows->sum('manifests_count'),
-            'invoices_count'  => $rows->sum('invoices_count'),
-            'returns_count'   => $rows->sum('returns_count'),
-            'clients_count'   => $rows->sum('clients_count'),
-            'total_invoices'  => $rows->sum('total_invoices'),
-            'total_returns'   => $rows->sum('total_returns'),
-            'total_neto'      => $rows->sum('total_neto'),
-            'warehouses_count'=> $rows->count(),
+            'invoices_count' => $rows->sum('invoices_count'),
+            'returns_count' => $rows->sum('returns_count'),
+            'clients_count' => $rows->sum('clients_count'),
+            'total_invoices' => $rows->sum('total_invoices'),
+            'total_returns' => $rows->sum('total_returns'),
+            'total_neto' => $rows->sum('total_neto'),
+            'warehouses_count' => $rows->count(),
         ];
 
         // ── Etiqueta legible del campo de fecha ──────────────────────────────
         $dateFieldLabel = $dateField === 'closed_at' ? 'Fecha de cierre' : 'Fecha del manifiesto';
 
-        $reportNumber = 'BOD-' . now()->format('Ymd-His');
+        $reportNumber = 'BOD-'.now()->format('Ymd-His');
 
         $html = view('pdf.report-warehouse-sales', [
-            'rows'           => $rows,
-            'totals'         => $totals,
-            'filters'        => $data,
+            'rows' => $rows,
+            'totals' => $totals,
+            'filters' => $data,
             'dateFieldLabel' => $dateFieldLabel,
-            'supplier'       => Supplier::first(),
-            'generatedAt'    => now()->format('d/m/Y H:i:s'),
-            'reportNumber'   => $reportNumber,
+            'supplier' => Supplier::first(),
+            'generatedAt' => now()->format('d/m/Y H:i:s'),
+            'reportNumber' => $reportNumber,
         ])->render();
 
         return response($html, 200, ['Content-Type' => 'text/html; charset=UTF-8']);
@@ -477,7 +477,7 @@ class PrintReportsController extends Controller
      */
     public function products(Request $request): Response
     {
-        $data     = $this->decryptPayload($request);
+        $data = $this->decryptPayload($request);
         $manifest = Manifest::with(['warehouse', 'supplier'])->findOrFail((int) ($data['manifest_id'] ?? 0));
 
         // Query base: líneas de facturas no rechazadas del manifiesto
@@ -485,9 +485,9 @@ class PrintReportsController extends Controller
             ->where('status', '!=', 'rejected');
 
         // Filtrar por IDs específicos (bulk action) o por bodega
-        if (!empty($data['invoice_ids'])) {
+        if (! empty($data['invoice_ids'])) {
             $invoiceQuery->whereIn('id', $data['invoice_ids']);
-        } elseif (!empty($data['warehouse_id'])) {
+        } elseif (! empty($data['warehouse_id'])) {
             $invoiceQuery->where('warehouse_id', (int) $data['warehouse_id']);
         }
 
@@ -511,19 +511,19 @@ class PrintReportsController extends Controller
         $products = $productsQuery->get();
 
         $totals = [
-            'total_boxes'  => $products->sum('total_boxes'),
-            'total_units'  => $products->sum('total_units'),
+            'total_boxes' => $products->sum('total_boxes'),
+            'total_units' => $products->sum('total_units'),
             'total_amount' => $products->sum('total_amount'),
-            'count'        => $products->count(),
+            'count' => $products->count(),
         ];
 
         $html = view('pdf.report-products', [
-            'manifest'    => $manifest,
-            'products'    => $products,
-            'totals'      => $totals,
-            'supplier'    => Supplier::first(),
+            'manifest' => $manifest,
+            'products' => $products,
+            'totals' => $totals,
+            'supplier' => Supplier::first(),
             'generatedAt' => now()->format('d/m/Y H:i:s'),
-            'warehouseFiltered' => !empty($data['warehouse_id']),
+            'warehouseFiltered' => ! empty($data['warehouse_id']),
         ])->render();
 
         return response($html, 200, ['Content-Type' => 'text/html; charset=UTF-8']);
@@ -542,17 +542,17 @@ class PrintReportsController extends Controller
      */
     public function invoicesChecklist(Request $request): Response
     {
-        $data     = $this->decryptPayload($request);
+        $data = $this->decryptPayload($request);
         $manifest = Manifest::with(['warehouse', 'supplier'])->findOrFail((int) ($data['manifest_id'] ?? 0));
 
         $invoiceQuery = $manifest->invoices()
             ->where('status', '!=', 'rejected');
 
-        $warehouseFiltered = !empty($data['warehouse_id']);
-        $warehouseName     = '—';
+        $warehouseFiltered = ! empty($data['warehouse_id']);
+        $warehouseName = '—';
 
         // Filtrar por IDs específicos (bulk action) o por bodega
-        if (!empty($data['invoice_ids'])) {
+        if (! empty($data['invoice_ids'])) {
             $invoiceQuery->whereIn('id', $data['invoice_ids']);
         } elseif ($warehouseFiltered) {
             $invoiceQuery->where('warehouse_id', (int) $data['warehouse_id']);
@@ -572,24 +572,24 @@ class PrintReportsController extends Controller
             return [
                 'invoices' => $group->values(),
                 'subtotal' => $group->sum('total'),
-                'count'    => $group->count(),
+                'count' => $group->count(),
             ];
         })->sortKeys();
 
         $totals = [
-            'total'   => $invoices->sum('total'),
-            'count'   => $invoices->count(),
+            'total' => $invoices->sum('total'),
+            'count' => $invoices->count(),
             'clients' => $invoices->pluck('client_id')->unique()->count(),
         ];
 
         $html = view('pdf.report-invoices-checklist', [
-            'manifest'          => $manifest,
-            'byRoute'           => $byRoute,
-            'totals'            => $totals,
-            'supplier'          => Supplier::first(),
-            'generatedAt'       => now()->format('d/m/Y H:i:s'),
+            'manifest' => $manifest,
+            'byRoute' => $byRoute,
+            'totals' => $totals,
+            'supplier' => Supplier::first(),
+            'generatedAt' => now()->format('d/m/Y H:i:s'),
             'warehouseFiltered' => $warehouseFiltered,
-            'warehouseName'     => $warehouseName,
+            'warehouseName' => $warehouseName,
         ])->render();
 
         return response($html, 200, ['Content-Type' => 'text/html; charset=UTF-8']);
@@ -601,6 +601,7 @@ class PrintReportsController extends Controller
     {
         try {
             $payload = Crypt::decryptString($request->query('payload', ''));
+
             return json_decode($payload, true, 512, JSON_THROW_ON_ERROR);
         } catch (\Throwable) {
             abort(403, 'Enlace de reporte inválido o expirado.');
@@ -634,9 +635,9 @@ class PrintReportsController extends Controller
         if ($count > $limit) {
             abort(
                 422,
-                "El reporte de {$reportName} devolvería {$count} filas, superando el límite " .
-                "de seguridad ({$limit}). Afine los filtros (rango de fechas, bodega, estado) " .
-                "y vuelva a generarlo."
+                "El reporte de {$reportName} devolvería {$count} filas, superando el límite ".
+                "de seguridad ({$limit}). Afine los filtros (rango de fechas, bodega, estado) ".
+                'y vuelva a generarlo.'
             );
         }
     }

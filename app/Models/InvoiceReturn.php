@@ -4,15 +4,15 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Spatie\Activitylog\Traits\LogsActivity;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Spatie\Activitylog\LogOptions;
+use Spatie\Activitylog\Traits\LogsActivity;
 
 class InvoiceReturn extends Model
 {
-    use HasFactory, SoftDeletes, LogsActivity;
+    use HasFactory, LogsActivity, SoftDeletes;
 
     protected static function newFactory()
     {
@@ -34,11 +34,11 @@ class InvoiceReturn extends Model
     protected function casts(): array
     {
         return [
-            'return_date'    => 'date',
+            'return_date' => 'date',
             'processed_date' => 'date',
-            'reviewed_at'    => 'datetime',
-            'cancelled_at'   => 'datetime',
-            'total'          => 'decimal:2',
+            'reviewed_at' => 'datetime',
+            'cancelled_at' => 'datetime',
+            'total' => 'decimal:2',
         ];
     }
 
@@ -164,6 +164,6 @@ class InvoiceReturn extends Model
             return 'Editable hasta las 23:59 de hoy';
         }
 
-        return 'Bloqueada — registrada el ' . $this->created_at->format('d/m/Y');
+        return 'Bloqueada — registrada el '.$this->created_at->format('d/m/Y');
     }
 }

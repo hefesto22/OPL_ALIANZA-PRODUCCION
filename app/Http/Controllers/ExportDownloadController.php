@@ -24,11 +24,11 @@ class ExportDownloadController extends Controller
         $filePath = $request->query('file', '');
 
         // Prevenir path traversal: solo permitir archivos dentro de exports/
-        if (!str_starts_with($filePath, 'exports/') || str_contains($filePath, '..')) {
+        if (! str_starts_with($filePath, 'exports/') || str_contains($filePath, '..')) {
             abort(403, 'Ruta no permitida.');
         }
 
-        if (!Storage::disk('local')->exists($filePath)) {
+        if (! Storage::disk('local')->exists($filePath)) {
             abort(404, 'El archivo ya no está disponible. Las exportaciones se eliminan después de 24 horas.');
         }
 

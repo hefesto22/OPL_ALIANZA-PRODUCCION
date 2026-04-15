@@ -7,7 +7,6 @@ use App\Models\Invoice;
 use App\Models\InvoiceReturn;
 use App\Models\Manifest;
 use App\Models\ManifestWarehouseTotal;
-use App\Models\ReturnReason;
 use App\Models\User;
 use App\Models\Warehouse;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -43,12 +42,12 @@ class ManifestTest extends TestCase
     private function balancedManifest(array $overrides = []): Manifest
     {
         return Manifest::factory()->create(array_merge([
-            'status'           => 'imported',
-            'total_invoices'   => 1000,
-            'total_returns'    => 0,
+            'status' => 'imported',
+            'total_invoices' => 1000,
+            'total_returns' => 0,
             'total_to_deposit' => 1000,
-            'total_deposited'  => 1000,
-            'difference'       => 0,
+            'total_deposited' => 1000,
+            'difference' => 0,
         ], $overrides));
     }
 
@@ -66,7 +65,7 @@ class ManifestTest extends TestCase
     {
         $manifest = $this->balancedManifest([
             'total_deposited' => 900,
-            'difference'      => 100,
+            'difference' => 100,
         ]);
 
         $this->assertFalse($manifest->isReadyToClose());
@@ -78,11 +77,11 @@ class ManifestTest extends TestCase
         // Cerrar un manifiesto así no tiene sentido contable, por eso
         // isReadyToClose() lo bloquea.
         $manifest = $this->balancedManifest([
-            'total_invoices'   => 500,
-            'total_returns'    => 500,
+            'total_invoices' => 500,
+            'total_returns' => 500,
             'total_to_deposit' => 0,
-            'total_deposited'  => 0,
-            'difference'       => 0,
+            'total_deposited' => 0,
+            'difference' => 0,
         ]);
 
         $this->assertFalse($manifest->isReadyToClose());
@@ -95,10 +94,10 @@ class ManifestTest extends TestCase
         // Una devolución pendiente deja al manifiesto en "limbo": si se
         // cierra, ya no se puede aprobar/rechazar sin reabrirlo.
         InvoiceReturn::factory()->create([
-            'manifest_id'  => $manifest->id,
+            'manifest_id' => $manifest->id,
             'warehouse_id' => $manifest->warehouse_id,
-            'status'       => 'pending',
-            'total'        => 0,
+            'status' => 'pending',
+            'total' => 0,
         ]);
 
         $this->assertFalse($manifest->isReadyToClose());
@@ -111,9 +110,9 @@ class ManifestTest extends TestCase
         // Devoluciones aprobadas NO bloquean el cierre: ya pasaron por
         // revisión y están reflejadas en los totales.
         InvoiceReturn::factory()->approved()->create([
-            'manifest_id'  => $manifest->id,
+            'manifest_id' => $manifest->id,
             'warehouse_id' => $manifest->warehouse_id,
-            'total'        => 0,
+            'total' => 0,
         ]);
 
         $this->assertTrue($manifest->isReadyToClose());
@@ -122,7 +121,7 @@ class ManifestTest extends TestCase
     public function test_close_marks_manifest_with_user_and_timestamp(): void
     {
         $manifest = $this->balancedManifest();
-        $user     = User::factory()->create();
+        $user = User::factory()->create();
 
         $manifest->close($user->id);
 
@@ -134,7 +133,7 @@ class ManifestTest extends TestCase
 
     public function test_reopen_clears_closed_metadata(): void
     {
-        $user     = User::factory()->create();
+        $user = User::factory()->create();
         $manifest = Manifest::factory()->closed()->create([
             'closed_by' => $user->id,
         ]);
@@ -154,17 +153,17 @@ class ManifestTest extends TestCase
         $manifest = Manifest::factory()->create();
 
         Invoice::factory()->count(2)->create([
-            'manifest_id'  => $manifest->id,
+            'manifest_id' => $manifest->id,
             'warehouse_id' => $manifest->warehouse_id,
-            'status'       => 'imported',
-            'total'        => 500,
+            'status' => 'imported',
+            'total' => 500,
         ]);
 
         Invoice::factory()->create([
-            'manifest_id'  => $manifest->id,
+            'manifest_id' => $manifest->id,
             'warehouse_id' => $manifest->warehouse_id,
-            'status'       => 'returned',
-            'total'        => 300,
+            'status' => 'returned',
+            'total' => 300,
         ]);
 
         $summary = $manifest->getInvoicesSummary();
@@ -180,20 +179,20 @@ class ManifestTest extends TestCase
     public function test_invoices_summary_filters_by_warehouse(): void
     {
         $manifest = Manifest::factory()->create();
-        $oac      = Warehouse::factory()->oac()->create();
-        $oas      = Warehouse::factory()->oas()->create();
+        $oac = Warehouse::factory()->oac()->create();
+        $oas = Warehouse::factory()->oas()->create();
 
         Invoice::factory()->create([
-            'manifest_id'  => $manifest->id,
+            'manifest_id' => $manifest->id,
             'warehouse_id' => $oac->id,
-            'status'       => 'imported',
-            'total'        => 1000,
+            'status' => 'imported',
+            'total' => 1000,
         ]);
         Invoice::factory()->create([
-            'manifest_id'  => $manifest->id,
+            'manifest_id' => $manifest->id,
             'warehouse_id' => $oas->id,
-            'status'       => 'imported',
-            'total'        => 500,
+            'status' => 'imported',
+            'total' => 500,
         ]);
 
         $oacSummary = $manifest->getInvoicesSummary($oac->id);
@@ -211,20 +210,20 @@ class ManifestTest extends TestCase
         // aún no están confirmadas para una bodega. Sí deben aparecer en
         // clients_count porque su client_id es válido.
         $manifest = Manifest::factory()->create();
-        $oac      = Warehouse::factory()->oac()->create();
+        $oac = Warehouse::factory()->oac()->create();
 
         Invoice::factory()->create([
-            'manifest_id'  => $manifest->id,
+            'manifest_id' => $manifest->id,
             'warehouse_id' => $oac->id,
-            'total'        => 1500,
-            'client_id'    => 'CLI001',
+            'total' => 1500,
+            'client_id' => 'CLI001',
         ]);
         Invoice::factory()->create([
-            'manifest_id'  => $manifest->id,
+            'manifest_id' => $manifest->id,
             'warehouse_id' => null,
-            'status'       => 'pending_warehouse',
-            'total'        => 9999,  // NO debe sumar
-            'client_id'    => 'CLI002',
+            'status' => 'pending_warehouse',
+            'total' => 9999,  // NO debe sumar
+            'client_id' => 'CLI002',
         ]);
 
         $manifest->recalculateTotals();
@@ -239,27 +238,27 @@ class ManifestTest extends TestCase
     public function test_recalculate_totals_counts_distinct_clients_across_warehouses(): void
     {
         $manifest = Manifest::factory()->create();
-        $oac      = Warehouse::factory()->oac()->create();
-        $oas      = Warehouse::factory()->oas()->create();
+        $oac = Warehouse::factory()->oac()->create();
+        $oas = Warehouse::factory()->oas()->create();
 
         // CLI001 aparece 2 veces (una en OAC, otra en OAS) → cuenta 1 sola vez
         Invoice::factory()->create([
-            'manifest_id'  => $manifest->id,
+            'manifest_id' => $manifest->id,
             'warehouse_id' => $oac->id,
-            'total'        => 100,
-            'client_id'    => 'CLI001',
+            'total' => 100,
+            'client_id' => 'CLI001',
         ]);
         Invoice::factory()->create([
-            'manifest_id'  => $manifest->id,
+            'manifest_id' => $manifest->id,
             'warehouse_id' => $oas->id,
-            'total'        => 200,
-            'client_id'    => 'CLI001',
+            'total' => 200,
+            'client_id' => 'CLI001',
         ]);
         Invoice::factory()->create([
-            'manifest_id'  => $manifest->id,
+            'manifest_id' => $manifest->id,
             'warehouse_id' => $oac->id,
-            'total'        => 300,
-            'client_id'    => 'CLI002',
+            'total' => 300,
+            'client_id' => 'CLI002',
         ]);
 
         $manifest->recalculateTotals();
@@ -270,31 +269,31 @@ class ManifestTest extends TestCase
     public function test_recalculate_totals_only_counts_approved_returns_in_monetary_total(): void
     {
         $manifest = Manifest::factory()->create();
-        $oac      = Warehouse::factory()->oac()->create();
+        $oac = Warehouse::factory()->oac()->create();
 
         Invoice::factory()->create([
-            'manifest_id'  => $manifest->id,
+            'manifest_id' => $manifest->id,
             'warehouse_id' => $oac->id,
-            'total'        => 5000,
+            'total' => 5000,
         ]);
 
         // Una aprobada, una pendiente, una rechazada. Solo la aprobada
         // debe restar del total_to_deposit. Las 3 cuentan en returns_count.
         InvoiceReturn::factory()->approved()->create([
-            'manifest_id'  => $manifest->id,
+            'manifest_id' => $manifest->id,
             'warehouse_id' => $oac->id,
-            'total'        => 800,
+            'total' => 800,
         ]);
         InvoiceReturn::factory()->create([
-            'manifest_id'  => $manifest->id,
+            'manifest_id' => $manifest->id,
             'warehouse_id' => $oac->id,
-            'status'       => 'pending',
-            'total'        => 300,
+            'status' => 'pending',
+            'total' => 300,
         ]);
         InvoiceReturn::factory()->rejected()->create([
-            'manifest_id'  => $manifest->id,
+            'manifest_id' => $manifest->id,
             'warehouse_id' => $oac->id,
-            'total'        => 150,
+            'total' => 150,
         ]);
 
         $manifest->recalculateTotals();
@@ -309,43 +308,43 @@ class ManifestTest extends TestCase
     public function test_recalculate_totals_computes_difference_from_invoices_returns_and_deposits(): void
     {
         $manifest = Manifest::factory()->create();
-        $oac      = Warehouse::factory()->oac()->create();
-        $user     = User::factory()->create();
+        $oac = Warehouse::factory()->oac()->create();
+        $user = User::factory()->create();
 
         Invoice::factory()->create([
-            'manifest_id'  => $manifest->id,
+            'manifest_id' => $manifest->id,
             'warehouse_id' => $oac->id,
-            'total'        => 10000,
+            'total' => 10000,
         ]);
         InvoiceReturn::factory()->approved()->create([
-            'manifest_id'  => $manifest->id,
+            'manifest_id' => $manifest->id,
             'warehouse_id' => $oac->id,
-            'total'        => 1000,
+            'total' => 1000,
         ]);
 
         // Dos depósitos parciales que NO cuadran con total_to_deposit.
         Deposit::create([
-            'manifest_id'  => $manifest->id,
-            'amount'       => 5000,
+            'manifest_id' => $manifest->id,
+            'amount' => 5000,
             'deposit_date' => now()->toDateString(),
-            'created_by'   => $user->id,
+            'created_by' => $user->id,
         ]);
         Deposit::create([
-            'manifest_id'  => $manifest->id,
-            'amount'       => 2000,
+            'manifest_id' => $manifest->id,
+            'amount' => 2000,
             'deposit_date' => now()->toDateString(),
-            'created_by'   => $user->id,
+            'created_by' => $user->id,
         ]);
 
         $manifest->recalculateTotals();
         $manifest->refresh();
 
         $this->assertEqualsWithDelta(10000.0, (float) $manifest->total_invoices, 0.01);
-        $this->assertEqualsWithDelta(1000.0,  (float) $manifest->total_returns, 0.01);
-        $this->assertEqualsWithDelta(9000.0,  (float) $manifest->total_to_deposit, 0.01);
-        $this->assertEqualsWithDelta(7000.0,  (float) $manifest->total_deposited, 0.01);
+        $this->assertEqualsWithDelta(1000.0, (float) $manifest->total_returns, 0.01);
+        $this->assertEqualsWithDelta(9000.0, (float) $manifest->total_to_deposit, 0.01);
+        $this->assertEqualsWithDelta(7000.0, (float) $manifest->total_deposited, 0.01);
         // difference = (10000 - 1000) - 7000 = 2000 — falta depositar
-        $this->assertEqualsWithDelta(2000.0,  (float) $manifest->difference, 0.01);
+        $this->assertEqualsWithDelta(2000.0, (float) $manifest->difference, 0.01);
     }
 
     // ── recalculateWarehouseTotals (OAC/OAS/OAO) ────────────────────────
@@ -353,50 +352,50 @@ class ManifestTest extends TestCase
     public function test_recalculate_warehouse_totals_creates_one_row_per_warehouse_for_oac_oas_oao(): void
     {
         $manifest = Manifest::factory()->create();
-        $oac      = Warehouse::factory()->oac()->create();
-        $oas      = Warehouse::factory()->oas()->create();
-        $oao      = Warehouse::factory()->oao()->create();
+        $oac = Warehouse::factory()->oac()->create();
+        $oas = Warehouse::factory()->oas()->create();
+        $oao = Warehouse::factory()->oao()->create();
 
         // OAC: 2 facturas (2 clientes distintos), 1 devolución aprobada.
         Invoice::factory()->create([
-            'manifest_id'  => $manifest->id,
+            'manifest_id' => $manifest->id,
             'warehouse_id' => $oac->id,
-            'total'        => 1000,
-            'client_id'    => 'CLI001',
+            'total' => 1000,
+            'client_id' => 'CLI001',
         ]);
         Invoice::factory()->create([
-            'manifest_id'  => $manifest->id,
+            'manifest_id' => $manifest->id,
             'warehouse_id' => $oac->id,
-            'total'        => 2000,
-            'client_id'    => 'CLI002',
+            'total' => 2000,
+            'client_id' => 'CLI002',
         ]);
         InvoiceReturn::factory()->approved()->create([
-            'manifest_id'  => $manifest->id,
+            'manifest_id' => $manifest->id,
             'warehouse_id' => $oac->id,
-            'total'        => 200,
+            'total' => 200,
         ]);
 
         // OAS: 1 factura, 1 devolución pendiente (NO suma a total_returns
         // pero sí a returns_count).
         Invoice::factory()->create([
-            'manifest_id'  => $manifest->id,
+            'manifest_id' => $manifest->id,
             'warehouse_id' => $oas->id,
-            'total'        => 4500,
-            'client_id'    => 'CLI003',
+            'total' => 4500,
+            'client_id' => 'CLI003',
         ]);
         InvoiceReturn::factory()->create([
-            'manifest_id'  => $manifest->id,
+            'manifest_id' => $manifest->id,
             'warehouse_id' => $oas->id,
-            'status'       => 'pending',
-            'total'        => 500,
+            'status' => 'pending',
+            'total' => 500,
         ]);
 
         // OAO: 1 factura, sin devoluciones.
         Invoice::factory()->create([
-            'manifest_id'  => $manifest->id,
+            'manifest_id' => $manifest->id,
             'warehouse_id' => $oao->id,
-            'total'        => 800,
-            'client_id'    => 'CLI004',
+            'total' => 800,
+            'client_id' => 'CLI004',
         ]);
 
         $manifest->recalculateTotals();
@@ -409,7 +408,7 @@ class ManifestTest extends TestCase
         $this->assertEqualsWithDelta(3000.0, (float) $oacTotal->total_invoices, 0.01);
         $this->assertSame(2, $oacTotal->invoices_count);
         $this->assertSame(2, $oacTotal->clients_count);
-        $this->assertEqualsWithDelta(200.0,  (float) $oacTotal->total_returns, 0.01);
+        $this->assertEqualsWithDelta(200.0, (float) $oacTotal->total_returns, 0.01);
         $this->assertSame(1, $oacTotal->returns_count);
         // total_to_deposit = 3000 - 200 = 2800
         $this->assertEqualsWithDelta(2800.0, (float) $oacTotal->total_to_deposit, 0.01);
@@ -418,7 +417,7 @@ class ManifestTest extends TestCase
             ->where('warehouse_id', $oas->id)->first();
         $this->assertEqualsWithDelta(4500.0, (float) $oasTotal->total_invoices, 0.01);
         // La devolución pendiente NO suma a total_returns pero sí a returns_count
-        $this->assertEqualsWithDelta(0.0,    (float) $oasTotal->total_returns, 0.01);
+        $this->assertEqualsWithDelta(0.0, (float) $oasTotal->total_returns, 0.01);
         $this->assertSame(1, $oasTotal->returns_count);
         $this->assertEqualsWithDelta(4500.0, (float) $oasTotal->total_to_deposit, 0.01);
 
@@ -426,7 +425,7 @@ class ManifestTest extends TestCase
             ->where('warehouse_id', $oao->id)->first();
         $this->assertEqualsWithDelta(800.0, (float) $oaoTotal->total_invoices, 0.01);
         $this->assertSame(0, $oaoTotal->returns_count);
-        $this->assertEqualsWithDelta(0.0,   (float) $oaoTotal->total_returns, 0.01);
+        $this->assertEqualsWithDelta(0.0, (float) $oaoTotal->total_returns, 0.01);
         $this->assertEqualsWithDelta(800.0, (float) $oaoTotal->total_to_deposit, 0.01);
     }
 
@@ -437,13 +436,13 @@ class ManifestTest extends TestCase
         // durante la importación de la API se llama varias veces en el
         // mismo manifest al procesar batches.
         $manifest = Manifest::factory()->create();
-        $oac      = Warehouse::factory()->oac()->create();
+        $oac = Warehouse::factory()->oac()->create();
 
         Invoice::factory()->create([
-            'manifest_id'  => $manifest->id,
+            'manifest_id' => $manifest->id,
             'warehouse_id' => $oac->id,
-            'total'        => 1234,
-            'client_id'    => 'CLI001',
+            'total' => 1234,
+            'client_id' => 'CLI001',
         ]);
 
         $manifest->recalculateTotals();
@@ -469,20 +468,20 @@ class ManifestTest extends TestCase
         // el insert, pero queremos confirmar que el whereNotNull() del
         // query las filtra ANTES de intentar insertar.
         $manifest = Manifest::factory()->create();
-        $oac      = Warehouse::factory()->oac()->create();
+        $oac = Warehouse::factory()->oac()->create();
 
         Invoice::factory()->create([
-            'manifest_id'  => $manifest->id,
+            'manifest_id' => $manifest->id,
             'warehouse_id' => $oac->id,
-            'total'        => 500,
-            'client_id'    => 'CLI001',
+            'total' => 500,
+            'client_id' => 'CLI001',
         ]);
         Invoice::factory()->create([
-            'manifest_id'  => $manifest->id,
+            'manifest_id' => $manifest->id,
             'warehouse_id' => null,
-            'status'       => 'pending_warehouse',
-            'total'        => 999,
-            'client_id'    => 'CLI002',
+            'status' => 'pending_warehouse',
+            'total' => 999,
+            'client_id' => 'CLI002',
         ]);
 
         $manifest->recalculateTotals();

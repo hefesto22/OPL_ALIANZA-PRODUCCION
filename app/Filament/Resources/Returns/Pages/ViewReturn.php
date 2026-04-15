@@ -5,8 +5,8 @@ namespace App\Filament\Resources\Returns\Pages;
 use App\Filament\Resources\Returns\ReturnResource;
 use Filament\Actions\Action;
 use Filament\Actions\EditAction;
-use Filament\Infolists\Components\TextEntry;
 use Filament\Infolists\Components\RepeatableEntry;
+use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
@@ -26,8 +26,7 @@ class ViewReturn extends ViewRecord
             EditAction::make()
                 ->label('Editar')
                 ->icon('heroicon-o-pencil-square')
-                ->visible(fn (): bool =>
-                    ! $this->record->isCancelled() &&
+                ->visible(fn (): bool => ! $this->record->isCancelled() &&
                     ! $this->record->manifest->isClosed() &&
                     $this->record->isEditableToday()
                 )
@@ -39,8 +38,7 @@ class ViewReturn extends ViewRecord
                 ->icon('heroicon-o-lock-closed')
                 ->color('gray')
                 ->disabled()
-                ->visible(fn (): bool =>
-                    ! $this->record->manifest->isClosed() &&
+                ->visible(fn (): bool => ! $this->record->manifest->isClosed() &&
                     ! $this->record->isEditableToday()
                 ),
         ];
@@ -75,9 +73,9 @@ class ViewReturn extends ViewRecord
                             ->label('Bodega')
                             ->badge()
                             ->color(fn ($state) => match ($state) {
-                                'OAC'   => 'info',
-                                'OAO'   => 'success',
-                                'OAS'   => 'warning',
+                                'OAC' => 'info',
+                                'OAO' => 'success',
+                                'OAS' => 'warning',
                                 default => 'gray',
                             }),
 
@@ -107,39 +105,39 @@ class ViewReturn extends ViewRecord
                             ->label('Estado')
                             ->badge()
                             ->color(fn ($state) => match ($state) {
-                                'pending'   => 'warning',
-                                'approved'  => 'success',
-                                'rejected'  => 'danger',
+                                'pending' => 'warning',
+                                'approved' => 'success',
+                                'rejected' => 'danger',
                                 'cancelled' => 'gray',
-                                default     => 'gray',
+                                default => 'gray',
                             })
                             ->formatStateUsing(fn ($state) => match ($state) {
-                                'pending'   => 'Pendiente',
-                                'approved'  => 'Aprobada',
-                                'rejected'  => 'Rechazada',
+                                'pending' => 'Pendiente',
+                                'approved' => 'Aprobada',
+                                'rejected' => 'Rechazada',
                                 'cancelled' => 'Cancelada',
-                                default     => $state,
+                                default => $state,
                             })
                             ->icon(fn ($state) => match ($state) {
-                                'pending'   => 'heroicon-m-clock',
-                                'approved'  => 'heroicon-m-check-circle',
-                                'rejected'  => 'heroicon-m-x-circle',
+                                'pending' => 'heroicon-m-clock',
+                                'approved' => 'heroicon-m-check-circle',
+                                'rejected' => 'heroicon-m-x-circle',
                                 'cancelled' => 'heroicon-m-no-symbol',
-                                default     => null,
+                                default => null,
                             }),
 
                         TextEntry::make('type')
                             ->label('Tipo')
                             ->badge()
                             ->formatStateUsing(fn ($state) => match ($state) {
-                                'total'   => 'Total',
+                                'total' => 'Total',
                                 'partial' => 'Parcial',
-                                default   => $state,
+                                default => $state,
                             })
                             ->color(fn ($state) => match ($state) {
-                                'total'   => 'danger',
+                                'total' => 'danger',
                                 'partial' => 'warning',
-                                default   => 'gray',
+                                default => 'gray',
                             }),
 
                         TextEntry::make('total')
@@ -188,6 +186,7 @@ class ViewReturn extends ViewRecord
                                 if (! $record->isEditableToday()) {
                                     return 'Sistema';
                                 }
+
                                 return 'Sin revisar';
                             })
                             ->color(fn ($state) => $state === 'Sistema' ? 'info' : null)
@@ -205,6 +204,7 @@ class ViewReturn extends ViewRecord
                                 if (! $record->isEditableToday()) {
                                     return $record->created_at->endOfDay()->format('d/m/Y H:i');
                                 }
+
                                 return null;
                             })
                             ->placeholder('—'),
@@ -277,8 +277,8 @@ class ViewReturn extends ViewRecord
                                 ->label(fn ($record) => $record->quantity_box > 0 ? 'Cajas' : 'Unidades')
                                 ->fontFamily('mono')
                                 ->state(fn ($record) => $record->quantity_box > 0
-                                    ? number_format($record->quantity_box, 0) . ' cja.'
-                                    : number_format($record->quantity, 2) . ' und.'
+                                    ? number_format($record->quantity_box, 0).' cja.'
+                                    : number_format($record->quantity, 2).' und.'
                                 )
                                 ->alignStart(),
 

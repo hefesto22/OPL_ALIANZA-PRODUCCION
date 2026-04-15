@@ -20,26 +20,26 @@ class JsonValidatorServiceTest extends TestCase
     {
         // isDuplicate() usa Manifest::where que necesita BD.
         // Para los tests puros lo evitamos — solo testeamos validate().
-        return new JsonValidatorService();
+        return new JsonValidatorService;
     }
 
     private function validInvoice(array $overrides = []): array
     {
         return array_merge([
-            'Nfactura'         => 'F-001',
+            'Nfactura' => 'F-001',
             'NumeroManifiesto' => 'MAN-001',
-            'Total'            => 500.0,
-            'LineasFactura'    => [[
-                'ProductoId'   => 'ART-001',
+            'Total' => 500.0,
+            'LineasFactura' => [[
+                'ProductoId' => 'ART-001',
                 'ProductoDesc' => 'PRODUCTO',
-                'Total'        => 500.0,
-                'NumeroLinea'  => 1,
+                'Total' => 500.0,
+                'NumeroLinea' => 1,
             ]],
-            'FechaFactura'     => '2026-04-10',
-            'Almacen'          => 'OAC',
-            'Vendedorid'       => 'V01',
-            'Clienteid'        => 'C001',
-            'Cliente'          => 'PULPERIA PRUEBA',
+            'FechaFactura' => '2026-04-10',
+            'Almacen' => 'OAC',
+            'Vendedorid' => 'V01',
+            'Clienteid' => 'C001',
+            'Cliente' => 'PULPERIA PRUEBA',
         ], $overrides);
     }
 
@@ -150,7 +150,7 @@ class JsonValidatorServiceTest extends TestCase
     {
         $inv = $this->validInvoice([
             'LineasFactura' => [[
-                'ProductoId'   => 'ART-001',
+                'ProductoId' => 'ART-001',
                 'ProductoDesc' => 'PROD',
                 // missing Total and NumeroLinea
             ]],
@@ -164,8 +164,12 @@ class JsonValidatorServiceTest extends TestCase
         $hasTotal = false;
         $hasNumeroLinea = false;
         foreach ($errors as $err) {
-            if (str_contains($err, 'Total')) $hasTotal = true;
-            if (str_contains($err, 'NumeroLinea')) $hasNumeroLinea = true;
+            if (str_contains($err, 'Total')) {
+                $hasTotal = true;
+            }
+            if (str_contains($err, 'NumeroLinea')) {
+                $hasNumeroLinea = true;
+            }
         }
         $this->assertTrue($hasTotal, 'Should report missing Total in line');
         $this->assertTrue($hasNumeroLinea, 'Should report missing NumeroLinea in line');
@@ -175,14 +179,14 @@ class JsonValidatorServiceTest extends TestCase
     //  Helper methods
     // ═══════════════════════════════════════════════════════════════
 
-    public function test_getManifestNumber_extracts_from_first_element(): void
+    public function test_get_manifest_number_extracts_from_first_element(): void
     {
         $json = json_encode([$this->validInvoice(['NumeroManifiesto' => 'MAN-EXTRACT'])]);
         $v = $this->makeValidator();
         $this->assertSame('MAN-EXTRACT', $v->getManifestNumber($json));
     }
 
-    public function test_countValidWarehouses_counts_only_oac_oas_oao(): void
+    public function test_count_valid_warehouses_counts_only_oac_oas_oao(): void
     {
         $invoices = [
             $this->validInvoice(['Almacen' => 'OAC', 'Nfactura' => 'F-1']),
@@ -195,7 +199,7 @@ class JsonValidatorServiceTest extends TestCase
         $this->assertSame(2, $v->countValidWarehouses($json));
     }
 
-    public function test_getFirstError_returns_default_on_no_errors(): void
+    public function test_get_first_error_returns_default_on_no_errors(): void
     {
         $v = $this->makeValidator();
         $this->assertSame('Error desconocido.', $v->getFirstError());

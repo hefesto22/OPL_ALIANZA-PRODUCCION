@@ -14,7 +14,8 @@ class LatestManifestsWidget extends BaseWidget
     use HasWidgetShield;
 
     protected static ?int $sort = 7;
-    protected int | string | array $columnSpan = 'full';
+
+    protected int|string|array $columnSpan = 'full';
 
     public function getHeading(): string
     {
@@ -63,7 +64,7 @@ class LatestManifestsWidget extends BaseWidget
                 TextColumn::make('total_returns')
                     ->label('Devoluciones')
                     ->money('HNL')
-                    ->color(fn ($state): string => (float)$state > 0 ? 'danger' : 'gray'),
+                    ->color(fn ($state): string => (float) $state > 0 ? 'danger' : 'gray'),
 
                 TextColumn::make('total_to_deposit')
                     ->label('A Depositar')
@@ -79,25 +80,25 @@ class LatestManifestsWidget extends BaseWidget
                 TextColumn::make('difference')
                     ->label('Diferencia')
                     ->money('HNL')
-                    ->color(fn ($record): string => (float)$record->difference === 0.0 ? 'success' : 'danger')
+                    ->color(fn ($record): string => (float) $record->difference === 0.0 ? 'success' : 'danger')
                     ->weight('bold'),
 
                 TextColumn::make('status')
                     ->label('Estado')
                     ->badge()
                     ->color(fn (string $state): string => match ($state) {
-                        'pending'    => 'gray',
+                        'pending' => 'gray',
                         'processing' => 'info',
-                        'imported'   => 'warning',
-                        'closed'     => 'success',
-                        default      => 'gray',
+                        'imported' => 'warning',
+                        'closed' => 'success',
+                        default => 'gray',
                     })
                     ->formatStateUsing(fn (string $state): string => match ($state) {
-                        'pending'    => 'Pendiente',
+                        'pending' => 'Pendiente',
                         'processing' => 'En Proceso',
-                        'imported'   => 'Importado',
-                        'closed'     => 'Cerrado',
-                        default      => $state,
+                        'imported' => 'Importado',
+                        'closed' => 'Cerrado',
+                        default => $state,
                     }),
             ])
             ->paginated(false)

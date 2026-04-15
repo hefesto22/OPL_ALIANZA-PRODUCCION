@@ -1,4 +1,5 @@
 <?php
+
 // database/migrations/2026_03_05_000003_create_manifest_warehouse_totals_table.php
 
 use Illuminate\Database\Migrations\Migration;

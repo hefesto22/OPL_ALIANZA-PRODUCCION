@@ -11,25 +11,25 @@ class WarehouseSeeder extends Seeder
     {
         $warehouses = [
             [
-                'code'       => 'OAC',
-                'name'       => 'Bodega Choloma',
-                'city'       => 'Choloma',
+                'code' => 'OAC',
+                'name' => 'Bodega Choloma',
+                'city' => 'Choloma',
                 'department' => 'Cortés',
-                'is_active'  => true,
+                'is_active' => true,
             ],
             [
-                'code'       => 'OAO',
-                'name'       => 'Bodega Omoa',
-                'city'       => 'Omoa',
+                'code' => 'OAO',
+                'name' => 'Bodega Omoa',
+                'city' => 'Omoa',
                 'department' => 'Cortés',
-                'is_active'  => true,
+                'is_active' => true,
             ],
             [
-                'code'       => 'OAS',
-                'name'       => 'Bodega Santa Rosa',
-                'city'       => 'Santa Rosa de Copán',
+                'code' => 'OAS',
+                'name' => 'Bodega Santa Rosa',
+                'city' => 'Santa Rosa de Copán',
                 'department' => 'Copán',
-                'is_active'  => true,
+                'is_active' => true,
             ],
         ];
 

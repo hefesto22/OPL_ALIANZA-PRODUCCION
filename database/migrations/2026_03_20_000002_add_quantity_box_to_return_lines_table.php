@@ -26,9 +26,9 @@ return new class extends Migration
         Schema::table('return_lines', function (Blueprint $table) {
             // Se agrega después de line_number para mantener orden lógico con el modelo.
             $table->decimal('quantity_box', 10, 4)
-                  ->default(0)
-                  ->after('line_number')
-                  ->comment('Número de cajas enteras devueltas (Jaremar: CantidadCaja)');
+                ->default(0)
+                ->after('line_number')
+                ->comment('Número de cajas enteras devueltas (Jaremar: CantidadCaja)');
         });
     }
 

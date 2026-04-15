@@ -3,7 +3,6 @@
 namespace App\Filament\Resources\Manifests\Pages;
 
 use App\Filament\Resources\Manifests\ManifestResource;
-use App\Models\Deposit;
 use App\Models\User;
 use App\Services\DepositService;
 use Filament\Actions\Action;
@@ -12,8 +11,8 @@ use Filament\Actions\EditAction;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
-use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ViewRecord;
 use Illuminate\Support\Facades\Auth;
@@ -43,7 +42,8 @@ class ViewManifest extends ViewRecord
                 ->hidden(function (): bool {
                     /** @var User $user */
                     $user = Auth::user();
-                    return $this->record->isClosed() || !$user->hasRole('super_admin');
+
+                    return $this->record->isClosed() || ! $user->hasRole('super_admin');
                 }),
 
             // ── Cerrar manifiesto (solo super_admin y admin) ────────────
@@ -59,6 +59,7 @@ class ViewManifest extends ViewRecord
                 ->visible(function (): bool {
                     /** @var User $user */
                     $user = Auth::user();
+
                     return $this->record->isReadyToClose() && $user->hasAnyRole(['super_admin', 'admin']);
                 })
                 ->action(function (): void {
@@ -86,6 +87,7 @@ class ViewManifest extends ViewRecord
                 ->visible(function (): bool {
                     /** @var User $user */
                     $user = Auth::user();
+
                     return $this->record->isClosed() && $user->hasRole('super_admin');
                 })
                 ->action(function (): void {
@@ -109,18 +111,21 @@ class ViewManifest extends ViewRecord
                 ->hidden(function (): bool {
                     /** @var User $user */
                     $user = Auth::user();
-                    $noPermission = !$user->hasAnyRole(['super_admin', 'admin', 'encargado', 'finance']);
+                    $noPermission = ! $user->hasAnyRole(['super_admin', 'admin', 'encargado', 'finance']);
+
                     return $this->record->isClosed() || (float) $this->record->difference === 0.0 || $noPermission;
                 })
                 ->modalHeading('Registrar Depósito')
                 ->modalDescription(function (): string {
                     $pending = app(DepositService::class)->getPendingAmount($this->record);
-                    return 'Saldo pendiente de depositar: HNL ' . number_format($pending, 2);
+
+                    return 'Saldo pendiente de depositar: HNL '.number_format($pending, 2);
                 })
                 ->modalSubmitActionLabel('Guardar Depósito')
                 ->modalWidth('lg')
                 ->schema(function (): array {
                     $pending = app(DepositService::class)->getPendingAmount($this->record);
+
                     return [
                         TextInput::make('amount')
                             ->label('Monto')
@@ -129,7 +134,7 @@ class ViewManifest extends ViewRecord
                             ->minValue(0.01)
                             ->prefix('HNL')
                             ->placeholder('0.00')
-                            ->helperText('Saldo pendiente: HNL ' . number_format($pending, 2)),
+                            ->helperText('Saldo pendiente: HNL '.number_format($pending, 2)),
 
                         DatePicker::make('deposit_date')
                             ->label('Fecha de Depósito')
@@ -182,7 +187,7 @@ class ViewManifest extends ViewRecord
 
                     Notification::make()
                         ->title('Depósito registrado correctamente')
-                        ->body('HNL ' . number_format($deposit->amount, 2) . ' — ' . ($deposit->bank ?? 'Sin banco'))
+                        ->body('HNL '.number_format($deposit->amount, 2).' — '.($deposit->bank ?? 'Sin banco'))
                         ->success()
                         ->send();
                 }),
@@ -209,7 +214,7 @@ class ViewManifest extends ViewRecord
 
                         $payload = Crypt::encryptString(json_encode($payloadData));
 
-                        $this->js("window.open('/imprimir/reportes/facturas?payload=" . urlencode($payload) . "', '_blank')");
+                        $this->js("window.open('/imprimir/reportes/facturas?payload=".urlencode($payload)."', '_blank')");
                     }),
 
                 Action::make('report_productos_pdf')
@@ -230,7 +235,7 @@ class ViewManifest extends ViewRecord
 
                         $payload = Crypt::encryptString(json_encode($payloadData));
 
-                        $this->js("window.open('/imprimir/reportes/productos?payload=" . urlencode($payload) . "', '_blank')");
+                        $this->js("window.open('/imprimir/reportes/productos?payload=".urlencode($payload)."', '_blank')");
                     }),
 
                 Action::make('report_facturas_checklist')
@@ -251,7 +256,7 @@ class ViewManifest extends ViewRecord
 
                         $payload = Crypt::encryptString(json_encode($payloadData));
 
-                        $this->js("window.open('/imprimir/reportes/facturas-checklist?payload=" . urlencode($payload) . "', '_blank')");
+                        $this->js("window.open('/imprimir/reportes/facturas-checklist?payload=".urlencode($payload)."', '_blank')");
                     }),
 
             ])
@@ -262,6 +267,7 @@ class ViewManifest extends ViewRecord
                 ->visible(function (): bool {
                     /** @var User $user */
                     $user = Auth::user();
+
                     return $user->hasAnyRole(['super_admin', 'admin', 'encargado', 'operador']);
                 }),
 
@@ -276,6 +282,7 @@ class ViewManifest extends ViewRecord
                 ->visible(function (): bool {
                     /** @var User $user */
                     $user = Auth::user();
+
                     return $this->record->returns()->exists() && $user->hasAnyRole(['super_admin', 'admin', 'encargado']);
                 })
                 ->modalHeading('Reporte de Devoluciones')
@@ -287,10 +294,10 @@ class ViewManifest extends ViewRecord
                     Select::make('period')
                         ->label('Período')
                         ->options([
-                            'all'    => 'Todas las devoluciones',
-                            'today'  => 'Hoy',
-                            'week'   => 'Esta semana',
-                            'month'  => 'Este mes',
+                            'all' => 'Todas las devoluciones',
+                            'today' => 'Hoy',
+                            'week' => 'Esta semana',
+                            'month' => 'Este mes',
                             'custom' => 'Rango personalizado',
                         ])
                         ->default('all')
@@ -313,21 +320,21 @@ class ViewManifest extends ViewRecord
                 ])
                 ->action(function (array $data): void {
                     [$from, $to] = match ($data['period']) {
-                        'today'  => [now()->startOfDay()->format('Y-m-d'), now()->endOfDay()->format('Y-m-d')],
-                        'week'   => [now()->startOfWeek()->format('Y-m-d'), now()->endOfWeek()->format('Y-m-d')],
-                        'month'  => [now()->startOfMonth()->format('Y-m-d'), now()->endOfMonth()->format('Y-m-d')],
+                        'today' => [now()->startOfDay()->format('Y-m-d'), now()->endOfDay()->format('Y-m-d')],
+                        'week' => [now()->startOfWeek()->format('Y-m-d'), now()->endOfWeek()->format('Y-m-d')],
+                        'month' => [now()->startOfMonth()->format('Y-m-d'), now()->endOfMonth()->format('Y-m-d')],
                         'custom' => [$data['date_from'], $data['date_to']],
-                        default  => [null, null],
+                        default => [null, null],
                     };
 
                     $payload = Crypt::encryptString(json_encode([
                         'manifest_id' => $this->record->id,
-                        'date_from'   => $from,
-                        'date_to'     => $to,
-                        'period'      => $data['period'],
+                        'date_from' => $from,
+                        'date_to' => $to,
+                        'period' => $data['period'],
                     ]));
 
-                    $this->js("window.open('/imprimir/reportes/devoluciones?payload=" . urlencode($payload) . "', '_blank')");
+                    $this->js("window.open('/imprimir/reportes/devoluciones?payload=".urlencode($payload)."', '_blank')");
                 }),
         ];
     }

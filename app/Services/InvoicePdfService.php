@@ -13,8 +13,7 @@ class InvoicePdfService
      * El controller PrintInvoicesController descifra el payload,
      * carga las facturas y devuelve HTML listo para Ctrl+P.
      *
-     * @param  Manifest  $manifest
-     * @param  int[]     $invoiceIds  Vacío = todas las del manifiesto
+     * @param  int[]  $invoiceIds  Vacío = todas las del manifiesto
      */
     public function generatePrintUrl(Manifest $manifest, array $invoiceIds = []): string
     {
@@ -28,6 +27,6 @@ class InvoicePdfService
 
     public function filename(Manifest $manifest): string
     {
-        return 'facturas_manifiesto_' . $manifest->number . '_' . now()->format('Ymd_His') . '.pdf';
+        return 'facturas_manifiesto_'.$manifest->number.'_'.now()->format('Ymd_His').'.pdf';
     }
 }

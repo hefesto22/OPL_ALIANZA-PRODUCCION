@@ -16,7 +16,7 @@ return new class extends Migration
     public function up(): void
     {
         // Recalcular en manifests (nivel global).
-        DB::statement("
+        DB::statement('
             UPDATE manifests m
             SET clients_count = (
                 SELECT COUNT(DISTINCT i.client_id)
@@ -26,10 +26,10 @@ return new class extends Migration
                   AND i.client_id   IS NOT NULL
             )
             WHERE m.deleted_at IS NULL
-        ");
+        ');
 
         // Recalcular en manifest_warehouse_totals (nivel por bodega).
-        DB::statement("
+        DB::statement('
             UPDATE manifest_warehouse_totals mwt
             SET clients_count = (
                 SELECT COUNT(DISTINCT i.client_id)
@@ -39,7 +39,7 @@ return new class extends Migration
                   AND i.deleted_at   IS NULL
                   AND i.client_id    IS NOT NULL
             )
-        ");
+        ');
     }
 
     public function down(): void

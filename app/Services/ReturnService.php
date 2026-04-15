@@ -47,32 +47,32 @@ class ReturnService
             // el submit otra sesión registró otra devolución, los datos del
             // frontend ya son obsoletos. Recalculamos aquí dentro de la
             // transacción, con el lock activo, para tener la fuente de verdad.
-            $lineIds        = $invoice->lines->pluck('id')->toArray();
+            $lineIds = $invoice->lines->pluck('id')->toArray();
             $returnedByLine = $this->getReturnedQuantitiesForLines($lineIds);
 
             $linesByOriginalId = $invoice->lines->keyBy('id');
-            $validationErrors  = [];
+            $validationErrors = [];
 
             foreach ($linesData as $lineData) {
                 $lineId = $lineData['invoice_line_id'] ?? null;
-                $boxes  = (float)($lineData['quantity_box'] ?? 0);
-                $units  = (float)($lineData['quantity']     ?? 0);
+                $boxes = (float) ($lineData['quantity_box'] ?? 0);
+                $units = (float) ($lineData['quantity'] ?? 0);
 
                 // Saltar líneas sin cantidad (ni cajas ni unidades sueltas)
-                if (!$lineId || ($boxes <= 0 && $units <= 0)) {
+                if (! $lineId || ($boxes <= 0 && $units <= 0)) {
                     continue;
                 }
 
                 $originalLine = $linesByOriginalId[$lineId] ?? null;
-                if (!$originalLine) {
+                if (! $originalLine) {
                     continue;
                 }
 
-                $alreadyReturned = (float)($returnedByLine[$lineId] ?? 0);
-                $available       = max(0, (float)$originalLine->quantity_fractions - $alreadyReturned);
+                $alreadyReturned = (float) ($returnedByLine[$lineId] ?? 0);
+                $available = max(0, (float) $originalLine->quantity_fractions - $alreadyReturned);
 
                 // Total solicitado en fracciones/unidades: cajas × factor + unidades sueltas
-                $convFactor     = max(1, (float)($originalLine->conversion_factor ?? 1));
+                $convFactor = max(1, (float) ($originalLine->conversion_factor ?? 1));
                 $requestedTotal = ($boxes * $convFactor) + $units;
 
                 if ($requestedTotal > $available + 0.001) {
@@ -81,7 +81,7 @@ class ReturnService
                 }
             }
 
-            if (!empty($validationErrors)) {
+            if (! empty($validationErrors)) {
                 throw ValidationException::withMessages($validationErrors);
             }
 
@@ -89,13 +89,15 @@ class ReturnService
             // por cada línea con cantidad > 0. No depende de line_total del frontend.
             $total = 0.0;
             foreach ($linesData as $lineData) {
-                $lid   = $lineData['invoice_line_id'] ?? null;
-                $b     = (float)($lineData['quantity_box'] ?? 0);
-                $u     = (float)($lineData['quantity']     ?? 0);
-                if (!$lid || ($b <= 0 && $u <= 0)) continue;
-                $ol    = $linesByOriginalId[$lid] ?? null;
-                $cf    = max(1, (float)($ol?->conversion_factor ?? 1));
-                $up    = (float)($ol?->price_min_sale ?: $ol?->price ?? 0);
+                $lid = $lineData['invoice_line_id'] ?? null;
+                $b = (float) ($lineData['quantity_box'] ?? 0);
+                $u = (float) ($lineData['quantity'] ?? 0);
+                if (! $lid || ($b <= 0 && $u <= 0)) {
+                    continue;
+                }
+                $ol = $linesByOriginalId[$lid] ?? null;
+                $cf = max(1, (float) ($ol?->conversion_factor ?? 1));
+                $up = (float) ($ol?->price_min_sale ?: $ol?->price ?? 0);
                 $total += round(($b * $cf + $u) * $up, 2);
             }
 
@@ -105,26 +107,26 @@ class ReturnService
             $now = now();
 
             $return = InvoiceReturn::create([
-                'manifest_id'      => $invoice->manifest_id,
-                'invoice_id'       => $invoice->id,
+                'manifest_id' => $invoice->manifest_id,
+                'invoice_id' => $invoice->id,
                 'return_reason_id' => $data['return_reason_id'],
-                'warehouse_id'     => $invoice->warehouse_id,
-                'type'             => $type,
-                'status'           => 'approved',
-                'client_id'        => $invoice->client_id,
-                'client_name'      => $invoice->client_name,
-                'return_date'      => $data['return_date'],
-                'processed_date'   => $now->toDateString(),
-                'processed_time'   => $now->format('H:i:s'),
-                'total'            => $total,
-                'created_by'       => $data['created_by'],
-                'manifest_number'  => $invoice->manifest->number,
+                'warehouse_id' => $invoice->warehouse_id,
+                'type' => $type,
+                'status' => 'approved',
+                'client_id' => $invoice->client_id,
+                'client_name' => $invoice->client_name,
+                'return_date' => $data['return_date'],
+                'processed_date' => $now->toDateString(),
+                'processed_time' => $now->format('H:i:s'),
+                'total' => $total,
+                'created_by' => $data['created_by'],
+                'manifest_number' => $invoice->manifest->number,
             ]);
 
             foreach ($linesData as $lineData) {
                 $lineId = $lineData['invoice_line_id'] ?? null;
-                $boxes  = (float)($lineData['quantity_box'] ?? 0);
-                $units  = (float)($lineData['quantity']     ?? 0);
+                $boxes = (float) ($lineData['quantity_box'] ?? 0);
+                $units = (float) ($lineData['quantity'] ?? 0);
 
                 // Solo crear línea si hay algo que devolver
                 if ($boxes <= 0 && $units <= 0) {
@@ -136,19 +138,19 @@ class ReturnService
                 // no siempre envían su valor reactivo correctamente al submit).
                 // Fuente de verdad: invoice_lines de la BD.
                 $originalLine = $lineId ? ($linesByOriginalId[$lineId] ?? null) : null;
-                $convFactor   = max(1, (float)($originalLine?->conversion_factor ?? 1));
-                $unitPrice    = (float)($originalLine?->price_min_sale ?: $originalLine?->price ?? 0);
-                $lineTotal    = round(($boxes * $convFactor + $units) * $unitPrice, 2);
+                $convFactor = max(1, (float) ($originalLine?->conversion_factor ?? 1));
+                $unitPrice = (float) ($originalLine?->price_min_sale ?: $originalLine?->price ?? 0);
+                $lineTotal = round(($boxes * $convFactor + $units) * $unitPrice, 2);
 
                 ReturnLine::create([
-                    'return_id'           => $return->id,
-                    'invoice_line_id'     => $lineId,
-                    'line_number'         => $lineData['line_number'],
-                    'product_id'          => $lineData['product_id'],
+                    'return_id' => $return->id,
+                    'invoice_line_id' => $lineId,
+                    'line_number' => $lineData['line_number'],
+                    'product_id' => $lineData['product_id'],
                     'product_description' => $lineData['product_description'],
-                    'quantity_box'        => $boxes,
-                    'quantity'            => $units,
-                    'line_total'          => $lineTotal,
+                    'quantity_box' => $boxes,
+                    'quantity' => $units,
+                    'line_total' => $lineTotal,
                 ]);
             }
 
@@ -195,9 +197,10 @@ class ReturnService
      * devolución distinta (borrar + crear nueva es el flujo correcto).
      *
      * @param  array  $data  Debe contener: return_reason_id, return_date, lines[]
-     * @throws ValidationException  si el manifiesto está cerrado, la ventana
-     *                              de edición expiró, o alguna línea excede
-     *                              la cantidad disponible
+     *
+     * @throws ValidationException si el manifiesto está cerrado, la ventana
+     *                             de edición expiró, o alguna línea excede
+     *                             la cantidad disponible
      */
     public function updateReturn(InvoiceReturn $return, array $data): InvoiceReturn
     {
@@ -230,19 +233,19 @@ class ReturnService
             // Calculamos cantidades devueltas por OTRAS devoluciones
             // (excluye la actual para que el usuario pueda ver y modificar
             // sus propias cantidades sin que el máximo quede bloqueado en 0).
-            $lineIds        = $invoice->lines->pluck('id')->toArray();
+            $lineIds = $invoice->lines->pluck('id')->toArray();
             $returnedByLine = $this->getReturnedQuantitiesForLinesExcluding(
                 $lineIds,
                 $return->id
             );
 
             $linesByOriginalId = $invoice->lines->keyBy('id');
-            $validationErrors  = [];
+            $validationErrors = [];
 
             foreach ($linesData as $lineData) {
                 $lineId = $lineData['invoice_line_id'] ?? null;
-                $boxes  = (float) ($lineData['quantity_box'] ?? 0);
-                $units  = (float) ($lineData['quantity']     ?? 0);
+                $boxes = (float) ($lineData['quantity_box'] ?? 0);
+                $units = (float) ($lineData['quantity'] ?? 0);
 
                 if (! $lineId || ($boxes <= 0 && $units <= 0)) {
                     continue;
@@ -254,9 +257,9 @@ class ReturnService
                 }
 
                 $alreadyReturned = (float) ($returnedByLine[$lineId] ?? 0);
-                $available       = max(0, (float) $originalLine->quantity_fractions - $alreadyReturned);
-                $convFactor      = max(1, (float) ($originalLine->conversion_factor ?? 1));
-                $requestedTotal  = ($boxes * $convFactor) + $units;
+                $available = max(0, (float) $originalLine->quantity_fractions - $alreadyReturned);
+                $convFactor = max(1, (float) ($originalLine->conversion_factor ?? 1));
+                $requestedTotal = ($boxes * $convFactor) + $units;
 
                 if ($requestedTotal > $available + 0.001) {
                     $validationErrors["lines.{$lineId}.quantity"] =
@@ -271,7 +274,7 @@ class ReturnService
             // ── Actualizar encabezado ────────────────────────────────────
             $return->update([
                 'return_reason_id' => $data['return_reason_id'],
-                'return_date'      => $data['return_date'],
+                'return_date' => $data['return_date'],
             ]);
 
             // ── Sincronizar líneas ───────────────────────────────────────
@@ -284,30 +287,30 @@ class ReturnService
 
             foreach ($linesData as $lineData) {
                 $lineId = $lineData['invoice_line_id'] ?? null;
-                $boxes  = (float) ($lineData['quantity_box'] ?? 0);
-                $units  = (float) ($lineData['quantity']     ?? 0);
+                $boxes = (float) ($lineData['quantity_box'] ?? 0);
+                $units = (float) ($lineData['quantity'] ?? 0);
 
                 if ($boxes <= 0 && $units <= 0) {
                     continue;
                 }
 
                 $originalLine = $lineId ? ($linesByOriginalId[$lineId] ?? null) : null;
-                $convFactor   = max(1, (float) ($originalLine?->conversion_factor ?? 1));
+                $convFactor = max(1, (float) ($originalLine?->conversion_factor ?? 1));
                 // Null → usar price; 0 → bonificación (gratis). Evitar ?: porque 0 es falsy.
-                $unitPrice    = $originalLine?->price_min_sale !== null
+                $unitPrice = $originalLine?->price_min_sale !== null
                     ? (float) $originalLine->price_min_sale
                     : (float) ($originalLine?->price ?? 0);
-                $lineTotal    = round(($boxes * $convFactor + $units) * $unitPrice, 2);
+                $lineTotal = round(($boxes * $convFactor + $units) * $unitPrice, 2);
 
                 ReturnLine::create([
-                    'return_id'           => $return->id,
-                    'invoice_line_id'     => $lineId,
-                    'line_number'         => $lineData['line_number'],
-                    'product_id'          => $lineData['product_id'],
+                    'return_id' => $return->id,
+                    'invoice_line_id' => $lineId,
+                    'line_number' => $lineData['line_number'],
+                    'product_id' => $lineData['product_id'],
                     'product_description' => $lineData['product_description'],
-                    'quantity_box'        => $boxes,
-                    'quantity'            => $units,
-                    'line_total'          => $lineTotal,
+                    'quantity_box' => $boxes,
+                    'quantity' => $units,
+                    'line_total' => $lineTotal,
                 ]);
 
                 $newTotal += $lineTotal;
@@ -325,7 +328,7 @@ class ReturnService
 
             $return->update([
                 'total' => $newTotal,
-                'type'  => $newType,
+                'type' => $newType,
             ]);
 
             $this->updateInvoiceStatus($invoice);
@@ -355,7 +358,7 @@ class ReturnService
         // del cierre, los totales del manifiesto quedarían corruptos.
         if ($return->manifest->isClosed()) {
             throw new \RuntimeException(
-                'No se puede aprobar una devolución de un manifiesto cerrado. ' .
+                'No se puede aprobar una devolución de un manifiesto cerrado. '.
                 'Reabre el manifiesto antes de aprobar.'
             );
         }
@@ -364,9 +367,9 @@ class ReturnService
 
         DB::transaction(function () use ($return, $reviewedBy, $now) {
             $return->update([
-                'status'         => 'approved',
-                'reviewed_by'    => $reviewedBy,
-                'reviewed_at'    => $now,
+                'status' => 'approved',
+                'reviewed_by' => $reviewedBy,
+                'reviewed_at' => $now,
                 'processed_date' => $now->toDateString(),
                 'processed_time' => $now->format('H:i:s'),
             ]);
@@ -393,10 +396,10 @@ class ReturnService
 
         DB::transaction(function () use ($return, $reviewedBy, $reason) {
             $return->update([
-                'status'           => 'rejected',
+                'status' => 'rejected',
                 'rejection_reason' => $reason,
-                'reviewed_by'      => $reviewedBy,
-                'reviewed_at'      => now(),
+                'reviewed_by' => $reviewedBy,
+                'reviewed_at' => now(),
             ]);
 
             $this->updateInvoiceStatus($return->invoice);
@@ -418,7 +421,7 @@ class ReturnService
             ->whereIn('status', ['approved', 'pending'])
             ->sum('total');
 
-        return max(0, (float)$invoice->total - (float)$totalReturned);
+        return max(0, (float) $invoice->total - (float) $totalReturned);
     }
 
     /**
@@ -441,8 +444,8 @@ class ReturnService
         );
 
         foreach ($invoice->lines as $line) {
-            $returned  = (float)($returnedByLine[$line->id] ?? 0);
-            $available = (float)$line->quantity_fractions - $returned;
+            $returned = (float) ($returnedByLine[$line->id] ?? 0);
+            $available = (float) $line->quantity_fractions - $returned;
             if ($available > 0.001) {
                 return true;
             }
@@ -466,14 +469,14 @@ class ReturnService
         // conversion_factor NULL o 0 y funciona en ambos motores.
         $result = ReturnLine::query()
             ->where('return_lines.invoice_line_id', $invoiceLineId)
-            ->whereHas('return', fn($q) => $q->whereIn('status', ['approved', 'pending']))
+            ->whereHas('return', fn ($q) => $q->whereIn('status', ['approved', 'pending']))
             ->join('invoice_lines', 'return_lines.invoice_line_id', '=', 'invoice_lines.id')
             ->selectRaw(
-                'COALESCE(SUM(' .
-                    'return_lines.quantity_box * ' .
-                    '(CASE WHEN COALESCE(invoice_lines.conversion_factor, 1) < 1 ' .
-                    ' THEN 1 ELSE COALESCE(invoice_lines.conversion_factor, 1) END) ' .
-                    '+ return_lines.quantity' .
+                'COALESCE(SUM('.
+                    'return_lines.quantity_box * '.
+                    '(CASE WHEN COALESCE(invoice_lines.conversion_factor, 1) < 1 '.
+                    ' THEN 1 ELSE COALESCE(invoice_lines.conversion_factor, 1) END) '.
+                    '+ return_lines.quantity'.
                 '), 0) AS total_returned'
             )
             ->value('total_returned');
@@ -500,20 +503,20 @@ class ReturnService
         // ver nota en getReturnedQuantity().
         return ReturnLine::query()
             ->whereIn('return_lines.invoice_line_id', $lineIds)
-            ->whereHas('return', fn($q) => $q->whereIn('status', ['approved', 'pending']))
+            ->whereHas('return', fn ($q) => $q->whereIn('status', ['approved', 'pending']))
             ->join('invoice_lines', 'return_lines.invoice_line_id', '=', 'invoice_lines.id')
             ->selectRaw(
-                'return_lines.invoice_line_id, ' .
-                'COALESCE(SUM(' .
-                    'return_lines.quantity_box * ' .
-                    '(CASE WHEN COALESCE(invoice_lines.conversion_factor, 1) < 1 ' .
-                    ' THEN 1 ELSE COALESCE(invoice_lines.conversion_factor, 1) END) ' .
-                    '+ return_lines.quantity' .
+                'return_lines.invoice_line_id, '.
+                'COALESCE(SUM('.
+                    'return_lines.quantity_box * '.
+                    '(CASE WHEN COALESCE(invoice_lines.conversion_factor, 1) < 1 '.
+                    ' THEN 1 ELSE COALESCE(invoice_lines.conversion_factor, 1) END) '.
+                    '+ return_lines.quantity'.
                 '), 0) AS total_returned'
             )
             ->groupBy('return_lines.invoice_line_id')
             ->pluck('total_returned', 'invoice_line_id')
-            ->map(fn($v) => (float) $v)
+            ->map(fn ($v) => (float) $v)
             ->toArray();
     }
 
@@ -527,7 +530,7 @@ class ReturnService
      * modificar sus propias cantidades sin que el máx quede en 0).
      *
      * @param  int[]  $lineIds
-     * @param  int    $excludeReturnId  ID de la devolución a excluir
+     * @param  int  $excludeReturnId  ID de la devolución a excluir
      * @return array<int, float>
      */
     public function getReturnedQuantitiesForLinesExcluding(array $lineIds, int $excludeReturnId): array
@@ -540,20 +543,20 @@ class ReturnService
         return ReturnLine::query()
             ->whereIn('return_lines.invoice_line_id', $lineIds)
             ->where('return_lines.return_id', '!=', $excludeReturnId)
-            ->whereHas('return', fn($q) => $q->whereIn('status', ['approved', 'pending']))
+            ->whereHas('return', fn ($q) => $q->whereIn('status', ['approved', 'pending']))
             ->join('invoice_lines', 'return_lines.invoice_line_id', '=', 'invoice_lines.id')
             ->selectRaw(
-                'return_lines.invoice_line_id, ' .
-                'COALESCE(SUM(' .
-                    'return_lines.quantity_box * ' .
-                    '(CASE WHEN COALESCE(invoice_lines.conversion_factor, 1) < 1 ' .
-                    ' THEN 1 ELSE COALESCE(invoice_lines.conversion_factor, 1) END) ' .
-                    '+ return_lines.quantity' .
+                'return_lines.invoice_line_id, '.
+                'COALESCE(SUM('.
+                    'return_lines.quantity_box * '.
+                    '(CASE WHEN COALESCE(invoice_lines.conversion_factor, 1) < 1 '.
+                    ' THEN 1 ELSE COALESCE(invoice_lines.conversion_factor, 1) END) '.
+                    '+ return_lines.quantity'.
                 '), 0) AS total_returned'
             )
             ->groupBy('return_lines.invoice_line_id')
             ->pluck('total_returned', 'invoice_line_id')
-            ->map(fn($v) => (float) $v)
+            ->map(fn ($v) => (float) $v)
             ->toArray();
     }
 
@@ -611,20 +614,20 @@ class ReturnService
             ->first();
 
         $totalApproved = (float) ($returnStats->total_approved ?? 0);
-        $totalReturns  = $totalApproved + (float) ($returnStats->total_pending ?? 0);
-        $hasPending    = ((int) ($returnStats->pending_count ?? 0)) > 0;
+        $totalReturns = $totalApproved + (float) ($returnStats->total_pending ?? 0);
+        $hasPending = ((int) ($returnStats->pending_count ?? 0)) > 0;
 
         $hasAvailable = $this->hasAvailableLines($invoice);
 
         // Determinamos el nuevo status + total_returns en un solo update.
         $newStatus = match (true) {
-            $totalApproved <= 0 && !$hasPending => 'imported',
-            !$hasAvailable && !$hasPending      => 'returned',
-            default                             => 'partial_return',
+            $totalApproved <= 0 && ! $hasPending => 'imported',
+            ! $hasAvailable && ! $hasPending => 'returned',
+            default => 'partial_return',
         };
 
         $invoice->update([
-            'status'        => $newStatus,
+            'status' => $newStatus,
             'total_returns' => $totalReturns,
         ]);
 
@@ -697,9 +700,7 @@ class ReturnService
     /**
      * Cancela una devolución y registra quién la canceló, cuándo y por qué.
      *
-     * @param  InvoiceReturn  $return
-     * @param  string|null    $reason  Motivo de cancelación (obligatorio desde UI)
-     * @return void
+     * @param  string|null  $reason  Motivo de cancelación (obligatorio desde UI)
      */
     public function cancelReturn(InvoiceReturn $return, ?string $reason = null): void
     {
@@ -707,14 +708,14 @@ class ReturnService
             return;
         }
 
-        $wasApproved    = $return->isApproved();
-        $processedDate  = $return->processed_date?->toDateString();
+        $wasApproved = $return->isApproved();
+        $processedDate = $return->processed_date?->toDateString();
 
         DB::transaction(function () use ($return, $reason) {
             $return->update([
-                'status'              => 'cancelled',
-                'cancelled_at'        => now(),
-                'cancelled_by'        => auth()->id(),
+                'status' => 'cancelled',
+                'cancelled_at' => now(),
+                'cancelled_by' => auth()->id(),
                 'cancellation_reason' => $reason,
             ]);
         });

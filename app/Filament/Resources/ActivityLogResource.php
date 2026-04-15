@@ -2,22 +2,22 @@
 
 namespace App\Filament\Resources;
 
-use Filament\Resources\Resource;
-use Filament\Schemas\Schema;
-use Filament\Tables\Table;
-use Filament\Tables\Columns\TextColumn;
-use Filament\Tables\Filters\SelectFilter;
-use Filament\Tables\Filters\Filter;
-use Filament\Forms\Components\DatePicker;
-use Filament\Actions\ViewAction;
-use Filament\Infolists\Components\TextEntry;
-use Filament\Schemas\Components\Section;
-use Filament\Schemas\Components\Grid;
-use Filament\Support\Icons\Heroicon;
-use Spatie\Activitylog\Models\Activity;
 use BackedEnum;
+use Filament\Actions\ViewAction;
+use Filament\Forms\Components\DatePicker;
+use Filament\Infolists\Components\TextEntry;
+use Filament\Resources\Resource;
+use Filament\Schemas\Components\Grid;
+use Filament\Schemas\Components\Section;
+use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\Filter;
+use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
+use Spatie\Activitylog\Models\Activity;
 
 class ActivityLogResource extends Resource
 {
@@ -65,22 +65,22 @@ class ActivityLogResource extends Resource
      */
     protected static function formatProperties(mixed $data): string
     {
-        if (empty($data) || !is_array($data)) {
+        if (empty($data) || ! is_array($data)) {
             return '—';
         }
 
         $labels = [
-            'endpoint'       => 'Endpoint',
-            'ip'             => 'IP',
-            'fecha'          => 'Fecha consultada',
-            'pagina'         => 'Página',
-            'total'          => 'Total registros',
-            'desde_cache'    => 'Desde caché',
-            'resultado'      => 'Resultado',
-            'batch_uuid'     => 'Batch UUID',
-            'manifest_number'=> 'N° Manifiesto',
+            'endpoint' => 'Endpoint',
+            'ip' => 'IP',
+            'fecha' => 'Fecha consultada',
+            'pagina' => 'Página',
+            'total' => 'Total registros',
+            'desde_cache' => 'Desde caché',
+            'resultado' => 'Resultado',
+            'batch_uuid' => 'Batch UUID',
+            'manifest_number' => 'N° Manifiesto',
             'invoice_number' => 'N° Factura',
-            'conflicts'      => 'Conflictos',
+            'conflicts' => 'Conflictos',
             'changed_fields' => 'Campos cambiados',
         ];
 
@@ -92,7 +92,7 @@ class ActivityLogResource extends Resource
                 $value = $value ? 'Sí' : 'No';
             } elseif (is_array($value)) {
                 $value = implode(', ', array_map(
-                    fn($v) => is_array($v) ? json_encode($v, JSON_UNESCAPED_UNICODE) : $v,
+                    fn ($v) => is_array($v) ? json_encode($v, JSON_UNESCAPED_UNICODE) : $v,
                     $value
                 ));
             } elseif (is_null($value)) {
@@ -110,7 +110,7 @@ class ActivityLogResource extends Resource
      */
     protected static function formatDiff(mixed $data, string $side): string
     {
-        if (empty($data) || !is_array($data)) {
+        if (empty($data) || ! is_array($data)) {
             return '—';
         }
 
@@ -180,8 +180,9 @@ class ActivityLogResource extends Resource
                 Filter::make('created_at')
                     ->indicateUsing(function (array $data): ?string {
                         if ($data['from'] ?? null) {
-                            return 'Desde: ' . $data['from'];
+                            return 'Desde: '.$data['from'];
                         }
+
                         return null;
                     })
                     ->schema([
@@ -217,10 +218,10 @@ class ActivityLogResource extends Resource
                             TextEntry::make('log_name')
                                 ->label('Tipo de log')
                                 ->badge()
-                                ->color(fn (Activity $record): string => match($record->log_name) {
-                                    'api'     => 'warning',
+                                ->color(fn (Activity $record): string => match ($record->log_name) {
+                                    'api' => 'warning',
                                     'default' => 'primary',
-                                    default   => 'gray',
+                                    default => 'gray',
                                 }),
                             TextEntry::make('description')
                                 ->label('Descripción'),
@@ -243,8 +244,7 @@ class ActivityLogResource extends Resource
                 Section::make('Resumen de Importación')
                     ->icon('heroicon-o-cloud-arrow-down')
                     ->collapsible()
-                    ->visible(fn (Activity $record): bool =>
-                        $record->log_name === 'api' &&
+                    ->visible(fn (Activity $record): bool => $record->log_name === 'api' &&
                         ($record->properties['source'] ?? null) === 'jaremar_api'
                     )
                     ->schema([
@@ -253,9 +253,9 @@ class ActivityLogResource extends Resource
                                 ->label('Origen')
                                 ->badge()
                                 ->color('info')
-                                ->formatStateUsing(fn (?string $state): string => match($state) {
+                                ->formatStateUsing(fn (?string $state): string => match ($state) {
                                     'jaremar_api' => 'API Jaremar',
-                                    default       => $state ?? '—',
+                                    default => $state ?? '—',
                                 }),
 
                             TextEntry::make('properties.batch_uuid')
@@ -306,8 +306,7 @@ class ActivityLogResource extends Resource
                 Section::make('Detalle de la Llamada API')
                     ->icon('heroicon-o-arrow-path')
                     ->collapsible()
-                    ->visible(fn (Activity $record): bool =>
-                        $record->log_name === 'api' &&
+                    ->visible(fn (Activity $record): bool => $record->log_name === 'api' &&
                         ! empty($record->properties['endpoint'])
                     )
                     ->schema([
@@ -327,11 +326,11 @@ class ActivityLogResource extends Resource
                                 ->label('Resultado')
                                 ->placeholder('—')
                                 ->badge()
-                                ->color(fn (?string $state): string => match($state) {
-                                    'ok'                    => 'success',
+                                ->color(fn (?string $state): string => match ($state) {
+                                    'ok' => 'success',
                                     'error_fecha_faltante',
-                                    'error_fecha_invalida'  => 'danger',
-                                    default                 => 'gray',
+                                    'error_fecha_invalida' => 'danger',
+                                    default => 'gray',
                                 }),
 
                             TextEntry::make('properties.fecha')
@@ -360,24 +359,21 @@ class ActivityLogResource extends Resource
                 Section::make('Cambios Realizados')
                     ->icon('heroicon-o-document-magnifying-glass')
                     ->collapsible()
-                    ->visible(fn (Activity $record): bool =>
-                        ! empty($record->properties['attributes']) ||
+                    ->visible(fn (Activity $record): bool => ! empty($record->properties['attributes']) ||
                         ! empty($record->properties['old'])
                     )
                     ->schema([
                         Grid::make(2)->schema([
                             TextEntry::make('properties.old')
                                 ->label('Valores anteriores')
-                                ->formatStateUsing(fn (mixed $state): string =>
-                                    static::formatDiff($state, 'old')
+                                ->formatStateUsing(fn (mixed $state): string => static::formatDiff($state, 'old')
                                 )
                                 ->markdown()
                                 ->placeholder('Sin datos anteriores'),
 
                             TextEntry::make('properties.attributes')
                                 ->label('Valores nuevos')
-                                ->formatStateUsing(fn (mixed $state): string =>
-                                    static::formatDiff($state, 'attributes')
+                                ->formatStateUsing(fn (mixed $state): string => static::formatDiff($state, 'attributes')
                                 )
                                 ->markdown()
                                 ->placeholder('Sin datos nuevos'),
@@ -389,26 +385,26 @@ class ActivityLogResource extends Resource
                     ->icon('heroicon-o-information-circle')
                     ->collapsible()
                     ->collapsed()
-                    ->visible(fn (Activity $record): bool =>
-                        $record->log_name === 'api' &&
+                    ->visible(fn (Activity $record): bool => $record->log_name === 'api' &&
                         $record->properties->except([
-                            'endpoint','ip','fecha','pagina','total','desde_cache','resultado',
-                            'source','batch_uuid','invoices_total','invoices_inserted',
-                            'invoices_unchanged','invoices_pending','invoices_rejected',
+                            'endpoint', 'ip', 'fecha', 'pagina', 'total', 'desde_cache', 'resultado',
+                            'source', 'batch_uuid', 'invoices_total', 'invoices_inserted',
+                            'invoices_unchanged', 'invoices_pending', 'invoices_rejected',
                         ])->isNotEmpty()
                     )
                     ->schema([
                         TextEntry::make('properties')
                             ->label('')
                             ->formatStateUsing(function (mixed $state): string {
-                                if (!$state instanceof \Illuminate\Support\Collection) {
+                                if (! $state instanceof \Illuminate\Support\Collection) {
                                     return '—';
                                 }
                                 $extra = $state->except([
-                                    'endpoint','ip','fecha','pagina','total','desde_cache','resultado',
-                                    'source','batch_uuid','invoices_total','invoices_inserted',
-                                    'invoices_unchanged','invoices_pending','invoices_rejected',
+                                    'endpoint', 'ip', 'fecha', 'pagina', 'total', 'desde_cache', 'resultado',
+                                    'source', 'batch_uuid', 'invoices_total', 'invoices_inserted',
+                                    'invoices_unchanged', 'invoices_pending', 'invoices_rejected',
                                 ])->toArray();
+
                                 return static::formatProperties($extra);
                             })
                             ->markdown()
@@ -422,7 +418,7 @@ class ActivityLogResource extends Resource
     {
         return [
             'index' => \App\Filament\Resources\ActivityLogResource\Pages\ListActivityLogs::route('/'),
-            'view'  => \App\Filament\Resources\ActivityLogResource\Pages\ViewActivityLog::route('/{record}'),
+            'view' => \App\Filament\Resources\ActivityLogResource\Pages\ViewActivityLog::route('/{record}'),
         ];
     }
 }

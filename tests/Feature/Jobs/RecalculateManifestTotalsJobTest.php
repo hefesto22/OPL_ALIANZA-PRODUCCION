@@ -31,19 +31,19 @@ class RecalculateManifestTotalsJobTest extends TestCase
 
     public function test_job_recalculates_manifest_totals(): void
     {
-        $supplier  = Supplier::factory()->create(['is_active' => true]);
+        $supplier = Supplier::factory()->create(['is_active' => true]);
         $warehouse = Warehouse::factory()->oac()->create();
 
         $manifest = Manifest::factory()->create([
-            'supplier_id'    => $supplier->id,
+            'supplier_id' => $supplier->id,
             'total_invoices' => 0,
             'invoices_count' => 0,
         ]);
 
         Invoice::factory()->create([
-            'manifest_id'  => $manifest->id,
+            'manifest_id' => $manifest->id,
             'warehouse_id' => $warehouse->id,
-            'total'        => 1500.00,
+            'total' => 1500.00,
         ]);
 
         // Totales aún en 0 antes del Job
@@ -70,7 +70,7 @@ class RecalculateManifestTotalsJobTest extends TestCase
 
     public function test_job_is_idempotent(): void
     {
-        $supplier  = Supplier::factory()->create(['is_active' => true]);
+        $supplier = Supplier::factory()->create(['is_active' => true]);
         $warehouse = Warehouse::factory()->oac()->create();
 
         $manifest = Manifest::factory()->create([
@@ -78,9 +78,9 @@ class RecalculateManifestTotalsJobTest extends TestCase
         ]);
 
         Invoice::factory()->create([
-            'manifest_id'  => $manifest->id,
+            'manifest_id' => $manifest->id,
             'warehouse_id' => $warehouse->id,
-            'total'        => 800.00,
+            'total' => 800.00,
         ]);
 
         // Ejecutar 2 veces — mismos totales

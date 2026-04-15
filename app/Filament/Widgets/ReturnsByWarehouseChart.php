@@ -3,8 +3,8 @@
 namespace App\Filament\Widgets;
 
 use App\Models\ManifestWarehouseTotal;
-use Filament\Widgets\ChartWidget;
 use BezhanSalleh\FilamentShield\Traits\HasWidgetShield;
+use Filament\Widgets\ChartWidget;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
@@ -36,7 +36,7 @@ class ReturnsByWarehouseChart extends ChartWidget
         $rows = Cache::remember('dashboard:chart:warehouse-sales', now()->addMinutes(5), function () {
             return ManifestWarehouseTotal::query()
                 ->join('warehouses', 'manifest_warehouse_totals.warehouse_id', '=', 'warehouses.id')
-                ->join('manifests',  'manifest_warehouse_totals.manifest_id',  '=', 'manifests.id')
+                ->join('manifests', 'manifest_warehouse_totals.manifest_id', '=', 'manifests.id')
                 ->whereNull('manifests.deleted_at')
                 ->select(
                     'warehouses.code as code',
@@ -51,33 +51,33 @@ class ReturnsByWarehouseChart extends ChartWidget
                 ->get();
         });
 
-        $labels       = $rows->pluck('code')->toArray();
-        $facturado    = $rows->pluck('total_facturado')->map(fn($v) => round((float)$v, 2))->toArray();
-        $devoluciones = $rows->pluck('total_devoluciones')->map(fn($v) => round((float)$v, 2))->toArray();
-        $neto         = $rows->pluck('total_neto')->map(fn($v) => round((float)$v, 2))->toArray();
+        $labels = $rows->pluck('code')->toArray();
+        $facturado = $rows->pluck('total_facturado')->map(fn ($v) => round((float) $v, 2))->toArray();
+        $devoluciones = $rows->pluck('total_devoluciones')->map(fn ($v) => round((float) $v, 2))->toArray();
+        $neto = $rows->pluck('total_neto')->map(fn ($v) => round((float) $v, 2))->toArray();
 
         return [
             'datasets' => [
                 [
-                    'label'           => 'Total Facturado',
-                    'data'            => $facturado,
+                    'label' => 'Total Facturado',
+                    'data' => $facturado,
                     'backgroundColor' => 'rgba(59, 130, 246, 0.6)',
-                    'borderColor'     => 'rgba(59, 130, 246, 1)',
-                    'borderWidth'     => 1,
+                    'borderColor' => 'rgba(59, 130, 246, 1)',
+                    'borderWidth' => 1,
                 ],
                 [
-                    'label'           => 'Venta Neta',
-                    'data'            => $neto,
+                    'label' => 'Venta Neta',
+                    'data' => $neto,
                     'backgroundColor' => 'rgba(34, 197, 94, 0.7)',
-                    'borderColor'     => 'rgba(34, 197, 94, 1)',
-                    'borderWidth'     => 1,
+                    'borderColor' => 'rgba(34, 197, 94, 1)',
+                    'borderWidth' => 1,
                 ],
                 [
-                    'label'           => 'Devoluciones',
-                    'data'            => $devoluciones,
+                    'label' => 'Devoluciones',
+                    'data' => $devoluciones,
                     'backgroundColor' => 'rgba(239, 68, 68, 0.6)',
-                    'borderColor'     => 'rgba(239, 68, 68, 1)',
-                    'borderWidth'     => 1,
+                    'borderColor' => 'rgba(239, 68, 68, 1)',
+                    'borderWidth' => 1,
                 ],
             ],
             'labels' => $labels,

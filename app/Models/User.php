@@ -3,19 +3,19 @@
 namespace App\Models;
 
 use App\Traits\HasAuditFields;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\SoftDeletes;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Foundation\Auth\User as Authenticatable;
-use Illuminate\Notifications\Notifiable;
-use Spatie\Permission\Traits\HasRoles;
 use BezhanSalleh\FilamentShield\Traits\HasPanelShield;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Panel;
-use Spatie\Activitylog\Traits\LogsActivity;
-use Spatie\Activitylog\LogOptions;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
+use Spatie\Activitylog\LogOptions;
+use Spatie\Activitylog\Traits\LogsActivity;
+use Spatie\Permission\Traits\HasRoles;
 
 /**
  * @method bool isGlobalUser()
@@ -23,14 +23,14 @@ use Laravel\Sanctum\HasApiTokens;
  */
 class User extends Authenticatable implements FilamentUser
 {
-    use HasFactory,
-        Notifiable,
-        HasRoles,
-        HasPanelShield,
-        SoftDeletes,
+    use HasApiTokens,
         HasAuditFields,
+        HasFactory,
+        HasPanelShield,
+        HasRoles,
         LogsActivity,
-        HasApiTokens; 
+        Notifiable,
+        SoftDeletes;
 
     protected $fillable = [
         'name',
@@ -56,15 +56,15 @@ class User extends Authenticatable implements FilamentUser
     {
         return [
             'email_verified_at' => 'datetime',
-            'password'          => 'hashed',
-            'is_active'         => 'boolean',
-            'last_login_at'     => 'datetime',
+            'password' => 'hashed',
+            'is_active' => 'boolean',
+            'last_login_at' => 'datetime',
         ];
     }
 
     public function canAccessPanel(Panel $panel): bool
     {
-        if (!$this->is_active) {
+        if (! $this->is_active) {
             return false;
         }
 
@@ -116,7 +116,7 @@ class User extends Authenticatable implements FilamentUser
      */
     public function isWarehouseUser(): bool
     {
-        return !is_null($this->warehouse_id);
+        return ! is_null($this->warehouse_id);
     }
 
     // ─── Relaciones jerárquicas ───────────────────────────────
@@ -138,7 +138,7 @@ class User extends Authenticatable implements FilamentUser
      */
     public function getDescendantIds(): array
     {
-        $rows = \Illuminate\Support\Facades\DB::select("
+        $rows = \Illuminate\Support\Facades\DB::select('
             WITH RECURSIVE descendants AS (
                 SELECT id FROM users WHERE created_by = ?
                 UNION ALL
@@ -146,7 +146,7 @@ class User extends Authenticatable implements FilamentUser
                 INNER JOIN descendants d ON u.created_by = d.id
             )
             SELECT id FROM descendants
-        ", [$this->id]);
+        ', [$this->id]);
 
         return array_map(fn ($row) => (int) $row->id, $rows);
     }
@@ -172,7 +172,8 @@ class User extends Authenticatable implements FilamentUser
     {
         if ($user->hasRole(\BezhanSalleh\FilamentShield\Support\Utils::getSuperAdminName())) {
             return $query;
-        } //nada
+        } // nada
+
         return $query->whereIn('id', $user->getVisibleUserIds());
     }
 }

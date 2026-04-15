@@ -54,14 +54,14 @@ class ApiInvoiceImporterService
     public function processBatch(array $invoices, ApiInvoiceImport $importRecord): array
     {
         $summary = [
-            'invoices_inserted'       => 0,
-            'invoices_updated'        => 0,
-            'invoices_unchanged'      => 0,
+            'invoices_inserted' => 0,
+            'invoices_updated' => 0,
+            'invoices_unchanged' => 0,
             'invoices_pending_review' => 0,
-            'invoices_rejected'       => 0,
-            'manifiestos_rechazados'  => [],
-            'warnings'                => [],
-            'errors'                  => [],
+            'invoices_rejected' => 0,
+            'manifiestos_rechazados' => [],
+            'warnings' => [],
+            'errors' => [],
             'inserted_warehouse_counts' => [],
         ];
 
@@ -76,7 +76,7 @@ class ApiInvoiceImporterService
             ->values()
             ->all();
 
-        $existingInvoices = !empty($allNumbers)
+        $existingInvoices = ! empty($allNumbers)
             ? Invoice::with('manifest:id,number')
                 ->whereIn('invoice_number', $allNumbers)
                 ->get()
@@ -109,16 +109,16 @@ class ApiInvoiceImporterService
      * Jaremar recibe detalle completo de qué rechazar y qué reenviar solo.
      *
      * @return array {
-     *   'tiene_errores'         => bool,
-     *   'manifiestos_invalidos' => [...],
-     *   'manifiestos_validos'   => [...],
-     * }
+     *               'tiene_errores'         => bool,
+     *               'manifiestos_invalidos' => [...],
+     *               'manifiestos_validos'   => [...],
+     *               }
      */
     public function validateManifestDatesForController(array $manifestNumbers, array $invoices): array
     {
-        $today    = now()->toDateString();
+        $today = now()->toDateString();
         $invalidos = [];
-        $validos   = [];
+        $validos = [];
 
         // Solo validamos manifiestos que YA EXISTEN en BD.
         $existing = Manifest::whereIn('number', $manifestNumbers)
@@ -135,47 +135,49 @@ class ApiInvoiceImporterService
             $facturasDelManifiesto = $facturasPorManifiesto[$number] ?? [];
 
             // Manifiesto nuevo — siempre válido
-            if (!isset($existing[$number])) {
+            if (! isset($existing[$number])) {
                 $validos[] = [
-                    'manifiesto'   => $number,
-                    'tipo'         => 'nuevo',
+                    'manifiesto' => $number,
+                    'tipo' => 'nuevo',
                     'total_facturas' => count($facturasDelManifiesto),
-                    'facturas'     => $facturasDelManifiesto,
-                    'nota'         => "Manifiesto nuevo — será creado al procesar el batch.",
+                    'facturas' => $facturasDelManifiesto,
+                    'nota' => 'Manifiesto nuevo — será creado al procesar el batch.',
                 ];
+
                 continue;
             }
 
-            $manifest    = $existing[$number];
+            $manifest = $existing[$number];
             $createdDate = $manifest->created_at->toDateString();
 
             // Manifiesto de hoy — válido
             if ($createdDate === $today) {
                 $validos[] = [
-                    'manifiesto'     => $number,
-                    'tipo'           => 'existente_hoy',
+                    'manifiesto' => $number,
+                    'tipo' => 'existente_hoy',
                     'total_facturas' => count($facturasDelManifiesto),
-                    'facturas'       => $facturasDelManifiesto,
-                    'nota'           => "Manifiesto existente del día de hoy — se procesará normalmente.",
+                    'facturas' => $facturasDelManifiesto,
+                    'nota' => 'Manifiesto existente del día de hoy — se procesará normalmente.',
                 ];
+
                 continue;
             }
 
             // Manifiesto de día anterior — inválido
             $invalidos[] = [
-                'manifiesto'         => $number,
-                'fecha_original'     => $createdDate,
-                'fecha_intento'      => $today,
-                'total_facturas'     => count($facturasDelManifiesto),
+                'manifiesto' => $number,
+                'fecha_original' => $createdDate,
+                'fecha_intento' => $today,
+                'total_facturas' => count($facturasDelManifiesto),
                 'facturas_afectadas' => $facturasDelManifiesto,
-                'instruccion'        => "El manifiesto #{$number} fue creado el {$createdDate} y ya no acepta facturas nuevas. Reenvíe estas facturas en un nuevo número de manifiesto.",
+                'instruccion' => "El manifiesto #{$number} fue creado el {$createdDate} y ya no acepta facturas nuevas. Reenvíe estas facturas en un nuevo número de manifiesto.",
             ];
         }
 
         return [
-            'tiene_errores'         => !empty($invalidos),
+            'tiene_errores' => ! empty($invalidos),
             'manifiestos_invalidos' => $invalidos,
-            'manifiestos_validos'   => $validos,
+            'manifiestos_validos' => $validos,
         ];
     }
 
@@ -189,18 +191,18 @@ class ApiInvoiceImporterService
         // ── 1. Validar almacenes ANTES de tocar la BD ─────────────────
         $warehouseErrors = $this->validateWarehouses($invoices);
 
-        if (!empty($warehouseErrors)) {
+        if (! empty($warehouseErrors)) {
             $totalFacturas = count($invoices);
             $summary['invoices_rejected'] += $totalFacturas;
             $summary['manifiestos_rechazados'][] = [
-                'manifiesto'             => $manifestNumber,
-                'total_facturas'         => $totalFacturas,
+                'manifiesto' => $manifestNumber,
+                'total_facturas' => $totalFacturas,
                 'almacenes_desconocidos' => $warehouseErrors,
             ];
 
             Log::warning("API Jaremar: manifiesto #{$manifestNumber} rechazado por almacenes desconocidos.", [
                 'almacenes_desconocidos' => array_keys($warehouseErrors),
-                'total_facturas'         => $totalFacturas,
+                'total_facturas' => $totalFacturas,
             ]);
 
             return;
@@ -213,16 +215,17 @@ class ApiInvoiceImporterService
             foreach ($invoices as $invoice) {
                 $summary['invoices_rejected']++;
                 $summary['errors'][] = [
-                    'factura'    => $invoice['Nfactura'],
+                    'factura' => $invoice['Nfactura'],
                     'manifiesto' => $manifestNumber,
-                    'motivo'     => "El manifiesto #{$manifestNumber} está cerrado y no acepta modificaciones.",
+                    'motivo' => "El manifiesto #{$manifestNumber} está cerrado y no acepta modificaciones.",
                 ];
             }
+
             return;
         }
 
         // ── 3. Manifiesto no existe → crearlo ─────────────────────────
-        if (!$manifest) {
+        if (! $manifest) {
             $manifest = $this->createManifest($manifestNumber);
         }
 
@@ -234,9 +237,9 @@ class ApiInvoiceImporterService
         $prevWarehouseCounts = $summary['inserted_warehouse_counts'];
         $summary['inserted_warehouse_counts'] = [];
 
-        if (!empty($classified['new'])) {
+        if (! empty($classified['new'])) {
             $bulkResult = $this->bulkInsertNewInvoices($classified['new'], $manifest);
-            $summary['invoices_inserted']        += $bulkResult['total'];
+            $summary['invoices_inserted'] += $bulkResult['total'];
             $summary['inserted_warehouse_counts'] = $bulkResult['by_warehouse'];
         }
 
@@ -256,7 +259,7 @@ class ApiInvoiceImporterService
         // ── 8. Log + notificaciones ───────────────────────────────────
         $this->logManifestImport($manifest, $manifestNumber, $importRecord, $summary, count($invoices));
 
-        if (!empty($thisManifestWarehouseCounts)) {
+        if (! empty($thisManifestWarehouseCounts)) {
             $this->notifyWarehouseUsers($manifest, $thisManifestWarehouseCounts);
         }
     }
@@ -275,42 +278,45 @@ class ApiInvoiceImporterService
         \Illuminate\Support\Collection $existingInvoices,
         array &$summary,
     ): array {
-        $newInvoicesData   = [];
+        $newInvoicesData = [];
         $conflictsToCreate = [];
 
         foreach ($invoices as $invoiceData) {
             $invoiceNumber = $invoiceData['Nfactura'];
-            $existing      = $existingInvoices->get($invoiceNumber);
+            $existing = $existingInvoices->get($invoiceNumber);
 
             // Factura existe en otro manifiesto → rechazar
             if ($existing && $existing->manifest_id !== $manifest->id) {
                 $summary['invoices_rejected']++;
                 $summary['errors'][] = [
-                    'factura'    => $invoiceNumber,
+                    'factura' => $invoiceNumber,
                     'manifiesto' => $manifest->number,
-                    'motivo'     => "La factura {$invoiceNumber} ya existe en el manifiesto #{$existing->manifest->number} y no puede duplicarse.",
+                    'motivo' => "La factura {$invoiceNumber} ya existe en el manifiesto #{$existing->manifest->number} y no puede duplicarse.",
                 ];
+
                 continue;
             }
 
             // Factura nueva → se insertará en bulk
-            if (!$existing) {
+            if (! $existing) {
                 $newInvoicesData[] = $invoiceData;
+
                 continue;
             }
 
             // Factura existente en el mismo manifiesto → comparar campos
             $incomingMapped = $this->mapInvoiceFields($invoiceData, $manifest);
-            $changes        = $this->detectChanges($existing, $incomingMapped);
+            $changes = $this->detectChanges($existing, $incomingMapped);
 
             if (empty($changes)) {
                 $summary['invoices_unchanged']++;
+
                 continue;
             }
 
             $conflictsToCreate[] = [
-                'existing'       => $existing,
-                'changes'        => $changes,
+                'existing' => $existing,
+                'changes' => $changes,
                 'invoice_number' => $invoiceNumber,
             ];
         }
@@ -330,19 +336,19 @@ class ApiInvoiceImporterService
         foreach ($conflicts as $conflict) {
             ApiInvoiceImportConflict::create([
                 'api_invoice_import_id' => $importRecord->id,
-                'invoice_id'            => $conflict['existing']->id,
-                'invoice_number'        => $conflict['invoice_number'],
-                'manifest_number'       => $manifest->number,
-                'previous_values'       => $conflict['changes']['previous'],
-                'incoming_values'       => $conflict['changes']['incoming'],
+                'invoice_id' => $conflict['existing']->id,
+                'invoice_number' => $conflict['invoice_number'],
+                'manifest_number' => $manifest->number,
+                'previous_values' => $conflict['changes']['previous'],
+                'incoming_values' => $conflict['changes']['incoming'],
             ]);
 
             $summary['invoices_pending_review']++;
             $summary['warnings'][] = [
-                'factura'           => $conflict['invoice_number'],
-                'manifiesto'        => $manifest->number,
+                'factura' => $conflict['invoice_number'],
+                'manifiesto' => $manifest->number,
                 'campos_con_cambio' => array_keys($conflict['changes']['previous']),
-                'mensaje'           => 'Factura recibida con diferencias respecto a la versión existente. Pendiente de revisión por Hosana.',
+                'mensaje' => 'Factura recibida con diferencias respecto a la versión existente. Pendiente de revisión por Hosana.',
             ];
         }
     }
@@ -372,20 +378,20 @@ class ApiInvoiceImporterService
         }
 
         $description = "Manifiesto #{$manifestNumber} importado via API: {$totalProcessed} facturas procesadas";
-        if (!empty($parts)) {
-            $description .= ' (' . implode(', ', $parts) . ')';
+        if (! empty($parts)) {
+            $description .= ' ('.implode(', ', $parts).')';
         }
 
         activity('api')
             ->performedOn($manifest)
             ->withProperties([
-                'batch_uuid'            => $importRecord->batch_uuid,
-                'source'                => 'jaremar_api',
-                'invoices_total'        => $totalProcessed,
-                'invoices_inserted'     => $summary['invoices_inserted'],
-                'invoices_unchanged'    => $summary['invoices_unchanged'],
-                'invoices_pending'      => $summary['invoices_pending_review'],
-                'invoices_rejected'     => $summary['invoices_rejected'],
+                'batch_uuid' => $importRecord->batch_uuid,
+                'source' => 'jaremar_api',
+                'invoices_total' => $totalProcessed,
+                'invoices_inserted' => $summary['invoices_inserted'],
+                'invoices_unchanged' => $summary['invoices_unchanged'],
+                'invoices_pending' => $summary['invoices_pending_review'],
+                'invoices_rejected' => $summary['invoices_rejected'],
             ])
             ->log($description);
     }
@@ -396,7 +402,7 @@ class ApiInvoiceImporterService
      * - Usuarios de bodega: reciben notificación solo de SU bodega.
      * - Usuarios globales (admin, super_admin, finance): reciben resumen de TODAS las bodegas.
      *
-     * @param array<int, int> $warehouseCounts  [warehouse_id => cantidad_insertada]
+     * @param  array<int, int>  $warehouseCounts  [warehouse_id => cantidad_insertada]
      */
     protected function notifyWarehouseUsers(Manifest $manifest, array $warehouseCounts): void
     {
@@ -405,11 +411,11 @@ class ApiInvoiceImporterService
         }
 
         try {
-            $affectedIds    = array_keys($warehouseCounts);
+            $affectedIds = array_keys($warehouseCounts);
             $warehouseNames = Warehouse::whereIn('id', $affectedIds)->pluck('name', 'id');
-            $totalInserted  = array_sum($warehouseCounts);
-            $manifestUrl    = route('filament.admin.resources.manifests.view', $manifest);
-            $notified       = 0;
+            $totalInserted = array_sum($warehouseCounts);
+            $manifestUrl = route('filament.admin.resources.manifests.view', $manifest);
+            $notified = 0;
 
             // ── Notificar usuarios de cada bodega afectada ───────────
             $warehouseUsers = User::whereIn('warehouse_id', $affectedIds)
@@ -418,7 +424,9 @@ class ApiInvoiceImporterService
 
             foreach ($warehouseUsers as $user) {
                 $count = $warehouseCounts[$user->warehouse_id] ?? 0;
-                if ($count === 0) continue;
+                if ($count === 0) {
+                    continue;
+                }
 
                 $warehouseName = $warehouseNames[$user->warehouse_id] ?? 'Desconocida';
 
@@ -438,7 +446,7 @@ class ApiInvoiceImporterService
 
             if ($globalUsers->isNotEmpty()) {
                 $breakdown = collect($warehouseCounts)
-                    ->map(fn (int $count, int $id) => ($warehouseNames[$id] ?? '?') . ": {$count}")
+                    ->map(fn (int $count, int $id) => ($warehouseNames[$id] ?? '?').": {$count}")
                     ->implode(', ');
 
                 foreach ($globalUsers as $user) {
@@ -454,16 +462,16 @@ class ApiInvoiceImporterService
 
             Log::info("API Notificaciones: {$notified} notificaciones enviadas para manifiesto #{$manifest->number}.", [
                 'warehouse_users' => $warehouseUsers->count(),
-                'global_users'    => $globalUsers->count(),
-                'warehouses'      => $warehouseCounts,
+                'global_users' => $globalUsers->count(),
+                'warehouses' => $warehouseCounts,
             ]);
 
         } catch (\Throwable $e) {
             // No interrumpir el flujo de importación si falla la notificación
             Log::error('API Notificaciones: error al enviar.', [
                 'manifest' => $manifest->number,
-                'error'    => $e->getMessage(),
-                'trace'    => $e->getTraceAsString(),
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
             ]);
         }
     }
@@ -480,10 +488,11 @@ class ApiInvoiceImporterService
 
             if (empty($code)) {
                 $errors['(vacío)'][] = $invoice['Nfactura'];
+
                 continue;
             }
 
-            if (!isset($this->warehouseMap[$code])) {
+            if (! isset($this->warehouseMap[$code])) {
                 $errors[$code][] = $invoice['Nfactura'];
             }
         }
@@ -501,7 +510,7 @@ class ApiInvoiceImporterService
      */
     protected function bulkInsertNewInvoices(array $newInvoicesData, Manifest $manifest): array
     {
-        $now    = now()->toDateTimeString();
+        $now = now()->toDateTimeString();
         $counts = ['total' => 0, 'by_warehouse' => []];
 
         // ── 1. Preparar filas mapeadas ──────────────────────────────────
@@ -509,13 +518,13 @@ class ApiInvoiceImporterService
         foreach ($newInvoicesData as $data) {
             $mapped = $this->mapInvoiceFields($data, $manifest);
             $mapped['manifest_id'] = $manifest->id;
-            $mapped['created_at']  = $now;
-            $mapped['updated_at']  = $now;
+            $mapped['created_at'] = $now;
+            $mapped['updated_at'] = $now;
 
             $rows[] = $mapped;
             $counts['total']++;
 
-            if (!empty($mapped['warehouse_id'])) {
+            if (! empty($mapped['warehouse_id'])) {
                 $counts['by_warehouse'][$mapped['warehouse_id']] =
                     ($counts['by_warehouse'][$mapped['warehouse_id']] ?? 0) + 1;
             }
@@ -532,12 +541,12 @@ class ApiInvoiceImporterService
 
         DB::transaction(function () use ($rows, &$invoiceNumberToId) {
             foreach (array_chunk($rows, 500) as $chunk) {
-                $columns     = array_keys($chunk[0]);
-                $columnList  = implode(', ', array_map(fn ($c) => "\"{$c}\"", $columns));
-                $placeholder = '(' . implode(', ', array_fill(0, count($columns), '?')) . ')';
+                $columns = array_keys($chunk[0]);
+                $columnList = implode(', ', array_map(fn ($c) => "\"{$c}\"", $columns));
+                $placeholder = '('.implode(', ', array_fill(0, count($columns), '?')).')';
 
                 $valueRows = [];
-                $bindings  = [];
+                $bindings = [];
                 foreach ($chunk as $row) {
                     $valueRows[] = $placeholder;
                     foreach ($columns as $c) {
@@ -546,8 +555,8 @@ class ApiInvoiceImporterService
                 }
 
                 $sql = "INSERT INTO \"invoices\" ({$columnList}) VALUES "
-                     . implode(', ', $valueRows)
-                     . " RETURNING \"id\", \"invoice_number\"";
+                     .implode(', ', $valueRows)
+                     .' RETURNING "id", "invoice_number"';
 
                 $inserted = DB::select($sql, $bindings);
 
@@ -561,14 +570,14 @@ class ApiInvoiceImporterService
         $allLines = [];
         foreach ($newInvoicesData as $data) {
             $invoiceId = $invoiceNumberToId[$data['Nfactura']] ?? null;
-            if (!$invoiceId || empty($data['LineasFactura'])) {
+            if (! $invoiceId || empty($data['LineasFactura'])) {
                 continue;
             }
 
             foreach ($data['LineasFactura'] as $line) {
                 $cantidadFracciones = (float) ($line['CantidadFracciones'] ?? 0);
-                $cantidadCaja       = (float) ($line['CantidadCaja'] ?? 0);
-                $factorConversion   = max(1, (int) ($line['FactorConversion'] ?? 1));
+                $cantidadCaja = (float) ($line['CantidadCaja'] ?? 0);
+                $factorConversion = max(1, (int) ($line['FactorConversion'] ?? 1));
 
                 // Para productos CJ (caja): Jaremar envía CantidadFracciones=0
                 // y CantidadCaja>0. quantity_fractions debe reflejar el total
@@ -579,38 +588,38 @@ class ApiInvoiceImporterService
                 }
 
                 $allLines[] = [
-                    'invoice_id'          => $invoiceId,
-                    'jaremar_line_id'     => $line['Id'] ?? null,
-                    'invoice_jaremar_id'  => isset($line['InvoiceId']) ? (int) $line['InvoiceId'] : null,
-                    'line_number'         => (int) ($line['NumeroLinea'] ?? 0),
-                    'product_id'          => (string) ($line['ProductoId'] ?? ''),
+                    'invoice_id' => $invoiceId,
+                    'jaremar_line_id' => $line['Id'] ?? null,
+                    'invoice_jaremar_id' => isset($line['InvoiceId']) ? (int) $line['InvoiceId'] : null,
+                    'line_number' => (int) ($line['NumeroLinea'] ?? 0),
+                    'product_id' => (string) ($line['ProductoId'] ?? ''),
                     'product_description' => (string) ($line['ProductoDesc'] ?? ''),
-                    'product_type'        => $line['TipoProducto'] ?? null,
-                    'unit_sale'           => $line['UniVenta'] ?? null,
-                    'quantity_fractions'  => $cantidadFracciones,
-                    'quantity_decimal'    => (float) ($line['CantidadDecimal'] ?? 0),
-                    'quantity_box'        => $cantidadCaja,
-                    'quantity_min_sale'   => (float) ($line['CantidadUnidadMinVenta'] ?? 0),
-                    'conversion_factor'   => $factorConversion,
-                    'cost'                => (float) ($line['Costo'] ?? 0),
-                    'price'               => (float) ($line['Precio'] ?? 0),
-                    'price_min_sale'      => (float) ($line['PrecioUnidadMinVenta'] ?? 0),
-                    'subtotal'            => (float) ($line['Subtotal'] ?? 0),
-                    'discount'            => (float) ($line['Descuento'] ?? 0),
-                    'discount_percent'    => (float) ($line['PorcentajeDescuento'] ?? 0),
-                    'tax'                 => (float) ($line['Impuesto'] ?? 0),
-                    'tax_percent'         => (float) ($line['PorcentajeImpuesto'] ?? 0),
-                    'tax18'               => (float) ($line['Impuesto18'] ?? 0),
-                    'total'               => (float) ($line['Total'] ?? 0),
-                    'weight'              => (float) ($line['Peso'] ?? 0),
-                    'volume'              => (float) ($line['Volumen'] ?? 0),
-                    'created_at'          => $now,
-                    'updated_at'          => $now,
+                    'product_type' => $line['TipoProducto'] ?? null,
+                    'unit_sale' => $line['UniVenta'] ?? null,
+                    'quantity_fractions' => $cantidadFracciones,
+                    'quantity_decimal' => (float) ($line['CantidadDecimal'] ?? 0),
+                    'quantity_box' => $cantidadCaja,
+                    'quantity_min_sale' => (float) ($line['CantidadUnidadMinVenta'] ?? 0),
+                    'conversion_factor' => $factorConversion,
+                    'cost' => (float) ($line['Costo'] ?? 0),
+                    'price' => (float) ($line['Precio'] ?? 0),
+                    'price_min_sale' => (float) ($line['PrecioUnidadMinVenta'] ?? 0),
+                    'subtotal' => (float) ($line['Subtotal'] ?? 0),
+                    'discount' => (float) ($line['Descuento'] ?? 0),
+                    'discount_percent' => (float) ($line['PorcentajeDescuento'] ?? 0),
+                    'tax' => (float) ($line['Impuesto'] ?? 0),
+                    'tax_percent' => (float) ($line['PorcentajeImpuesto'] ?? 0),
+                    'tax18' => (float) ($line['Impuesto18'] ?? 0),
+                    'total' => (float) ($line['Total'] ?? 0),
+                    'weight' => (float) ($line['Peso'] ?? 0),
+                    'volume' => (float) ($line['Volumen'] ?? 0),
+                    'created_at' => $now,
+                    'updated_at' => $now,
                 ];
             }
         }
 
-        if (!empty($allLines)) {
+        if (! empty($allLines)) {
             collect($allLines)->chunk(500)->each(function ($chunk) {
                 DB::table('invoice_lines')->insert($chunk->values()->all());
             });
@@ -621,11 +630,11 @@ class ApiInvoiceImporterService
 
     protected function detectChanges(Invoice $existing, array $incoming): array
     {
-        $previous  = [];
+        $previous = [];
         $newValues = [];
 
         foreach ($this->comparableFields as $field) {
-            if (!array_key_exists($field, $incoming)) {
+            if (! array_key_exists($field, $incoming)) {
                 continue;
             }
 
@@ -636,7 +645,7 @@ class ApiInvoiceImporterService
             $incomingNorm = is_numeric($incomingValue) ? (float) $incomingValue : (string) $incomingValue;
 
             if ($existingNorm !== $incomingNorm) {
-                $previous[$field]  = $existingValue;
+                $previous[$field] = $existingValue;
                 $newValues[$field] = $incomingValue;
             }
         }
@@ -654,60 +663,60 @@ class ApiInvoiceImporterService
     protected function mapInvoiceFields(array $data, Manifest $manifest): array
     {
         $warehouseCode = $data['Almacen'] ?? null;
-        $warehouseId   = $this->warehouseMap[$warehouseCode] ?? null;
+        $warehouseId = $this->warehouseMap[$warehouseCode] ?? null;
 
         return [
-            'warehouse_id'             => $warehouseId,
-            'status'                   => $warehouseId ? 'imported' : 'pending_warehouse',
-            'jaremar_id'               => $data['Id'] ?? null,
-            'invoice_number'           => $data['Nfactura'],
-            'lx_number'                => $data['NumeroFacturaLX'] ?? null,
-            'order_number'             => $data['NumeroPedido'] ?? null,
-            'invoice_date'             => $this->parseDate($data['FechaFactura']),
-            'due_date'                 => $this->parseDate($data['FechaVencimiento'] ?? null),
-            'print_limit_date'         => $this->parseDate($data['FechaLimImpre'] ?? null),
-            'seller_id'                => $data['Vendedorid'] ?? null,
-            'seller_name'              => $data['Vendedor'] ?? null,
-            'client_id'                => $data['Clienteid'] ?? null,
-            'client_name'              => $data['Cliente'],
-            'client_rtn'               => $data['Rtn'] ?? null,
-            'deliver_to'               => $data['EntregarA'] ?? null,
-            'department'               => $data['Depto'] ?? null,
-            'municipality'             => $data['Municipio'] ?? null,
-            'neighborhood'             => $data['Barrio'] ?? null,
-            'address'                  => $data['Direccion'] ?? null,
-            'phone'                    => $data['Tel'] ?? null,
-            'longitude'                => $data['Longitud'] ?? null,
-            'latitude'                 => $data['Latitud'] ?? null,
-            'route_number'             => trim($data['NumeroRuta'] ?? ''),
-            'cai'                      => $data['Cai'] ?? null,
-            'range_start'              => $data['Rinicial'] ?? null,
-            'range_end'                => $data['Rfinal'] ?? null,
-            'payment_type'             => $data['TipoPago'] ?? null,
-            'credit_days'              => $data['DiasCred'] ?? 0,
-            'invoice_type'             => $data['TipoFactura'] ?? null,
-            'invoice_status'           => $data['EstadoFactura'] ?? 1,
-            'matriz_address'           => $data['DirCasaMatriz'] ?? null,
-            'branch_address'           => $data['DirSucursal'] ?? null,
-            'importe_excento'          => $data['ImporteExcento'] ?? 0,
-            'importe_exento_desc'      => $data['ImporteExento_Desc'] ?? 0,
-            'importe_exento_isv18'     => $data['ImporteExento_ISV18'] ?? 0,
-            'importe_exento_isv15'     => $data['ImporteExento_ISV15'] ?? 0,
-            'importe_exento_total'     => $data['ImporteExento_Total'] ?? 0,
-            'importe_exonerado'        => $data['ImporteExonerado'] ?? 0,
-            'importe_exonerado_desc'   => $data['ImporteExonerado_Desc'] ?? 0,
-            'importe_exonerado_isv18'  => $data['ImporteExonerado_ISV18'] ?? 0,
-            'importe_exonerado_isv15'  => $data['ImporteExonerado_ISV15'] ?? 0,
-            'importe_exonerado_total'  => $data['ImporteExonerado_Total'] ?? 0,
-            'importe_gravado'          => $data['ImporteGrabado'] ?? 0,
-            'importe_gravado_desc'     => $data['ImporteGravado_Desc'] ?? 0,
-            'importe_gravado_isv18'    => $data['ImporteGravado_ISV18'] ?? 0,
-            'importe_gravado_isv15'    => $data['ImporteGravado_ISV15'] ?? 0,
-            'importe_gravado_total'    => $data['ImporteGravado_Total'] ?? 0,
-            'discounts'                => $data['DescuentosRebajas'] ?? 0,
-            'isv18'                    => $data['Isv18'] ?? 0,
-            'isv15'                    => $data['Isv15'] ?? 0,
-            'total'                    => $data['Total'],
+            'warehouse_id' => $warehouseId,
+            'status' => $warehouseId ? 'imported' : 'pending_warehouse',
+            'jaremar_id' => $data['Id'] ?? null,
+            'invoice_number' => $data['Nfactura'],
+            'lx_number' => $data['NumeroFacturaLX'] ?? null,
+            'order_number' => $data['NumeroPedido'] ?? null,
+            'invoice_date' => $this->parseDate($data['FechaFactura']),
+            'due_date' => $this->parseDate($data['FechaVencimiento'] ?? null),
+            'print_limit_date' => $this->parseDate($data['FechaLimImpre'] ?? null),
+            'seller_id' => $data['Vendedorid'] ?? null,
+            'seller_name' => $data['Vendedor'] ?? null,
+            'client_id' => $data['Clienteid'] ?? null,
+            'client_name' => $data['Cliente'],
+            'client_rtn' => $data['Rtn'] ?? null,
+            'deliver_to' => $data['EntregarA'] ?? null,
+            'department' => $data['Depto'] ?? null,
+            'municipality' => $data['Municipio'] ?? null,
+            'neighborhood' => $data['Barrio'] ?? null,
+            'address' => $data['Direccion'] ?? null,
+            'phone' => $data['Tel'] ?? null,
+            'longitude' => $data['Longitud'] ?? null,
+            'latitude' => $data['Latitud'] ?? null,
+            'route_number' => trim($data['NumeroRuta'] ?? ''),
+            'cai' => $data['Cai'] ?? null,
+            'range_start' => $data['Rinicial'] ?? null,
+            'range_end' => $data['Rfinal'] ?? null,
+            'payment_type' => $data['TipoPago'] ?? null,
+            'credit_days' => $data['DiasCred'] ?? 0,
+            'invoice_type' => $data['TipoFactura'] ?? null,
+            'invoice_status' => $data['EstadoFactura'] ?? 1,
+            'matriz_address' => $data['DirCasaMatriz'] ?? null,
+            'branch_address' => $data['DirSucursal'] ?? null,
+            'importe_excento' => $data['ImporteExcento'] ?? 0,
+            'importe_exento_desc' => $data['ImporteExento_Desc'] ?? 0,
+            'importe_exento_isv18' => $data['ImporteExento_ISV18'] ?? 0,
+            'importe_exento_isv15' => $data['ImporteExento_ISV15'] ?? 0,
+            'importe_exento_total' => $data['ImporteExento_Total'] ?? 0,
+            'importe_exonerado' => $data['ImporteExonerado'] ?? 0,
+            'importe_exonerado_desc' => $data['ImporteExonerado_Desc'] ?? 0,
+            'importe_exonerado_isv18' => $data['ImporteExonerado_ISV18'] ?? 0,
+            'importe_exonerado_isv15' => $data['ImporteExonerado_ISV15'] ?? 0,
+            'importe_exonerado_total' => $data['ImporteExonerado_Total'] ?? 0,
+            'importe_gravado' => $data['ImporteGrabado'] ?? 0,
+            'importe_gravado_desc' => $data['ImporteGravado_Desc'] ?? 0,
+            'importe_gravado_isv18' => $data['ImporteGravado_ISV18'] ?? 0,
+            'importe_gravado_isv15' => $data['ImporteGravado_ISV15'] ?? 0,
+            'importe_gravado_total' => $data['ImporteGravado_Total'] ?? 0,
+            'discounts' => $data['DescuentosRebajas'] ?? 0,
+            'isv18' => $data['Isv18'] ?? 0,
+            'isv15' => $data['Isv15'] ?? 0,
+            'total' => $data['Total'],
         ];
     }
 
@@ -715,18 +724,18 @@ class ApiInvoiceImporterService
     {
         $supplier = Supplier::where('is_active', true)->first()
             ?? throw new \RuntimeException(
-                'No se encontró ningún proveedor activo en el sistema. ' .
+                'No se encontró ningún proveedor activo en el sistema. '.
                 'Configure al menos un proveedor activo antes de importar facturas vía API.'
             );
 
         $manifest = Manifest::create([
-            'supplier_id'  => $supplier->id,
+            'supplier_id' => $supplier->id,
             'warehouse_id' => null,
-            'number'       => $manifestNumber,
-            'date'         => now()->toDateString(),
-            'status'       => 'imported',
-            'created_by'   => null,
-            'updated_by'   => null,
+            'number' => $manifestNumber,
+            'date' => now()->toDateString(),
+            'status' => 'imported',
+            'created_by' => null,
+            'updated_by' => null,
         ]);
 
         activity('api')
@@ -753,11 +762,13 @@ class ApiInvoiceImporterService
      *   - Todos los formatos ISO 8601 (incluido el "Z" de UTC y milisegundos)
      *     los maneja Carbon::parse() de forma nativa y correcta.
      *
-     * @return string|null  Fecha en formato Y-m-d, o null si no se pudo parsear.
+     * @return string|null Fecha en formato Y-m-d, o null si no se pudo parsear.
      */
     protected function parseDate(?string $date): ?string
     {
-        if (!$date) return null;
+        if (! $date) {
+            return null;
+        }
 
         try {
             // Caso especial: formato latinoamericano dd/mm/yyyy (ej: "20/03/2026").

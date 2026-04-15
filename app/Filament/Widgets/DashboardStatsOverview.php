@@ -7,9 +7,9 @@ use App\Models\Invoice;
 use App\Models\InvoiceReturn;
 use App\Models\Manifest;
 use App\Support\WarehouseScope;
+use BezhanSalleh\FilamentShield\Traits\HasWidgetShield;
 use Filament\Widgets\StatsOverviewWidget as BaseWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
-use BezhanSalleh\FilamentShield\Traits\HasWidgetShield;
 use Illuminate\Support\Facades\Cache;
 
 class DashboardStatsOverview extends BaseWidget
@@ -27,28 +27,28 @@ class DashboardStatsOverview extends BaseWidget
 
         $data = Cache::remember($cacheKey, now()->addMinutes(2), function () use ($warehouseId) {
             $activeStatuses = ['pending', 'processing', 'imported'];
-            $thisMonth      = now()->month;
-            $thisYear       = now()->year;
-            $lastMonth      = now()->subMonth()->month;
-            $lastMonthYear  = now()->subMonth()->year;
+            $thisMonth = now()->month;
+            $thisYear = now()->year;
+            $lastMonth = now()->subMonth()->month;
+            $lastMonthYear = now()->subMonth()->year;
 
             // Helper: query base de Manifest ya filtrado por bodega si aplica
-            $mq = fn() => $warehouseId
+            $mq = fn () => $warehouseId
                 ? Manifest::where('warehouse_id', $warehouseId)
                 : Manifest::query();
 
             // Helper: query base de Deposit filtrado por bodega via manifest
-            $dq = fn() => $warehouseId
-                ? Deposit::whereHas('manifest', fn($q) => $q->where('warehouse_id', $warehouseId))
+            $dq = fn () => $warehouseId
+                ? Deposit::whereHas('manifest', fn ($q) => $q->where('warehouse_id', $warehouseId))
                 : Deposit::query();
 
             // Helper: query base de InvoiceReturn filtrado por bodega
-            $rq = fn() => $warehouseId
+            $rq = fn () => $warehouseId
                 ? InvoiceReturn::where('warehouse_id', $warehouseId)
                 : InvoiceReturn::query();
 
             // Helper: query base de Invoice filtrado por bodega
-            $iq = fn() => $warehouseId
+            $iq = fn () => $warehouseId
                 ? Invoice::where('warehouse_id', $warehouseId)
                 : Invoice::query();
 
@@ -110,12 +110,12 @@ class DashboardStatsOverview extends BaseWidget
                 ->whereNotNull('closed_at')
                 ->where('closed_at', '>=', now()->subDays(90))
                 ->selectRaw(
-                    "AVG(EXTRACT(EPOCH FROM (closed_at - date::timestamptz)) / 86400.0) as dso"
+                    'AVG(EXTRACT(EPOCH FROM (closed_at - date::timestamptz)) / 86400.0) as dso'
                 )
                 ->value('dso') ?? 0;
 
             // ── Eficiencia de Cobro Global (manifiestos activos) ───────
-            $totalActivo   = (float) $mq()->whereIn('status', $activeStatuses)->sum('total_to_deposit');
+            $totalActivo = (float) $mq()->whereIn('status', $activeStatuses)->sum('total_to_deposit');
             $cobradoActivo = (float) $mq()->whereIn('status', $activeStatuses)->sum('total_deposited');
             $eficienciaCobro = $totalActivo > 0
                 ? round(($cobradoActivo / $totalActivo) * 100, 1)
@@ -136,15 +136,15 @@ class DashboardStatsOverview extends BaseWidget
         });
 
         // ── Variaciones mes a mes ──────────────────────────────────────
-        $ventaDiff  = $data['ventaNetaMes'] - $data['ventaNetaMesAnterior'];
-        $ventaIcon  = $ventaDiff >= 0 ? 'heroicon-m-arrow-trending-up' : 'heroicon-m-arrow-trending-down';
+        $ventaDiff = $data['ventaNetaMes'] - $data['ventaNetaMesAnterior'];
+        $ventaIcon = $ventaDiff >= 0 ? 'heroicon-m-arrow-trending-up' : 'heroicon-m-arrow-trending-down';
         $ventaColor = $ventaDiff >= 0 ? 'success' : 'danger';
-        $ventaDesc  = ($ventaDiff >= 0 ? '▲ ' : '▼ ') . 'L. ' . number_format(abs($ventaDiff), 0) . ' vs mes anterior';
+        $ventaDesc = ($ventaDiff >= 0 ? '▲ ' : '▼ ').'L. '.number_format(abs($ventaDiff), 0).' vs mes anterior';
 
-        $depositDiff  = $data['depositadoMes'] - $data['depositadoMesAnterior'];
-        $depositIcon  = $depositDiff >= 0 ? 'heroicon-m-arrow-trending-up' : 'heroicon-m-arrow-trending-down';
+        $depositDiff = $data['depositadoMes'] - $data['depositadoMesAnterior'];
+        $depositIcon = $depositDiff >= 0 ? 'heroicon-m-arrow-trending-up' : 'heroicon-m-arrow-trending-down';
         $depositColor = $depositDiff >= 0 ? 'success' : 'warning';
-        $depositDesc  = ($depositDiff >= 0 ? '▲ ' : '▼ ') . 'L. ' . number_format(abs($depositDiff), 0) . ' vs mes anterior';
+        $depositDesc = ($depositDiff >= 0 ? '▲ ' : '▼ ').'L. '.number_format(abs($depositDiff), 0).' vs mes anterior';
 
         $devPct = $data['totalFacturadoMes'] > 0
             ? round(($data['devolucionesMes'] / $data['totalFacturadoMes']) * 100, 1)
@@ -152,13 +152,13 @@ class DashboardStatsOverview extends BaseWidget
 
         $dsoRound = round($data['dso'], 1);
         $dsoColor = $dsoRound <= 7 ? 'success' : ($dsoRound <= 14 ? 'warning' : 'danger');
-        $dsoDesc  = $dsoRound <= 7
+        $dsoDesc = $dsoRound <= 7
             ? 'Cobro excelente'
             : ($dsoRound <= 14 ? 'Cobro aceptable' : 'Cobro lento — revisar');
 
-        $efic      = $data['eficienciaCobro'];
+        $efic = $data['eficienciaCobro'];
         $eficColor = $efic >= 90 ? 'success' : ($efic >= 70 ? 'warning' : 'danger');
-        $eficDesc  = 'de L. ' . number_format($data['totalActivo'], 0) . ' en cartera activa';
+        $eficDesc = 'de L. '.number_format($data['totalActivo'], 0).' en cartera activa';
 
         $mesActual = now()->locale('es')->translatedFormat('F');
 
@@ -171,28 +171,28 @@ class DashboardStatsOverview extends BaseWidget
                 ->icon('heroicon-o-document-text'),
 
             // 2 ── Pendiente por depositar
-            Stat::make('Pendiente por Depositar', 'L. ' . number_format($data['pendingToDeposit'], 2))
+            Stat::make('Pendiente por Depositar', 'L. '.number_format($data['pendingToDeposit'], 2))
                 ->description('Saldo abierto en manifiestos activos')
                 ->descriptionIcon('heroicon-m-exclamation-circle')
                 ->color($data['pendingToDeposit'] > 0 ? 'warning' : 'success')
                 ->icon('heroicon-o-banknotes'),
 
             // 3 ── Venta neta del mes con tendencia
-            Stat::make("Venta Neta {$mesActual}", 'L. ' . number_format($data['ventaNetaMes'], 2))
+            Stat::make("Venta Neta {$mesActual}", 'L. '.number_format($data['ventaNetaMes'], 2))
                 ->description($ventaDesc)
                 ->descriptionIcon($ventaIcon)
                 ->color($ventaColor)
                 ->icon('heroicon-o-chart-bar'),
 
             // 4 ── Depositado este mes con tendencia
-            Stat::make("Depositado {$mesActual}", 'L. ' . number_format($data['depositadoMes'], 2))
+            Stat::make("Depositado {$mesActual}", 'L. '.number_format($data['depositadoMes'], 2))
                 ->description($depositDesc)
                 ->descriptionIcon($depositIcon)
                 ->color($depositColor)
                 ->icon('heroicon-o-building-library'),
 
             // 5 ── Devoluciones del mes con porcentaje
-            Stat::make("Devoluciones {$mesActual}", 'L. ' . number_format($data['devolucionesMes'], 2))
+            Stat::make("Devoluciones {$mesActual}", 'L. '.number_format($data['devolucionesMes'], 2))
                 ->description("{$devPct}% del total facturado del mes")
                 ->descriptionIcon('heroicon-m-arrow-uturn-left')
                 ->color($devPct > 10 ? 'danger' : ($devPct > 5 ? 'warning' : 'success'))
@@ -206,14 +206,14 @@ class DashboardStatsOverview extends BaseWidget
                 ->icon('heroicon-o-users'),
 
             // 7 ── DSO: Días promedio de cobro (últimos 90 días)
-            Stat::make('DSO — Días de Cobro', $dsoRound . ' días')
+            Stat::make('DSO — Días de Cobro', $dsoRound.' días')
                 ->description($dsoDesc)
                 ->descriptionIcon($dsoColor === 'success' ? 'heroicon-m-check-circle' : 'heroicon-m-clock')
                 ->color($dsoColor)
                 ->icon('heroicon-o-calendar-days'),
 
             // 8 ── Eficiencia global de cobro (manifiestos activos)
-            Stat::make('Eficiencia de Cobro', $efic . '%')
+            Stat::make('Eficiencia de Cobro', $efic.'%')
                 ->description($eficDesc)
                 ->descriptionIcon($efic >= 90 ? 'heroicon-m-check-badge' : 'heroicon-m-exclamation-triangle')
                 ->color($eficColor)

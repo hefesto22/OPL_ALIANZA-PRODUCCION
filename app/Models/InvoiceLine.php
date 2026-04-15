@@ -26,10 +26,10 @@ class InvoiceLine extends Model
     protected function casts(): array
     {
         return [
-            'total'             => 'decimal:2',
-            'subtotal'          => 'decimal:2',
-            'tax'               => 'decimal:2',
-            'discount'          => 'decimal:2',
+            'total' => 'decimal:2',
+            'subtotal' => 'decimal:2',
+            'tax' => 'decimal:2',
+            'discount' => 'decimal:2',
             'returned_quantity' => 'decimal:4',
         ];
     }

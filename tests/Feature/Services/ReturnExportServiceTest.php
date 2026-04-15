@@ -9,8 +9,8 @@ use App\Models\ReturnLine;
 use App\Models\ReturnReason;
 use App\Models\Supplier;
 use App\Models\Warehouse;
-use App\Services\ReturnExportService;
 use App\Services\ReturnExporter;
+use App\Services\ReturnExportService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
@@ -32,9 +32,12 @@ class ReturnExportServiceTest extends TestCase
 {
     use RefreshDatabase;
 
-    private Warehouse    $warehouse;
-    private Manifest     $manifest;
-    private Invoice      $invoice;
+    private Warehouse $warehouse;
+
+    private Manifest $manifest;
+
+    private Invoice $invoice;
+
     private ReturnReason $reason;
 
     protected function setUp(): void
@@ -44,23 +47,23 @@ class ReturnExportServiceTest extends TestCase
         Role::create(['name' => 'super_admin', 'guard_name' => 'web']);
         Role::create(['name' => 'admin',       'guard_name' => 'web']);
 
-        $supplier        = Supplier::factory()->create(['is_active' => true]);
+        $supplier = Supplier::factory()->create(['is_active' => true]);
         $this->warehouse = Warehouse::factory()->oac()->create();
 
         $this->manifest = Manifest::factory()->create([
             'supplier_id' => $supplier->id,
-            'number'      => 'MAN-EXP-001',
+            'number' => 'MAN-EXP-001',
         ]);
 
         $this->invoice = Invoice::factory()->create([
-            'manifest_id'    => $this->manifest->id,
-            'warehouse_id'   => $this->warehouse->id,
+            'manifest_id' => $this->manifest->id,
+            'warehouse_id' => $this->warehouse->id,
             'invoice_number' => 'F-EXP-001',
         ]);
 
         $this->reason = ReturnReason::factory()->create([
-            'jaremar_id'  => '5001',
-            'code'        => 'BE-99',
+            'jaremar_id' => '5001',
+            'code' => 'BE-99',
             'description' => 'Producto dañado en transporte',
         ]);
     }
@@ -81,28 +84,28 @@ class ReturnExportServiceTest extends TestCase
     private function makeExportableReturn(array $overrides = [], array $lineOverrides = []): InvoiceReturn
     {
         $return = InvoiceReturn::factory()->approved()->create(array_merge([
-            'manifest_id'       => $this->manifest->id,
-            'invoice_id'        => $this->invoice->id,
-            'return_reason_id'  => $this->reason->id,
-            'warehouse_id'      => $this->warehouse->id,
-            'manifest_number'   => 'MAN-EXP-001',
-            'client_id'         => 'CLI-001',
-            'client_name'       => 'PULPERIA EXPORTACION',
-            'return_date'       => '2026-04-10',
-            'processed_date'    => '2026-04-10',
-            'processed_time'    => '14:30:00',
-            'total'             => 250.50,
+            'manifest_id' => $this->manifest->id,
+            'invoice_id' => $this->invoice->id,
+            'return_reason_id' => $this->reason->id,
+            'warehouse_id' => $this->warehouse->id,
+            'manifest_number' => 'MAN-EXP-001',
+            'client_id' => 'CLI-001',
+            'client_name' => 'PULPERIA EXPORTACION',
+            'return_date' => '2026-04-10',
+            'processed_date' => '2026-04-10',
+            'processed_time' => '14:30:00',
+            'total' => 250.50,
         ], $overrides));
 
         ReturnLine::create(array_merge([
-            'return_id'           => $return->id,
-            'invoice_line_id'     => null,
-            'line_number'         => 1,
-            'product_id'          => 'ART-EXP-001',
+            'return_id' => $return->id,
+            'invoice_line_id' => null,
+            'line_number' => 1,
+            'product_id' => 'ART-EXP-001',
             'product_description' => 'PRODUCTO EXPORT PRUEBA',
-            'quantity_box'        => 0,
-            'quantity'            => 5.0,
-            'line_total'          => 250.50,
+            'quantity_box' => 0,
+            'quantity' => 5.0,
+            'line_total' => 250.50,
         ], $lineOverrides));
 
         return $return;
@@ -112,11 +115,11 @@ class ReturnExportServiceTest extends TestCase
     //  ReturnExportService::toJaremarArray
     // ═══════════════════════════════════════════════════════════════
 
-    public function test_toJaremarArray_maps_all_fields_correctly(): void
+    public function test_to_jaremar_array_maps_all_fields_correctly(): void
     {
         $return = $this->makeExportableReturn();
 
-        $query  = $this->service()->withRelations(
+        $query = $this->service()->withRelations(
             InvoiceReturn::where('id', $return->id)
         );
         $result = $this->service()->toJaremarArray($query->get());
@@ -149,69 +152,69 @@ class ReturnExportServiceTest extends TestCase
         $this->assertSame('250.500000', $line['lineTotal']);
     }
 
-    public function test_toJaremarArray_uses_jaremar_return_id_when_present(): void
+    public function test_to_jaremar_array_uses_jaremar_return_id_when_present(): void
     {
         $return = $this->makeExportableReturn(['jaremar_return_id' => 'JAR-777']);
 
-        $query  = $this->service()->withRelations(InvoiceReturn::where('id', $return->id));
+        $query = $this->service()->withRelations(InvoiceReturn::where('id', $return->id));
         $result = $this->service()->toJaremarArray($query->get());
 
         $this->assertSame('JAR-777', $result[0]['devolucion']);
     }
 
-    public function test_toJaremarArray_falls_back_to_id_when_no_jaremar_id(): void
+    public function test_to_jaremar_array_falls_back_to_id_when_no_jaremar_id(): void
     {
         $return = $this->makeExportableReturn(['jaremar_return_id' => null]);
 
-        $query  = $this->service()->withRelations(InvoiceReturn::where('id', $return->id));
+        $query = $this->service()->withRelations(InvoiceReturn::where('id', $return->id));
         $result = $this->service()->toJaremarArray($query->get());
 
         $this->assertSame((string) $return->id, $result[0]['devolucion']);
     }
 
-    public function test_toJaremarArray_handles_null_processed_fields(): void
+    public function test_to_jaremar_array_handles_null_processed_fields(): void
     {
         $return = $this->makeExportableReturn([
             'processed_date' => null,
             'processed_time' => null,
         ]);
 
-        $query  = $this->service()->withRelations(InvoiceReturn::where('id', $return->id));
+        $query = $this->service()->withRelations(InvoiceReturn::where('id', $return->id));
         $result = $this->service()->toJaremarArray($query->get());
 
         $this->assertNull($result[0]['fechaProcesado']);
         $this->assertNull($result[0]['horaProcesado']);
     }
 
-    public function test_toJaremarArray_maps_multiple_lines(): void
+    public function test_to_jaremar_array_maps_multiple_lines(): void
     {
         $return = $this->makeExportableReturn();
 
         // Agregar segunda línea
         ReturnLine::create([
-            'return_id'           => $return->id,
-            'invoice_line_id'     => null,
-            'line_number'         => 2,
-            'product_id'          => 'ART-EXP-002',
+            'return_id' => $return->id,
+            'invoice_line_id' => null,
+            'line_number' => 2,
+            'product_id' => 'ART-EXP-002',
             'product_description' => 'SEGUNDO PRODUCTO',
-            'quantity_box'        => 0,
-            'quantity'            => 10.0,
-            'line_total'          => 150.00,
+            'quantity_box' => 0,
+            'quantity' => 10.0,
+            'line_total' => 150.00,
         ]);
 
-        $query  = $this->service()->withRelations(InvoiceReturn::where('id', $return->id));
+        $query = $this->service()->withRelations(InvoiceReturn::where('id', $return->id));
         $result = $this->service()->toJaremarArray($query->get());
 
         $this->assertCount(2, $result[0]['lineasDevolucion']);
         $this->assertSame('ART-EXP-002', $result[0]['lineasDevolucion'][1]['productoId']);
     }
 
-    public function test_toJaremarArray_prefers_reason_jaremar_id_over_code(): void
+    public function test_to_jaremar_array_prefers_reason_jaremar_id_over_code(): void
     {
         // La razón ya tiene jaremar_id = '5001'
         $return = $this->makeExportableReturn();
 
-        $query  = $this->service()->withRelations(InvoiceReturn::where('id', $return->id));
+        $query = $this->service()->withRelations(InvoiceReturn::where('id', $return->id));
         $result = $this->service()->toJaremarArray($query->get());
 
         $this->assertSame('5001', $result[0]['idConcepto']);
@@ -245,7 +248,7 @@ class ReturnExportServiceTest extends TestCase
     //  ReturnExporter — JSON output
     // ═══════════════════════════════════════════════════════════════
 
-    public function test_toJson_casts_numeric_strings_to_floats(): void
+    public function test_to_json_casts_numeric_strings_to_floats(): void
     {
         $data = [[
             'devolucion' => '1', 'factura' => 'F-001', 'clienteid' => 'C1',
@@ -281,7 +284,7 @@ class ReturnExportServiceTest extends TestCase
     //  ReturnExporter — XML output
     // ═══════════════════════════════════════════════════════════════
 
-    public function test_toXml_returns_valid_xml_with_correct_structure(): void
+    public function test_to_xml_returns_valid_xml_with_correct_structure(): void
     {
         $data = [[
             'devolucion' => '1', 'factura' => 'F-001', 'clienteid' => 'C1',
@@ -324,7 +327,7 @@ class ReturnExportServiceTest extends TestCase
     //  ReturnExporter — CSV output
     // ═══════════════════════════════════════════════════════════════
 
-    public function test_toCsv_includes_bom_header_and_expands_lines(): void
+    public function test_to_csv_includes_bom_header_and_expands_lines(): void
     {
         $data = [[
             'devolucion' => '1', 'factura' => 'F-001', 'clienteid' => 'C1',
@@ -369,7 +372,7 @@ class ReturnExportServiceTest extends TestCase
         $this->assertStringContainsString('ART-002', $lines[2]);
     }
 
-    public function test_toCsv_handles_return_with_no_lines(): void
+    public function test_to_csv_handles_return_with_no_lines(): void
     {
         $data = [[
             'devolucion' => '1', 'factura' => 'F-001', 'clienteid' => 'C1',

@@ -12,7 +12,7 @@ use Maatwebsite\Excel\Concerns\WithStyles;
 use Maatwebsite\Excel\Concerns\WithTitle;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
-class ManifestsExport implements FromQuery, WithHeadings, WithMapping, WithStyles, ShouldAutoSize, WithTitle
+class ManifestsExport implements FromQuery, ShouldAutoSize, WithHeadings, WithMapping, WithStyles, WithTitle
 {
     public function __construct(
         private readonly ?string $status = null,
@@ -61,12 +61,12 @@ class ManifestsExport implements FromQuery, WithHeadings, WithMapping, WithStyle
         return [
             $manifest->number,
             $manifest->date ? \Carbon\Carbon::parse($manifest->date)->format('d/m/Y') : '—',
-            match($manifest->status) {
-                'pending'    => 'Pendiente',
+            match ($manifest->status) {
+                'pending' => 'Pendiente',
                 'processing' => 'Procesando',
-                'imported'   => 'Importado',
-                'closed'     => 'Cerrado',
-                default      => $manifest->status,
+                'imported' => 'Importado',
+                'closed' => 'Cerrado',
+                default => $manifest->status,
             },
             $manifest->warehouse?->code ?? '—',
             $manifest->invoices_count,
@@ -83,8 +83,8 @@ class ManifestsExport implements FromQuery, WithHeadings, WithMapping, WithStyle
     {
         return [
             1 => [
-                'font'      => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
-                'fill'      => ['fillType' => 'solid', 'startColor' => ['rgb' => '1B3A6B']],
+                'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
+                'fill' => ['fillType' => 'solid', 'startColor' => ['rgb' => '1B3A6B']],
                 'alignment' => ['horizontal' => 'center'],
             ],
         ];

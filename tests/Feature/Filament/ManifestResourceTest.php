@@ -26,10 +26,14 @@ class ManifestResourceTest extends TestCase
 {
     use RefreshDatabase;
 
-    protected User      $superAdmin;
-    protected User      $admin;
-    protected User      $warehouseUser;
+    protected User $superAdmin;
+
+    protected User $admin;
+
+    protected User $warehouseUser;
+
     protected Warehouse $warehouseOAC;
+
     protected Warehouse $warehouseOAS;
 
     protected function setUp(): void
@@ -38,8 +42,8 @@ class ManifestResourceTest extends TestCase
 
         // Roles
         $superAdminRole = Role::create(['name' => 'super_admin', 'guard_name' => 'web']);
-        $adminRole      = Role::create(['name' => 'admin',       'guard_name' => 'web']);
-        $encargadoRole  = Role::create(['name' => 'encargado',   'guard_name' => 'web']);
+        $adminRole = Role::create(['name' => 'admin',       'guard_name' => 'web']);
+        $encargadoRole = Role::create(['name' => 'encargado',   'guard_name' => 'web']);
 
         // Permisos Shield para Manifest
         $manifestPerms = [
@@ -118,17 +122,17 @@ class ManifestResourceTest extends TestCase
         // Manifiesto con factura de OAC (bodega del usuario)
         $visible = Manifest::factory()->create(['number' => 'MAN-VIS']);
         Invoice::factory()->create([
-            'manifest_id'  => $visible->id,
+            'manifest_id' => $visible->id,
             'warehouse_id' => $this->warehouseOAC->id,
-            'status'       => 'imported',
+            'status' => 'imported',
         ]);
 
         // Manifiesto con factura de OAS (otra bodega)
         $hidden = Manifest::factory()->create(['number' => 'MAN-HID']);
         Invoice::factory()->create([
-            'manifest_id'  => $hidden->id,
+            'manifest_id' => $hidden->id,
             'warehouse_id' => $this->warehouseOAS->id,
-            'status'       => 'imported',
+            'status' => 'imported',
         ]);
 
         $visibleIds = ManifestResource::getEloquentQuery()->pluck('id')->toArray();
@@ -203,7 +207,7 @@ class ManifestResourceTest extends TestCase
     public function test_close_sets_status_and_timestamps(): void
     {
         $manifest = Manifest::factory()->create([
-            'status'         => 'imported',
+            'status' => 'imported',
             'invoices_count' => 1,
             'total_invoices' => 1000,
         ]);
@@ -219,7 +223,7 @@ class ManifestResourceTest extends TestCase
     public function test_reopen_resets_status(): void
     {
         $manifest = Manifest::factory()->create([
-            'status'    => 'closed',
+            'status' => 'closed',
             'closed_at' => now(),
             'closed_by' => $this->superAdmin->id,
         ]);
@@ -236,12 +240,12 @@ class ManifestResourceTest extends TestCase
     {
         // Ready: imported, difference=0, total_to_deposit>0
         $ready = Manifest::factory()->create([
-            'status'           => 'imported',
-            'invoices_count'   => 1,
-            'total_invoices'   => 1000,
+            'status' => 'imported',
+            'invoices_count' => 1,
+            'total_invoices' => 1000,
             'total_to_deposit' => 1000,
-            'total_deposited'  => 1000,
-            'difference'       => 0,
+            'total_deposited' => 1000,
+            'difference' => 0,
         ]);
         $this->assertTrue($ready->isReadyToClose());
 
@@ -251,11 +255,11 @@ class ManifestResourceTest extends TestCase
 
         // Pending deposit (difference != 0) → not ready
         $unpaid = Manifest::factory()->create([
-            'status'           => 'imported',
-            'total_invoices'   => 1000,
+            'status' => 'imported',
+            'total_invoices' => 1000,
             'total_to_deposit' => 1000,
-            'total_deposited'  => 500,
-            'difference'       => 500,
+            'total_deposited' => 500,
+            'difference' => 500,
         ]);
         $this->assertFalse($unpaid->isReadyToClose());
     }

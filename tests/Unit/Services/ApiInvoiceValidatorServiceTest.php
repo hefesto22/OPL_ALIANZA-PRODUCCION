@@ -33,7 +33,7 @@ class ApiInvoiceValidatorServiceTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->validator = new ApiInvoiceValidatorService();
+        $this->validator = new ApiInvoiceValidatorService;
     }
 
     /**
@@ -44,25 +44,25 @@ class ApiInvoiceValidatorServiceTest extends TestCase
     private function validInvoice(array $overrides = []): array
     {
         return array_merge([
-            'Nfactura'         => 'F0001',
+            'Nfactura' => 'F0001',
             'NumeroManifiesto' => 'MAN001',
-            'Total'            => 123.45,
-            'LineasFactura'    => [$this->validLine()],
-            'FechaFactura'     => '2026-04-10',
-            'Almacen'          => 'OAC',
-            'Vendedorid'       => 'V01',
-            'Clienteid'        => 'C100',
-            'Cliente'          => 'Cliente S.A.',
+            'Total' => 123.45,
+            'LineasFactura' => [$this->validLine()],
+            'FechaFactura' => '2026-04-10',
+            'Almacen' => 'OAC',
+            'Vendedorid' => 'V01',
+            'Clienteid' => 'C100',
+            'Cliente' => 'Cliente S.A.',
         ], $overrides);
     }
 
     private function validLine(array $overrides = []): array
     {
         return array_merge([
-            'ProductoId'   => 'P001',
+            'ProductoId' => 'P001',
             'ProductoDesc' => 'Producto test',
-            'Total'        => 50.0,
-            'NumeroLinea'  => 1,
+            'Total' => 50.0,
+            'NumeroLinea' => 1,
         ], $overrides);
     }
 
@@ -113,7 +113,7 @@ class ApiInvoiceValidatorServiceTest extends TestCase
         foreach (['Nfactura', 'NumeroManifiesto', 'Total', 'LineasFactura', 'FechaFactura', 'Almacen', 'Vendedorid', 'Clienteid', 'Cliente'] as $field) {
             $this->assertTrue(
                 $this->errorsContain($errors, "'{$field}'"),
-                "Se esperaba error para el campo '{$field}' pero no se encontró. Errores: " . implode(' | ', $errors)
+                "Se esperaba error para el campo '{$field}' pero no se encontró. Errores: ".implode(' | ', $errors)
             );
         }
     }
@@ -122,9 +122,9 @@ class ApiInvoiceValidatorServiceTest extends TestCase
     {
         // Campos presentes pero null → también deben rechazarse.
         $invoice = $this->validInvoice([
-            'Nfactura'         => null,
+            'Nfactura' => null,
             'NumeroManifiesto' => null,
-            'LineasFactura'    => null,
+            'LineasFactura' => null,
         ]);
 
         $this->assertFalse($this->validator->validate([$invoice]));
@@ -137,8 +137,8 @@ class ApiInvoiceValidatorServiceTest extends TestCase
     public function test_empty_string_values_are_treated_as_missing(): void
     {
         $invoice = $this->validInvoice([
-            'Nfactura'     => '',
-            'Cliente'      => '',
+            'Nfactura' => '',
+            'Cliente' => '',
             'FechaFactura' => '',
         ]);
 
@@ -230,7 +230,7 @@ class ApiInvoiceValidatorServiceTest extends TestCase
     public function test_line_numero_linea_zero_is_accepted(): void
     {
         // NumeroLinea = 0 es legítimo (isset lo acepta, empty no).
-        $line    = $this->validLine(['NumeroLinea' => 0]);
+        $line = $this->validLine(['NumeroLinea' => 0]);
         $invoice = $this->validInvoice(['LineasFactura' => [$line]]);
 
         $this->assertTrue($this->validator->validate([$invoice]));
@@ -240,9 +240,9 @@ class ApiInvoiceValidatorServiceTest extends TestCase
 
     public function test_mixed_batch_reports_errors_with_correct_positions(): void
     {
-        $valid    = $this->validInvoice(['Nfactura' => 'F0001']);
-        $bad      = $this->validInvoice(['Nfactura' => 'F0002', 'Total' => -10]);
-        $veryBad  = []; // factura totalmente vacía
+        $valid = $this->validInvoice(['Nfactura' => 'F0001']);
+        $bad = $this->validInvoice(['Nfactura' => 'F0002', 'Total' => -10]);
+        $veryBad = []; // factura totalmente vacía
 
         $this->assertFalse($this->validator->validate([$valid, $bad, $veryBad]));
 
@@ -291,6 +291,7 @@ class ApiInvoiceValidatorServiceTest extends TestCase
                 return true;
             }
         }
+
         return false;
     }
 }

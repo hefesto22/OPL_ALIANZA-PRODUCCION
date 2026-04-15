@@ -27,10 +27,10 @@ class PrintInvoicesController extends Controller
     {
         // ── 1. Descifrar y validar payload ────────────────────
         try {
-            $payload     = Crypt::decryptString($request->query('payload', ''));
-            $data        = json_decode($payload, true, 512, JSON_THROW_ON_ERROR);
-            $manifestId  = (int) ($data['manifest_id'] ?? 0);
-            $invoiceIds  = $data['invoice_ids'] ?? [];
+            $payload = Crypt::decryptString($request->query('payload', ''));
+            $data = json_decode($payload, true, 512, JSON_THROW_ON_ERROR);
+            $manifestId = (int) ($data['manifest_id'] ?? 0);
+            $invoiceIds = $data['invoice_ids'] ?? [];
         } catch (\Throwable) {
             abort(403, 'Enlace de impresión inválido o expirado.');
         }
@@ -47,7 +47,7 @@ class PrintInvoicesController extends Controller
             ->whereNotNull('warehouse_id')
             ->where('status', '!=', 'rejected');
 
-        if (!empty($invoiceIds)) {
+        if (! empty($invoiceIds)) {
             $query->whereIn('id', $invoiceIds);
         }
 
@@ -61,7 +61,7 @@ class PrintInvoicesController extends Controller
         }
 
         // ── 3. Generar códigos de barras ──────────────────────
-        $generator = new BarcodeGeneratorPNG();
+        $generator = new BarcodeGeneratorPNG;
         $invoices->each(function (Invoice $invoice) use ($generator): void {
             $invoice->barcode_base64 = base64_encode(
                 $generator->getBarcode(

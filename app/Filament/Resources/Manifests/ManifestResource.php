@@ -83,10 +83,10 @@ class ManifestResource extends Resource
     public static function getPages(): array
     {
         return [
-            'index'  => ListManifests::route('/'),
+            'index' => ListManifests::route('/'),
             'create' => CreateManifest::route('/create'),
-            'view'   => ViewManifest::route('/{record}'),
-            'edit'   => EditManifest::route('/{record}/edit'),
+            'view' => ViewManifest::route('/{record}'),
+            'edit' => EditManifest::route('/{record}/edit'),
         ];
     }
 

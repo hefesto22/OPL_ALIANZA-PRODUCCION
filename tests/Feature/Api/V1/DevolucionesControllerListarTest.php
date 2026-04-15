@@ -42,8 +42,8 @@ class DevolucionesControllerListarTest extends TestCase
         parent::setUp();
 
         config([
-            'api.jaremar_api_key'                  => self::API_KEY,
-            'api.rate_limit_per_minute'            => 100,
+            'api.jaremar_api_key' => self::API_KEY,
+            'api.rate_limit_per_minute' => 100,
             'api.rate_limit_devoluciones_per_minute' => 100,
         ]);
     }
@@ -61,7 +61,7 @@ class DevolucionesControllerListarTest extends TestCase
 
         $url = route('api.v1.devoluciones.listar');
         if (! empty($query)) {
-            $url .= '?' . http_build_query($query);
+            $url .= '?'.http_build_query($query);
         }
 
         return $this->withHeaders($headers)->getJson($url);
@@ -85,42 +85,42 @@ class DevolucionesControllerListarTest extends TestCase
         $manifest = Manifest::factory()->create(['warehouse_id' => $warehouse->id]);
 
         $invoice = Invoice::factory()->create([
-            'manifest_id'    => $manifest->id,
-            'warehouse_id'   => $warehouse->id,
-            'invoice_number' => $overrides['invoice_number'] ?? 'F' . fake()->unique()->numerify('######'),
-            'client_id'      => $overrides['client_id']     ?? 'CLI-' . fake()->unique()->numerify('####'),
-            'client_name'    => $overrides['client_name']   ?? 'Cliente Test',
+            'manifest_id' => $manifest->id,
+            'warehouse_id' => $warehouse->id,
+            'invoice_number' => $overrides['invoice_number'] ?? 'F'.fake()->unique()->numerify('######'),
+            'client_id' => $overrides['client_id'] ?? 'CLI-'.fake()->unique()->numerify('####'),
+            'client_name' => $overrides['client_name'] ?? 'Cliente Test',
         ]);
 
         $reason = ReturnReason::factory()->create([
-            'jaremar_id'  => $overrides['reason_jaremar_id'] ?? '1001',
-            'code'        => 'BE-' . fake()->unique()->numerify('##'),
+            'jaremar_id' => $overrides['reason_jaremar_id'] ?? '1001',
+            'code' => 'BE-'.fake()->unique()->numerify('##'),
             'description' => $overrides['reason_description'] ?? 'Producto dañado en tránsito',
         ]);
 
         $return = InvoiceReturn::factory()
             ->approved()
             ->create([
-                'manifest_id'      => $manifest->id,
-                'invoice_id'       => $invoice->id,
-                'warehouse_id'     => $warehouse->id,
+                'manifest_id' => $manifest->id,
+                'invoice_id' => $invoice->id,
+                'warehouse_id' => $warehouse->id,
                 'return_reason_id' => $reason->id,
-                'client_id'        => $invoice->client_id,
-                'client_name'      => $invoice->client_name,
-                'processed_date'   => $processedDate,
-                'processed_time'   => $overrides['processed_time'] ?? '14:30:00',
-                'return_date'      => $overrides['return_date']    ?? $processedDate . ' 10:00:00',
-                'total'            => $overrides['total'] ?? 450.75,
+                'client_id' => $invoice->client_id,
+                'client_name' => $invoice->client_name,
+                'processed_date' => $processedDate,
+                'processed_time' => $overrides['processed_time'] ?? '14:30:00',
+                'return_date' => $overrides['return_date'] ?? $processedDate.' 10:00:00',
+                'total' => $overrides['total'] ?? 450.75,
             ]);
 
         ReturnLine::create(array_merge([
-            'return_id'           => $return->id,
-            'line_number'         => 1,
-            'product_id'          => 'P-0001',
+            'return_id' => $return->id,
+            'line_number' => 1,
+            'product_id' => 'P-0001',
             'product_description' => 'Producto de prueba',
-            'quantity_box'        => 0,
-            'quantity'            => 5,
-            'line_total'          => 450.75,
+            'quantity_box' => 0,
+            'quantity' => 5,
+            'line_total' => 450.75,
         ], $lineOverrides));
 
         return $return->refresh();
@@ -188,15 +188,15 @@ class DevolucionesControllerListarTest extends TestCase
     {
         $this->makeApprovedReturn('2026-04-10', 'OAC', [
             'invoice_number' => 'F00001',
-            'client_id'      => 'CLI-A',
-            'client_name'    => 'Cliente A',
-            'total'          => 200.50,
+            'client_id' => 'CLI-A',
+            'client_name' => 'Cliente A',
+            'total' => 200.50,
         ]);
         $this->makeApprovedReturn('2026-04-10', 'OAS', [
             'invoice_number' => 'F00002',
-            'client_id'      => 'CLI-B',
-            'client_name'    => 'Cliente B',
-            'total'          => 700.00,
+            'client_id' => 'CLI-B',
+            'client_name' => 'Cliente B',
+            'total' => 700.00,
         ]);
 
         $response = $this->getListar('10/04/2026');
@@ -214,13 +214,13 @@ class DevolucionesControllerListarTest extends TestCase
     public function test_listar_response_has_expected_shape(): void
     {
         $this->makeApprovedReturn('2026-04-10', 'OAC', [
-            'invoice_number'     => 'F77777',
-            'client_id'          => 'CLI-X',
-            'client_name'        => 'Cliente X',
-            'reason_jaremar_id'  => '9001',
+            'invoice_number' => 'F77777',
+            'client_id' => 'CLI-X',
+            'client_name' => 'Cliente X',
+            'reason_jaremar_id' => '9001',
             'reason_description' => 'Rechazo por fecha vencida',
-            'processed_time'     => '09:15:00',
-            'total'              => 1234.56,
+            'processed_time' => '09:15:00',
+            'total' => 1234.56,
         ]);
 
         $response = $this->getListar('10/04/2026');
@@ -249,7 +249,7 @@ class DevolucionesControllerListarTest extends TestCase
         // Valores puntuales — confirmamos que no estamos devolviendo nulls donde hay dato.
         $first = $response->json(0);
         $this->assertSame('F77777', $first['factura']);
-        $this->assertSame('CLI-X',  $first['clienteid']);
+        $this->assertSame('CLI-X', $first['clienteid']);
         $this->assertSame('Cliente X', $first['cliente']);
         $this->assertSame('OAC', $first['almacen']);
         $this->assertSame('9001', $first['idConcepto']);
@@ -267,33 +267,33 @@ class DevolucionesControllerListarTest extends TestCase
         // Una pendiente (no aparece).
         $warehouse = Warehouse::where('code', 'OAC')->first();
         $manifestP = Manifest::factory()->create(['warehouse_id' => $warehouse->id]);
-        $invoiceP  = Invoice::factory()->create([
+        $invoiceP = Invoice::factory()->create([
             'manifest_id' => $manifestP->id,
             'warehouse_id' => $warehouse->id,
             'invoice_number' => 'F-PENDING',
         ]);
         InvoiceReturn::factory()->create([
-            'manifest_id'      => $manifestP->id,
-            'invoice_id'       => $invoiceP->id,
-            'warehouse_id'     => $warehouse->id,
+            'manifest_id' => $manifestP->id,
+            'invoice_id' => $invoiceP->id,
+            'warehouse_id' => $warehouse->id,
             'return_reason_id' => ReturnReason::factory()->create()->id,
-            'status'           => 'pending',
-            'processed_date'   => '2026-04-10',
+            'status' => 'pending',
+            'processed_date' => '2026-04-10',
         ]);
 
         // Una rechazada (no aparece).
         $manifestR = Manifest::factory()->create(['warehouse_id' => $warehouse->id]);
-        $invoiceR  = Invoice::factory()->create([
+        $invoiceR = Invoice::factory()->create([
             'manifest_id' => $manifestR->id,
             'warehouse_id' => $warehouse->id,
             'invoice_number' => 'F-REJECTED',
         ]);
         InvoiceReturn::factory()->rejected()->create([
-            'manifest_id'      => $manifestR->id,
-            'invoice_id'       => $invoiceR->id,
-            'warehouse_id'     => $warehouse->id,
+            'manifest_id' => $manifestR->id,
+            'invoice_id' => $invoiceR->id,
+            'warehouse_id' => $warehouse->id,
             'return_reason_id' => ReturnReason::factory()->create()->id,
-            'processed_date'   => '2026-04-10',
+            'processed_date' => '2026-04-10',
         ]);
 
         $response = $this->getListar('10/04/2026');
@@ -327,17 +327,17 @@ class DevolucionesControllerListarTest extends TestCase
         // consulta por fecha.
         $warehouse = Warehouse::where('code', 'OAC')->first()
             ?? Warehouse::factory()->create(['code' => 'OAC', 'name' => 'OAC']);
-        $manifest  = Manifest::factory()->create(['warehouse_id' => $warehouse->id]);
-        $invoice   = Invoice::factory()->create([
+        $manifest = Manifest::factory()->create(['warehouse_id' => $warehouse->id]);
+        $invoice = Invoice::factory()->create([
             'manifest_id' => $manifest->id,
             'warehouse_id' => $warehouse->id,
         ]);
         InvoiceReturn::factory()->approved()->create([
-            'manifest_id'      => $manifest->id,
-            'invoice_id'       => $invoice->id,
-            'warehouse_id'     => $warehouse->id,
+            'manifest_id' => $manifest->id,
+            'invoice_id' => $invoice->id,
+            'warehouse_id' => $warehouse->id,
             'return_reason_id' => ReturnReason::factory()->create()->id,
-            'processed_date'   => null,
+            'processed_date' => null,
         ]);
 
         $response = $this->getListar('10/04/2026');
@@ -351,10 +351,10 @@ class DevolucionesControllerListarTest extends TestCase
     {
         // CJ products: quantity=0, quantity_box>0 → cantidad=quantity_box.
         $this->makeApprovedReturn('2026-04-10', 'OAC', ['invoice_number' => 'F-CJ'], [
-            'product_id'   => 'CJ-PROD',
+            'product_id' => 'CJ-PROD',
             'quantity_box' => 3,
-            'quantity'     => 0,
-            'line_total'   => 300.00,
+            'quantity' => 0,
+            'line_total' => 300.00,
         ]);
 
         $response = $this->getListar('10/04/2026');
@@ -367,10 +367,10 @@ class DevolucionesControllerListarTest extends TestCase
     {
         // UN products: quantity_box=0, quantity>0 → cantidad=quantity.
         $this->makeApprovedReturn('2026-04-10', 'OAC', ['invoice_number' => 'F-UN'], [
-            'product_id'   => 'UN-PROD',
+            'product_id' => 'UN-PROD',
             'quantity_box' => 0,
-            'quantity'     => 12,
-            'line_total'   => 240.00,
+            'quantity' => 12,
+            'line_total' => 240.00,
         ]);
 
         $response = $this->getListar('10/04/2026');

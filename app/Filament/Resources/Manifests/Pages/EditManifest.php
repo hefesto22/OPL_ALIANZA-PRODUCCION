@@ -23,7 +23,7 @@ class EditManifest extends EditRecord
         /** @var User $user */
         $user = Auth::user();
 
-        if (!$user->hasRole('super_admin')) {
+        if (! $user->hasRole('super_admin')) {
             abort(403, 'No tienes permiso para editar manifiestos.');
         }
     }
@@ -35,7 +35,8 @@ class EditManifest extends EditRecord
                 ->hidden(function (): bool {
                     /** @var User $user */
                     $user = Auth::user();
-                    return $this->record->isClosed() || !$user->hasAnyRole(['super_admin', 'admin']);
+
+                    return $this->record->isClosed() || ! $user->hasAnyRole(['super_admin', 'admin']);
                 }),
         ];
     }

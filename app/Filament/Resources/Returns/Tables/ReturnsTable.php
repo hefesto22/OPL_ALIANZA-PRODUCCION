@@ -5,14 +5,14 @@ namespace App\Filament\Resources\Returns\Tables;
 use App\Models\InvoiceReturn;
 use App\Models\User;
 use App\Services\ReturnService;
-use Filament\Tables\Table;
-use Filament\Tables\Columns\TextColumn;
-use Filament\Tables\Filters\SelectFilter;
-use Filament\Actions\ViewAction;
-use Filament\Actions\EditAction;
 use Filament\Actions\Action;
+use Filament\Actions\EditAction;
+use Filament\Actions\ViewAction;
 use Filament\Forms\Components\Textarea;
 use Filament\Notifications\Notification;
+use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Table;
 use Illuminate\Support\Facades\Auth;
 
 class ReturnsTable
@@ -42,6 +42,7 @@ class ReturnsTable
                     ->visible(function () {
                         /** @var User $user */
                         $user = Auth::user();
+
                         return $user->isGlobalUser();
                     }),
 
@@ -58,33 +59,33 @@ class ReturnsTable
                 TextColumn::make('type')
                     ->label('Tipo')
                     ->badge()
-                    ->formatStateUsing(fn($state) => match($state) {
-                        'total'   => 'Total',
+                    ->formatStateUsing(fn ($state) => match ($state) {
+                        'total' => 'Total',
                         'partial' => 'Parcial',
-                        default   => $state,
+                        default => $state,
                     })
-                    ->color(fn($state) => match($state) {
-                        'total'   => 'danger',
+                    ->color(fn ($state) => match ($state) {
+                        'total' => 'danger',
                         'partial' => 'warning',
-                        default   => 'gray',
+                        default => 'gray',
                     }),
 
                 TextColumn::make('status')
                     ->label('Estado')
                     ->badge()
-                    ->formatStateUsing(fn($state) => match($state) {
-                        'pending'   => 'Pendiente',
-                        'approved'  => 'Aprobada',
-                        'rejected'  => 'Rechazada',
+                    ->formatStateUsing(fn ($state) => match ($state) {
+                        'pending' => 'Pendiente',
+                        'approved' => 'Aprobada',
+                        'rejected' => 'Rechazada',
                         'cancelled' => 'Cancelada',
-                        default     => $state,
+                        default => $state,
                     })
-                    ->color(fn($state) => match($state) {
-                        'pending'   => 'warning',
-                        'approved'  => 'success',
-                        'rejected'  => 'danger',
+                    ->color(fn ($state) => match ($state) {
+                        'pending' => 'warning',
+                        'approved' => 'success',
+                        'rejected' => 'danger',
                         'cancelled' => 'gray',
-                        default     => 'gray',
+                        default => 'gray',
                     }),
 
                 TextColumn::make('total')
@@ -112,9 +113,9 @@ class ReturnsTable
                 SelectFilter::make('status')
                     ->label('Estado')
                     ->options([
-                        'pending'   => 'Pendiente',
-                        'approved'  => 'Aprobada',
-                        'rejected'  => 'Rechazada',
+                        'pending' => 'Pendiente',
+                        'approved' => 'Aprobada',
+                        'rejected' => 'Rechazada',
                         'cancelled' => 'Cancelada',
                     ]),
 
@@ -132,6 +133,7 @@ class ReturnsTable
                     ->visible(function () {
                         /** @var User $user */
                         $user = Auth::user();
+
                         return $user->isGlobalUser();
                     }),
             ])
@@ -139,8 +141,7 @@ class ReturnsTable
                 ViewAction::make(),
 
                 EditAction::make()
-                    ->hidden(fn (InvoiceReturn $record): bool =>
-                        $record->isCancelled() ||
+                    ->hidden(fn (InvoiceReturn $record): bool => $record->isCancelled() ||
                         $record->manifest->isClosed() ||
                         ! $record->isEditableToday()
                     ),
@@ -169,8 +170,7 @@ class ReturnsTable
                             ->success()
                             ->send();
                     })
-                    ->hidden(fn (InvoiceReturn $record): bool =>
-                        $record->isCancelled() ||
+                    ->hidden(fn (InvoiceReturn $record): bool => $record->isCancelled() ||
                         $record->manifest->isClosed()
                     ),
             ])

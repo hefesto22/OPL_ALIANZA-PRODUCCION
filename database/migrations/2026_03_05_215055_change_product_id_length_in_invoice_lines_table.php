@@ -15,7 +15,7 @@ return new class extends Migration
             $table->string('product_id', 100)->change();
         });
     }
-    
+
     public function down(): void
     {
         Schema::table('invoice_lines', function (Blueprint $table) {

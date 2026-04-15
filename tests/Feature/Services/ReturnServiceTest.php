@@ -78,18 +78,18 @@ class ReturnServiceTest extends TestCase
         $firstLine = $invoice->lines->first();
 
         return [
-            'invoice_id'       => $invoice->id,
+            'invoice_id' => $invoice->id,
             'return_reason_id' => $reason->id,
-            'return_date'      => now()->toDateString(),
-            'created_by'       => $user->id,
-            'lines'            => [
+            'return_date' => now()->toDateString(),
+            'created_by' => $user->id,
+            'lines' => [
                 [
-                    'invoice_line_id'     => $firstLine->id,
-                    'line_number'         => $firstLine->line_number,
-                    'product_id'          => $firstLine->product_id,
+                    'invoice_line_id' => $firstLine->id,
+                    'line_number' => $firstLine->line_number,
+                    'product_id' => $firstLine->product_id,
                     'product_description' => $firstLine->product_description,
-                    'quantity_box'        => $boxesToReturn,
-                    'quantity'            => 0,
+                    'quantity_box' => $boxesToReturn,
+                    'quantity' => 0,
                 ],
             ],
         ];
@@ -116,7 +116,7 @@ class ReturnServiceTest extends TestCase
     public function test_creates_return_lines_with_server_side_line_total(): void
     {
         $invoice = $this->makeInvoiceWithLines();
-        $data    = $this->returnPayload($invoice, boxesToReturn: 5);
+        $data = $this->returnPayload($invoice, boxesToReturn: 5);
 
         $return = $this->service->createReturn($data);
 
@@ -142,7 +142,7 @@ class ReturnServiceTest extends TestCase
     public function test_updates_invoice_status_to_partial_return(): void
     {
         $invoice = $this->makeInvoiceWithLines();
-        $data    = $this->returnPayload($invoice, boxesToReturn: 3);
+        $data = $this->returnPayload($invoice, boxesToReturn: 3);
 
         $this->service->createReturn($data);
 
@@ -153,7 +153,7 @@ class ReturnServiceTest extends TestCase
     public function test_updates_invoice_status_to_returned_when_fully_returned(): void
     {
         $invoice = $this->makeInvoiceWithLines();
-        $data    = $this->returnPayload($invoice, boxesToReturn: 10);
+        $data = $this->returnPayload($invoice, boxesToReturn: 10);
 
         $this->service->createReturn($data);
 
@@ -163,7 +163,7 @@ class ReturnServiceTest extends TestCase
 
     public function test_recalculates_manifest_totals_after_return(): void
     {
-        $invoice  = $this->makeInvoiceWithLines();
+        $invoice = $this->makeInvoiceWithLines();
         $manifest = $invoice->manifest;
         $manifest->recalculateTotals();  // estado inicial
 
@@ -180,9 +180,9 @@ class ReturnServiceTest extends TestCase
 
     public function test_invalidates_devoluciones_cache_for_today(): void
     {
-        $invoice   = $this->makeInvoiceWithLines();
-        $today     = now()->toDateString();
-        $cacheKey  = "devoluciones:version:{$today}";
+        $invoice = $this->makeInvoiceWithLines();
+        $today = now()->toDateString();
+        $cacheKey = "devoluciones:version:{$today}";
         Cache::forget($cacheKey);
         Cache::put($cacheKey, 5);
 
@@ -212,7 +212,7 @@ class ReturnServiceTest extends TestCase
     public function test_rejects_return_when_manifest_is_closed(): void
     {
         $manifest = Manifest::factory()->closed()->create();
-        $invoice  = Invoice::factory()
+        $invoice = Invoice::factory()
             ->for($manifest, 'manifest')
             ->for($manifest->warehouse, 'warehouse')
             ->create(['total' => 1200]);
@@ -230,34 +230,34 @@ class ReturnServiceTest extends TestCase
 
     public function test_ignores_lines_with_zero_quantity(): void
     {
-        $invoice   = $this->makeInvoiceWithLines(lineCount: 2);
-        $reason    = ReturnReason::factory()->create();
-        $user      = User::factory()->create();
+        $invoice = $this->makeInvoiceWithLines(lineCount: 2);
+        $reason = ReturnReason::factory()->create();
+        $user = User::factory()->create();
         $firstLine = $invoice->lines[0];
         $secondLine = $invoice->lines[1];
 
         $data = [
-            'invoice_id'       => $invoice->id,
+            'invoice_id' => $invoice->id,
             'return_reason_id' => $reason->id,
-            'return_date'      => now()->toDateString(),
-            'created_by'       => $user->id,
-            'lines'            => [
+            'return_date' => now()->toDateString(),
+            'created_by' => $user->id,
+            'lines' => [
                 [
-                    'invoice_line_id'     => $firstLine->id,
-                    'line_number'         => $firstLine->line_number,
-                    'product_id'          => $firstLine->product_id,
+                    'invoice_line_id' => $firstLine->id,
+                    'line_number' => $firstLine->line_number,
+                    'product_id' => $firstLine->product_id,
                     'product_description' => $firstLine->product_description,
-                    'quantity_box'        => 3,
-                    'quantity'            => 0,
+                    'quantity_box' => 3,
+                    'quantity' => 0,
                 ],
                 [
                     // Esta línea NO debe crear ReturnLine porque qty = 0
-                    'invoice_line_id'     => $secondLine->id,
-                    'line_number'         => $secondLine->line_number,
-                    'product_id'          => $secondLine->product_id,
+                    'invoice_line_id' => $secondLine->id,
+                    'line_number' => $secondLine->line_number,
+                    'product_id' => $secondLine->product_id,
                     'product_description' => $secondLine->product_description,
-                    'quantity_box'        => 0,
-                    'quantity'            => 0,
+                    'quantity_box' => 0,
+                    'quantity' => 0,
                 ],
             ],
         ];
@@ -295,7 +295,8 @@ class ReturnServiceTest extends TestCase
     private function createExistingReturn(int $boxes = 4, int $invoiceLineCount = 1): array
     {
         $invoice = $this->makeInvoiceWithLines(lineCount: $invoiceLineCount);
-        $return  = $this->service->createReturn($this->returnPayload($invoice, $boxes));
+        $return = $this->service->createReturn($this->returnPayload($invoice, $boxes));
+
         return [$return->fresh('lines'), $invoice->fresh('lines')];
     }
 
@@ -307,19 +308,19 @@ class ReturnServiceTest extends TestCase
         $lines = [];
         foreach ($invoice->lines as $i => $line) {
             $lines[] = [
-                'invoice_line_id'     => $line->id,
-                'line_number'         => $line->line_number,
-                'product_id'          => $line->product_id,
+                'invoice_line_id' => $line->id,
+                'line_number' => $line->line_number,
+                'product_id' => $line->product_id,
                 'product_description' => $line->product_description,
-                'quantity_box'        => $lineQuantities[$i] ?? 0,
-                'quantity'            => 0,
+                'quantity_box' => $lineQuantities[$i] ?? 0,
+                'quantity' => 0,
             ];
         }
 
         return [
             'return_reason_id' => ReturnReason::factory()->create()->id,
-            'return_date'      => now()->toDateString(),
-            'lines'            => $lines,
+            'return_date' => now()->toDateString(),
+            'lines' => $lines,
         ];
     }
 
@@ -327,18 +328,18 @@ class ReturnServiceTest extends TestCase
     {
         [$return, $invoice] = $this->createExistingReturn(boxes: 3);
         $newReason = ReturnReason::factory()->create();
-        $newDate   = now()->subDays(2)->toDateString();
+        $newDate = now()->subDays(2)->toDateString();
 
         $data = [
             'return_reason_id' => $newReason->id,
-            'return_date'      => $newDate,
-            'lines'            => [[
-                'invoice_line_id'     => $invoice->lines->first()->id,
-                'line_number'         => $invoice->lines->first()->line_number,
-                'product_id'          => $invoice->lines->first()->product_id,
+            'return_date' => $newDate,
+            'lines' => [[
+                'invoice_line_id' => $invoice->lines->first()->id,
+                'line_number' => $invoice->lines->first()->line_number,
+                'product_id' => $invoice->lines->first()->product_id,
                 'product_description' => $invoice->lines->first()->product_description,
-                'quantity_box'        => 3,
-                'quantity'            => 0,
+                'quantity_box' => 3,
+                'quantity' => 0,
             ]],
         ];
 
@@ -410,7 +411,7 @@ class ReturnServiceTest extends TestCase
         $cacheDate = $return->processed_date instanceof \DateTimeInterface
             ? $return->processed_date->format('Y-m-d')
             : (string) $return->processed_date;
-        $cacheKey  = "devoluciones:version:{$cacheDate}";
+        $cacheKey = "devoluciones:version:{$cacheDate}";
         Cache::put($cacheKey, 10);
 
         $this->service->updateReturn($return, $this->updatePayload($invoice, [5]));
@@ -482,9 +483,9 @@ class ReturnServiceTest extends TestCase
 
     public function test_canceling_return_recalculates_manifest_totals(): void
     {
-        $invoice  = $this->makeInvoiceWithLines();
+        $invoice = $this->makeInvoiceWithLines();
         $manifest = $invoice->manifest;
-        $return   = $this->service->createReturn($this->returnPayload($invoice, boxesToReturn: 5));
+        $return = $this->service->createReturn($this->returnPayload($invoice, boxesToReturn: 5));
 
         // Antes de cancelar: manifest tiene una devolución de Q600
         $manifest->refresh();
@@ -502,7 +503,7 @@ class ReturnServiceTest extends TestCase
     public function test_canceling_return_reverts_invoice_status_to_imported(): void
     {
         $invoice = $this->makeInvoiceWithLines();
-        $return  = $this->service->createReturn($this->returnPayload($invoice, boxesToReturn: 3));
+        $return = $this->service->createReturn($this->returnPayload($invoice, boxesToReturn: 3));
 
         $invoice->refresh();
         $this->assertSame('partial_return', $invoice->status);
@@ -530,13 +531,13 @@ class ReturnServiceTest extends TestCase
     public function test_canceling_approved_return_invalidates_cache(): void
     {
         $invoice = $this->makeInvoiceWithLines();
-        $return  = $this->service->createReturn($this->returnPayload($invoice, boxesToReturn: 4));
+        $return = $this->service->createReturn($this->returnPayload($invoice, boxesToReturn: 4));
 
         $this->assertSame('approved', $return->status);
         $cacheDate = $return->processed_date instanceof \DateTimeInterface
             ? $return->processed_date->format('Y-m-d')
             : (string) $return->processed_date;
-        $cacheKey  = "devoluciones:version:{$cacheDate}";
+        $cacheKey = "devoluciones:version:{$cacheDate}";
         Cache::put($cacheKey, 42);
 
         $this->service->cancelReturn($return, 'Test de cache');
@@ -547,7 +548,7 @@ class ReturnServiceTest extends TestCase
     public function test_canceling_return_stores_audit_fields(): void
     {
         $invoice = $this->makeInvoiceWithLines();
-        $return  = $this->service->createReturn($this->returnPayload($invoice, boxesToReturn: 3));
+        $return = $this->service->createReturn($this->returnPayload($invoice, boxesToReturn: 3));
 
         $this->service->cancelReturn($return, 'Cliente rechazó mercadería');
 
@@ -561,7 +562,7 @@ class ReturnServiceTest extends TestCase
     public function test_canceling_already_cancelled_return_is_noop(): void
     {
         $invoice = $this->makeInvoiceWithLines();
-        $return  = $this->service->createReturn($this->returnPayload($invoice, boxesToReturn: 3));
+        $return = $this->service->createReturn($this->returnPayload($invoice, boxesToReturn: 3));
 
         $this->service->cancelReturn($return, 'Primera cancelación');
         $originalCancelledAt = $return->refresh()->cancelled_at;

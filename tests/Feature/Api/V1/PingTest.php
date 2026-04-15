@@ -26,7 +26,7 @@ class PingTest extends TestCase
 
         $response->assertStatus(200);
         $response->assertJson([
-            'status'  => 'ok',
+            'status' => 'ok',
             'service' => 'Distribuidora Hosana API',
             'version' => 'v1',
         ]);

@@ -3,9 +3,9 @@
 namespace App\Filament\Widgets;
 
 use App\Models\Manifest;
+use BezhanSalleh\FilamentShield\Traits\HasWidgetShield;
 use Filament\Widgets\ChartWidget;
 use Illuminate\Support\Facades\Cache;
-use BezhanSalleh\FilamentShield\Traits\HasWidgetShield;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -42,7 +42,7 @@ class MonthlyReturnRateChart extends ChartWidget
     protected function getData(): array
     {
         $data = Cache::remember('dashboard:chart:return-rate', now()->addMinutes(5), function () {
-            $months = collect(range(5, 0))->map(fn($i) => now()->subMonths($i)->startOfMonth());
+            $months = collect(range(5, 0))->map(fn ($i) => now()->subMonths($i)->startOfMonth());
 
             $raw = Manifest::query()
                 ->whereDate('date', '>=', $months->first()->toDateString())
@@ -57,18 +57,18 @@ class MonthlyReturnRateChart extends ChartWidget
                 ->keyBy('month_key');
 
             $labels = [];
-            $rates  = [];
+            $rates = [];
             $devAbs = [];
 
             foreach ($months as $m) {
-                $key      = $m->format('Y-m');
-                $row      = $raw[$key] ?? null;
-                $fact     = $row ? (float) $row->facturado    : 0;
-                $devol    = $row ? (float) $row->devoluciones : 0;
-                $rate     = $fact > 0 ? round(($devol / $fact) * 100, 2) : 0;
+                $key = $m->format('Y-m');
+                $row = $raw[$key] ?? null;
+                $fact = $row ? (float) $row->facturado : 0;
+                $devol = $row ? (float) $row->devoluciones : 0;
+                $rate = $fact > 0 ? round(($devol / $fact) * 100, 2) : 0;
 
                 $labels[] = $m->locale('es')->translatedFormat('M Y');
-                $rates[]  = $rate;
+                $rates[] = $rate;
                 $devAbs[] = round($devol, 2);
             }
 
@@ -78,16 +78,16 @@ class MonthlyReturnRateChart extends ChartWidget
         return [
             'datasets' => [
                 [
-                    'label'                => 'Tasa de Devolución (%)',
-                    'data'                 => $data['rates'],
-                    'fill'                 => true,
-                    'backgroundColor'      => 'rgba(239, 68, 68, 0.12)',
-                    'borderColor'          => 'rgba(239, 68, 68, 1)',
+                    'label' => 'Tasa de Devolución (%)',
+                    'data' => $data['rates'],
+                    'fill' => true,
+                    'backgroundColor' => 'rgba(239, 68, 68, 0.12)',
+                    'borderColor' => 'rgba(239, 68, 68, 1)',
                     'pointBackgroundColor' => 'rgba(239, 68, 68, 1)',
-                    'pointRadius'          => 5,
-                    'tension'              => 0.4,
-                    'borderWidth'          => 2,
-                    'yAxisID'              => 'y',
+                    'pointRadius' => 5,
+                    'tension' => 0.4,
+                    'borderWidth' => 2,
+                    'yAxisID' => 'y',
                 ],
             ],
             'labels' => $data['labels'],
@@ -108,32 +108,32 @@ class MonthlyReturnRateChart extends ChartWidget
                     'annotations' => [
                         // Línea de referencia al 5% (umbral aceptable)
                         'line5' => [
-                            'type'        => 'line',
-                            'yMin'        => 5,
-                            'yMax'        => 5,
+                            'type' => 'line',
+                            'yMin' => 5,
+                            'yMax' => 5,
                             'borderColor' => 'rgba(234, 179, 8, 0.6)',
                             'borderWidth' => 1,
-                            'borderDash'  => [4, 4],
-                            'label'       => [
-                                'content'  => '5% límite aceptable',
-                                'display'  => true,
+                            'borderDash' => [4, 4],
+                            'label' => [
+                                'content' => '5% límite aceptable',
+                                'display' => true,
                                 'position' => 'end',
-                                'font'     => ['size' => 10],
+                                'font' => ['size' => 10],
                             ],
                         ],
                         // Línea de referencia al 10% (umbral crítico)
                         'line10' => [
-                            'type'        => 'line',
-                            'yMin'        => 10,
-                            'yMax'        => 10,
+                            'type' => 'line',
+                            'yMin' => 10,
+                            'yMax' => 10,
                             'borderColor' => 'rgba(239, 68, 68, 0.5)',
                             'borderWidth' => 1,
-                            'borderDash'  => [4, 4],
-                            'label'       => [
-                                'content'  => '10% crítico',
-                                'display'  => true,
+                            'borderDash' => [4, 4],
+                            'label' => [
+                                'content' => '10% crítico',
+                                'display' => true,
                                 'position' => 'end',
-                                'font'     => ['size' => 10],
+                                'font' => ['size' => 10],
                             ],
                         ],
                     ],
@@ -142,9 +142,9 @@ class MonthlyReturnRateChart extends ChartWidget
             'scales' => [
                 'y' => [
                     'beginAtZero' => true,
-                    'max'         => 20,
-                    'grid'        => ['color' => 'rgba(156,163,175,0.15)'],
-                    'ticks'       => [
+                    'max' => 20,
+                    'grid' => ['color' => 'rgba(156,163,175,0.15)'],
+                    'ticks' => [
                         'callback' => 'function(v){ return v+"%"; }',
                     ],
                 ],

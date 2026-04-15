@@ -17,8 +17,8 @@ class ReturnLine extends Model
     {
         return [
             'quantity_box' => 'decimal:4',
-            'quantity'     => 'decimal:4',
-            'line_total'   => 'decimal:2',
+            'quantity' => 'decimal:4',
+            'line_total' => 'decimal:2',
         ];
     }
 

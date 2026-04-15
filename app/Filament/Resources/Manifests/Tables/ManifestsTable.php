@@ -15,7 +15,6 @@ use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Select;
 use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Utilities\Get;
-use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
@@ -42,9 +41,9 @@ class ManifestsTable
                     ->label('Bodega')
                     ->badge()
                     ->color(fn ($state) => match ($state) {
-                        'OAC'   => 'info',
-                        'OAO'   => 'success',
-                        'OAS'   => 'warning',
+                        'OAC' => 'info',
+                        'OAO' => 'success',
+                        'OAS' => 'warning',
                         default => 'gray',
                     })
                     ->sortable()
@@ -71,6 +70,7 @@ class ManifestsTable
                                 ->where('warehouse_id', $user->warehouse_id)
                                 ->first()?->invoices_count ?? 0);
                         }
+
                         return (int) $record->invoices_count;
                     }),
 
@@ -92,6 +92,7 @@ class ManifestsTable
                                 ->where('warehouse_id', $user->warehouse_id)
                                 ->first()?->clients_count ?? 0);
                         }
+
                         return (int) $record->clients_count;
                     }),
 
@@ -109,6 +110,7 @@ class ManifestsTable
                                 ->where('warehouse_id', $user->warehouse_id)
                                 ->first()?->total_invoices ?? 0);
                         }
+
                         return (float) $record->total_invoices;
                     }),
 
@@ -126,6 +128,7 @@ class ManifestsTable
                                 ->where('warehouse_id', $user->warehouse_id)
                                 ->first()?->total_returns ?? 0);
                         }
+
                         return (float) $record->total_returns;
                     }),
 
@@ -144,6 +147,7 @@ class ManifestsTable
                                 ->where('warehouse_id', $user->warehouse_id)
                                 ->first()?->total_to_deposit ?? 0);
                         }
+
                         return (float) $record->total_to_deposit;
                     }),
 
@@ -161,6 +165,7 @@ class ManifestsTable
                                 ->where('warehouse_id', $user->warehouse_id)
                                 ->first()?->total_deposited ?? 0);
                         }
+
                         return (float) $record->total_deposited;
                     }),
 
@@ -181,6 +186,7 @@ class ManifestsTable
                                 ->where('warehouse_id', $user->warehouse_id)
                                 ->first()?->difference ?? 0);
                         }
+
                         return (float) $record->difference;
                     })
                     ->color(fn (float $state): string => $state == 0 ? 'success' : 'danger')
@@ -194,25 +200,25 @@ class ManifestsTable
                     ->label('Estado')
                     ->badge()
                     ->color(fn (string $state): string => match ($state) {
-                        'pending'    => 'gray',
+                        'pending' => 'gray',
                         'processing' => 'warning',
-                        'imported'   => 'info',
-                        'closed'     => 'success',
-                        default      => 'gray',
+                        'imported' => 'info',
+                        'closed' => 'success',
+                        default => 'gray',
                     })
                     ->icon(fn (string $state): string => match ($state) {
-                        'pending'    => 'heroicon-o-clock',
+                        'pending' => 'heroicon-o-clock',
                         'processing' => 'heroicon-o-arrow-path',
-                        'imported'   => 'heroicon-o-inbox-arrow-down',
-                        'closed'     => 'heroicon-o-lock-closed',
-                        default      => 'heroicon-o-question-mark-circle',
+                        'imported' => 'heroicon-o-inbox-arrow-down',
+                        'closed' => 'heroicon-o-lock-closed',
+                        default => 'heroicon-o-question-mark-circle',
                     })
                     ->formatStateUsing(fn (string $state): string => match ($state) {
-                        'pending'    => 'Pendiente',
+                        'pending' => 'Pendiente',
                         'processing' => 'Procesando',
-                        'imported'   => 'Importado',
-                        'closed'     => 'Cerrado',
-                        default      => $state,
+                        'imported' => 'Importado',
+                        'closed' => 'Cerrado',
+                        default => $state,
                     }),
             ])
 
@@ -228,10 +234,10 @@ class ManifestsTable
                             ->label('Período')
                             ->placeholder('Todos los manifiestos')
                             ->options([
-                                'today'  => 'Hoy',
-                                'week'   => 'Esta semana',
-                                'month'  => 'Este mes',
-                                'date'   => 'Fecha específica',
+                                'today' => 'Hoy',
+                                'week' => 'Esta semana',
+                                'month' => 'Este mes',
+                                'date' => 'Fecha específica',
                                 'custom' => 'Rango personalizado',
                             ])
                             ->live(),
@@ -256,42 +262,42 @@ class ManifestsTable
                     ])
                     ->query(function (Builder $query, array $data): Builder {
                         return match ($data['period_type'] ?? null) {
-                            'today'  => $query->whereDate('date', today()),
-                            'week'   => $query->whereBetween('date', [
-                                            now()->startOfWeek(),
-                                            now()->endOfWeek(),
-                                        ]),
-                            'month'  => $query->whereYear('date', now()->year)
-                                              ->whereMonth('date', now()->month),
-                            'date'   => $query->when(
-                                            $data['specific_date'] ?? null,
-                                            fn ($q, $v) => $q->whereDate('date', $v)
-                                        ),
+                            'today' => $query->whereDate('date', today()),
+                            'week' => $query->whereBetween('date', [
+                                now()->startOfWeek(),
+                                now()->endOfWeek(),
+                            ]),
+                            'month' => $query->whereYear('date', now()->year)
+                                ->whereMonth('date', now()->month),
+                            'date' => $query->when(
+                                $data['specific_date'] ?? null,
+                                fn ($q, $v) => $q->whereDate('date', $v)
+                            ),
                             'custom' => $query
-                                            ->when(
-                                                $data['date_from'] ?? null,
-                                                fn ($q, $v) => $q->whereDate('date', '>=', $v)
-                                            )
-                                            ->when(
-                                                $data['date_to'] ?? null,
-                                                fn ($q, $v) => $q->whereDate('date', '<=', $v)
-                                            ),
-                            default  => $query,
+                                ->when(
+                                    $data['date_from'] ?? null,
+                                    fn ($q, $v) => $q->whereDate('date', '>=', $v)
+                                )
+                                ->when(
+                                    $data['date_to'] ?? null,
+                                    fn ($q, $v) => $q->whereDate('date', '<=', $v)
+                                ),
+                            default => $query,
                         };
                     })
                     ->indicateUsing(function (array $data): ?string {
                         return match ($data['period_type'] ?? null) {
-                            'today'  => 'Período: Hoy (' . today()->format('d/m/Y') . ')',
-                            'week'   => 'Período: Esta semana',
-                            'month'  => 'Período: ' . now()->translatedFormat('F Y'),
-                            'date'   => isset($data['specific_date'])
-                                            ? 'Fecha: ' . Carbon::parse($data['specific_date'])->format('d/m/Y')
+                            'today' => 'Período: Hoy ('.today()->format('d/m/Y').')',
+                            'week' => 'Período: Esta semana',
+                            'month' => 'Período: '.now()->translatedFormat('F Y'),
+                            'date' => isset($data['specific_date'])
+                                            ? 'Fecha: '.Carbon::parse($data['specific_date'])->format('d/m/Y')
                                             : null,
                             'custom' => collect([
-                                            isset($data['date_from']) ? 'Desde ' . Carbon::parse($data['date_from'])->format('d/m/Y') : null,
-                                            isset($data['date_to'])   ? 'hasta ' . Carbon::parse($data['date_to'])->format('d/m/Y')   : null,
-                                        ])->filter()->join(' ') ?: null,
-                            default  => null,
+                                isset($data['date_from']) ? 'Desde '.Carbon::parse($data['date_from'])->format('d/m/Y') : null,
+                                isset($data['date_to']) ? 'hasta '.Carbon::parse($data['date_to'])->format('d/m/Y') : null,
+                            ])->filter()->join(' ') ?: null,
+                            default => null,
                         };
                     }),
 
@@ -302,14 +308,14 @@ class ManifestsTable
                     ->visible(function (): bool {
                         /** @var User $user */
                         $user = Auth::user();
+
                         return $user->isGlobalUser();
                     }),
             ])
 
             // ── Acciones por fila ──────────────────────────────────────
             ->recordAction('view')
-            ->recordUrl(fn (Manifest $record): string =>
-                ManifestResource::getUrl('view', ['record' => $record])
+            ->recordUrl(fn (Manifest $record): string => ManifestResource::getUrl('view', ['record' => $record])
             )
             ->recordActions([
                 ViewAction::make()
@@ -320,7 +326,8 @@ class ManifestsTable
                     ->hidden(function (Manifest $record): bool {
                         /** @var User $user */
                         $user = Auth::user();
-                        return $record->isClosed() || !$user->hasRole('super_admin');
+
+                        return $record->isClosed() || ! $user->hasRole('super_admin');
                     }),
 
                 Action::make('close')
@@ -334,6 +341,7 @@ class ManifestsTable
                     ->visible(function (Manifest $record): bool {
                         /** @var User $user */
                         $user = Auth::user();
+
                         return $record->isReadyToClose() && $user->hasAnyRole(['super_admin', 'admin']);
                     })
                     ->action(function (Manifest $record): void {
@@ -355,6 +363,7 @@ class ManifestsTable
                     ->visible(function (Manifest $record): bool {
                         /** @var User $user */
                         $user = Auth::user();
+
                         return $record->isClosed() && $user->hasRole('super_admin');
                     })
                     ->action(function (Manifest $record): void {
@@ -372,6 +381,7 @@ class ManifestsTable
                         ->visible(function (): bool {
                             /** @var User $user */
                             $user = Auth::user();
+
                             return $user->hasAnyRole(['super_admin', 'admin']);
                         }),
                 ]),

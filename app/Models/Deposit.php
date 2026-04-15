@@ -3,15 +3,15 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Facades\Storage;
-use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Activitylog\LogOptions;
+use Spatie\Activitylog\Traits\LogsActivity;
 
 class Deposit extends Model
 {
-    use SoftDeletes, LogsActivity;
+    use LogsActivity, SoftDeletes;
 
     protected $fillable = [
         'manifest_id', 'amount', 'deposit_date',
@@ -23,8 +23,8 @@ class Deposit extends Model
     protected function casts(): array
     {
         return [
-            'deposit_date'              => 'date',
-            'amount'                    => 'decimal:2',
+            'deposit_date' => 'date',
+            'amount' => 'decimal:2',
             'receipt_image_uploaded_at' => 'datetime',
         ];
     }
@@ -66,7 +66,7 @@ class Deposit extends Model
 
         // Limpiar el campo en BD para que no quede un apuntador roto.
         // saveQuietly() evita disparar eventos/observers innecesarios.
-        $this->receipt_image            = null;
+        $this->receipt_image = null;
         $this->receipt_image_uploaded_at = null;
         $this->saveQuietly();
     }

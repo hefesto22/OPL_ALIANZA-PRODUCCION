@@ -14,8 +14,8 @@ use Filament\Actions\CreateAction;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Select;
 use Filament\Notifications\Notification;
-use Filament\Schemas\Components\Tabs\Tab;
 use Filament\Resources\Pages\ListRecords;
+use Filament\Schemas\Components\Tabs\Tab;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
@@ -94,9 +94,9 @@ class ListReturns extends ListRecords
                             ->label('Estado')
                             ->placeholder('Todos los estados')
                             ->options([
-                                'pending'   => 'Pendiente',
-                                'approved'  => 'Aprobada',
-                                'rejected'  => 'Rechazada',
+                                'pending' => 'Pendiente',
+                                'approved' => 'Aprobada',
+                                'rejected' => 'Rechazada',
                                 'cancelled' => 'Cancelada',
                             ]),
 
@@ -113,13 +113,13 @@ class ListReturns extends ListRecords
                     ->modalSubmitActionLabel('Generar Reporte')
                     ->action(function (array $data): void {
                         $payload = Crypt::encryptString(json_encode([
-                            'date_from'    => $data['date_from']    ?? null,
-                            'date_to'      => $data['date_to']      ?? null,
-                            'status'       => $data['status']       ?? null,
+                            'date_from' => $data['date_from'] ?? null,
+                            'date_to' => $data['date_to'] ?? null,
+                            'status' => $data['status'] ?? null,
                             'warehouse_id' => $data['warehouse_id'] ?? null,
                         ]));
 
-                        $this->js("window.open('/imprimir/reportes/devoluciones?payload=" . urlencode($payload) . "', '_blank')");
+                        $this->js("window.open('/imprimir/reportes/devoluciones?payload=".urlencode($payload)."', '_blank')");
                     }),
 
                 // ── Export Excel ───────────────────────────────────────
@@ -142,9 +142,9 @@ class ListReturns extends ListRecords
                             ->label('Estado')
                             ->placeholder('Todos los estados')
                             ->options([
-                                'pending'   => 'Pendiente',
-                                'approved'  => 'Aprobada',
-                                'rejected'  => 'Rechazada',
+                                'pending' => 'Pendiente',
+                                'approved' => 'Aprobada',
+                                'rejected' => 'Rechazada',
                                 'cancelled' => 'Cancelada',
                             ]),
 
@@ -160,17 +160,17 @@ class ListReturns extends ListRecords
                     ->modalDescription('Seleccioná el período y filtros. Se generará en segundo plano y te notificaremos cuando esté listo.')
                     ->modalSubmitActionLabel('Exportar')
                     ->action(function (array $data): void {
-                        $fileName = 'devoluciones_interno_' . now()->format('Y-m-d') . '.xlsx';
+                        $fileName = 'devoluciones_interno_'.now()->format('Y-m-d').'.xlsx';
                         $filePath = "exports/{$fileName}";
 
                         (new ReturnsExport(
-                            status:      $data['status']       ?? null,
+                            status: $data['status'] ?? null,
                             warehouseId: $data['warehouse_id'] ?? null,
-                            dateFrom:    $data['date_from']    ?? null,
-                            dateTo:      $data['date_to']      ?? null,
+                            dateFrom: $data['date_from'] ?? null,
+                            dateTo: $data['date_to'] ?? null,
                         ))->queue($filePath, 'local')->chain([
                             new NotifyExportReady(
-                                userId:   Auth::id(),
+                                userId: Auth::id(),
                                 filePath: $filePath,
                                 fileName: $fileName,
                             ),
@@ -205,9 +205,9 @@ class ListReturns extends ListRecords
                             ->label('Estado')
                             ->placeholder('Todos los estados')
                             ->options([
-                                'pending'   => 'Pendiente',
-                                'approved'  => 'Aprobada',
-                                'rejected'  => 'Rechazada',
+                                'pending' => 'Pendiente',
+                                'approved' => 'Aprobada',
+                                'rejected' => 'Rechazada',
                                 'cancelled' => 'Cancelada',
                             ]),
 
@@ -224,23 +224,23 @@ class ListReturns extends ListRecords
                     ->modalSubmitActionLabel('Exportar')
                     ->action(function (array $data): void {
                         $from = $data['date_from'] ?? null;
-                        $to   = $data['date_to']   ?? null;
+                        $to = $data['date_to'] ?? null;
 
-                        $label    = $from && $to
-                            ? \Carbon\Carbon::parse($from)->format('d-m-Y') . ' HASTA ' . \Carbon\Carbon::parse($to)->format('d-m-Y')
+                        $label = $from && $to
+                            ? \Carbon\Carbon::parse($from)->format('d-m-Y').' HASTA '.\Carbon\Carbon::parse($to)->format('d-m-Y')
                             : now()->format('Y-m-d');
                         $fileName = "Devoluciones_{$label}.xlsx";
                         $filePath = "exports/{$fileName}";
 
                         // Despachar a cola — ReturnsDetailExport implementa ShouldQueue
                         (new ReturnsDetailExport(
-                            dateFrom:    $from,
-                            dateTo:      $to,
-                            status:      $data['status']       ?? null,
+                            dateFrom: $from,
+                            dateTo: $to,
+                            status: $data['status'] ?? null,
                             warehouseId: isset($data['warehouse_id']) ? (int) $data['warehouse_id'] : null,
                         ))->queue($filePath, 'local')->chain([
                             new NotifyExportReady(
-                                userId:   Auth::id(),
+                                userId: Auth::id(),
                                 filePath: $filePath,
                                 fileName: $fileName,
                             ),
@@ -259,5 +259,4 @@ class ListReturns extends ListRecords
                 ->color('info'),
         ];
     }
-
 }

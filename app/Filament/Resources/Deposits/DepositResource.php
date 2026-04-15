@@ -28,8 +28,11 @@ class DepositResource extends Resource
     protected static ?string $model = Deposit::class;
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-banknotes';
-    protected static ?string $navigationLabel  = 'Depósitos';
-    protected static ?string $modelLabel       = 'Depósito';
+
+    protected static ?string $navigationLabel = 'Depósitos';
+
+    protected static ?string $modelLabel = 'Depósito';
+
     protected static ?string $pluralModelLabel = 'Depósitos';
 
     /**
@@ -61,19 +64,19 @@ class DepositResource extends Resource
                 TextColumn::make('manifest.status')
                     ->label('Estado Manifiesto')
                     ->badge()
-                    ->color(fn(string $state) => match($state) {
-                        'pending'    => 'gray',
+                    ->color(fn (string $state) => match ($state) {
+                        'pending' => 'gray',
                         'processing' => 'warning',
-                        'imported'   => 'info',
-                        'closed'     => 'success',
-                        default      => 'gray',
+                        'imported' => 'info',
+                        'closed' => 'success',
+                        default => 'gray',
                     })
-                    ->formatStateUsing(fn(string $state) => match($state) {
-                        'pending'    => 'Pendiente',
+                    ->formatStateUsing(fn (string $state) => match ($state) {
+                        'pending' => 'Pendiente',
                         'processing' => 'Procesando',
-                        'imported'   => 'Importado',
-                        'closed'     => 'Cerrado',
-                        default      => $state,
+                        'imported' => 'Importado',
+                        'closed' => 'Cerrado',
+                        default => $state,
                     }),
 
                 TextColumn::make('deposit_date')
@@ -113,11 +116,11 @@ class DepositResource extends Resource
                 ViewAction::make(),
 
                 EditAction::make()
-                    ->hidden(fn(Deposit $record) => $record->manifest->isClosed()),
+                    ->hidden(fn (Deposit $record) => $record->manifest->isClosed()),
 
                 DeleteAction::make()
-                    ->hidden(fn(Deposit $record) => $record->manifest->isClosed())
-                    ->using(fn(Deposit $record) => app(DepositService::class)->deleteDeposit($record)),
+                    ->hidden(fn (Deposit $record) => $record->manifest->isClosed())
+                    ->using(fn (Deposit $record) => app(DepositService::class)->deleteDeposit($record)),
             ])
             ->toolbarActions([
                 BulkActionGroup::make([
@@ -134,6 +137,7 @@ class DepositResource extends Resource
                             foreach ($records as $record) {
                                 if ($record->manifest->isClosed()) {
                                     $blocked++;
+
                                     continue;
                                 }
                                 $service->deleteDeposit($record);
@@ -163,10 +167,10 @@ class DepositResource extends Resource
     public static function getPages(): array
     {
         return [
-            'index'  => ListDeposits::route('/'),
+            'index' => ListDeposits::route('/'),
             'create' => CreateDeposit::route('/create'),
-            'view'   => ViewDeposit::route('/{record}'),
-            'edit'   => EditDeposit::route('/{record}/edit'),
+            'view' => ViewDeposit::route('/{record}'),
+            'edit' => EditDeposit::route('/{record}/edit'),
         ];
     }
 }

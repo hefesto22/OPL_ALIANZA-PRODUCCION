@@ -24,10 +24,10 @@ class PruneActivityLog extends Command
 
     public function handle(): int
     {
-        $days      = (int) $this->option('days');
-        $cutoff    = now()->subDays($days)->toDateTimeString();
+        $days = (int) $this->option('days');
+        $cutoff = now()->subDays($days)->toDateTimeString();
         $batchSize = 1000;
-        $total     = 0;
+        $total = 0;
 
         $this->info("Eliminando registros de activity_log anteriores a {$cutoff} ({$days} días)...");
 

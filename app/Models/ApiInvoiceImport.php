@@ -29,8 +29,8 @@ class ApiInvoiceImport extends Model
     {
         return [
             'raw_payload' => 'array',
-            'warnings'    => 'array',
-            'errors'      => 'array',
+            'warnings' => 'array',
+            'errors' => 'array',
         ];
     }
 
@@ -46,7 +46,7 @@ class ApiInvoiceImport extends Model
     public function scopeWithPendingConflicts($query)
     {
         return $query->where('status', 'partial')
-                     ->whereHas('conflicts', fn($q) => $q->where('resolution', 'pending'));
+            ->whereHas('conflicts', fn ($q) => $q->where('resolution', 'pending'));
     }
 
     // ─── Helpers ──────────────────────────────────────────────
@@ -56,21 +56,21 @@ class ApiInvoiceImport extends Model
         $hasPending = ($summary['invoices_pending_review'] ?? 0) > 0;
 
         $this->update([
-            'status'                  => $hasPending ? 'partial' : 'processed',
-            'invoices_inserted'       => $summary['invoices_inserted'] ?? 0,
-            'invoices_updated'        => $summary['invoices_updated'] ?? 0,
-            'invoices_unchanged'      => $summary['invoices_unchanged'] ?? 0,
+            'status' => $hasPending ? 'partial' : 'processed',
+            'invoices_inserted' => $summary['invoices_inserted'] ?? 0,
+            'invoices_updated' => $summary['invoices_updated'] ?? 0,
+            'invoices_unchanged' => $summary['invoices_unchanged'] ?? 0,
             'invoices_pending_review' => $summary['invoices_pending_review'] ?? 0,
-            'invoices_rejected'       => $summary['invoices_rejected'] ?? 0,
-            'warnings'                => $summary['warnings'] ?? null,
-            'errors'                  => $summary['errors'] ?? null,
+            'invoices_rejected' => $summary['invoices_rejected'] ?? 0,
+            'warnings' => $summary['warnings'] ?? null,
+            'errors' => $summary['errors'] ?? null,
         ]);
     }
 
     public function markAsFailed(string $message): void
     {
         $this->update([
-            'status'          => 'failed',
+            'status' => 'failed',
             'failure_message' => $message,
         ]);
     }

@@ -7,10 +7,8 @@ use App\Models\Manifest;
 use App\Models\Supplier;
 use App\Models\User;
 use App\Models\Warehouse;
-use Filament\Notifications\DatabaseNotification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
@@ -25,7 +23,8 @@ class ProcessManifestImportTest extends TestCase
 {
     use RefreshDatabase;
 
-    protected User      $user;
+    protected User $user;
+
     protected Warehouse $warehouse;
 
     protected function setUp(): void
@@ -36,7 +35,7 @@ class ProcessManifestImportTest extends TestCase
 
         Supplier::factory()->create(['is_active' => true]);
         $this->warehouse = Warehouse::factory()->oac()->create();
-        $this->user      = User::factory()->create();
+        $this->user = User::factory()->create();
 
         Storage::fake('local');
     }
@@ -49,34 +48,34 @@ class ProcessManifestImportTest extends TestCase
         $seq++;
 
         return array_merge([
-            'Id'                => $seq * 1000,
-            'NumeroManifiesto'  => 'MAN-JOB-001',
-            'Nfactura'          => "FJ-{$seq}",
-            'FechaFactura'      => '2026-04-10',
-            'Vendedorid'        => 'V01',
-            'Vendedor'          => 'VENDEDOR',
-            'Clienteid'         => 'C001',
-            'Cliente'           => 'PULPERIA TEST',
-            'Almacen'           => 'OAC',
-            'Total'             => 1000.00,
+            'Id' => $seq * 1000,
+            'NumeroManifiesto' => 'MAN-JOB-001',
+            'Nfactura' => "FJ-{$seq}",
+            'FechaFactura' => '2026-04-10',
+            'Vendedorid' => 'V01',
+            'Vendedor' => 'VENDEDOR',
+            'Clienteid' => 'C001',
+            'Cliente' => 'PULPERIA TEST',
+            'Almacen' => 'OAC',
+            'Total' => 1000.00,
             'DescuentosRebajas' => 0,
-            'Isv18'             => 0,
-            'Isv15'             => 0,
-            'ImporteExcento'        => 0,
-            'ImporteExento_Desc'    => 0,
-            'ImporteExento_ISV18'   => 0,
-            'ImporteExento_ISV15'   => 0,
-            'ImporteExento_Total'   => 0,
-            'ImporteExonerado'      => 0,
+            'Isv18' => 0,
+            'Isv15' => 0,
+            'ImporteExcento' => 0,
+            'ImporteExento_Desc' => 0,
+            'ImporteExento_ISV18' => 0,
+            'ImporteExento_ISV15' => 0,
+            'ImporteExento_Total' => 0,
+            'ImporteExonerado' => 0,
             'ImporteExonerado_Desc' => 0,
-            'ImporteExonerado_ISV18'=> 0,
-            'ImporteExonerado_ISV15'=> 0,
-            'ImporteExonerado_Total'=> 0,
-            'ImporteGrabado'        => 1000.00,
-            'ImporteGravado_Desc'   => 0,
-            'ImporteGravado_ISV18'  => 0,
-            'ImporteGravado_ISV15'  => 0,
-            'ImporteGravado_Total'  => 1000.00,
+            'ImporteExonerado_ISV18' => 0,
+            'ImporteExonerado_ISV15' => 0,
+            'ImporteExonerado_Total' => 0,
+            'ImporteGrabado' => 1000.00,
+            'ImporteGravado_Desc' => 0,
+            'ImporteGravado_ISV18' => 0,
+            'ImporteGravado_ISV15' => 0,
+            'ImporteGravado_Total' => 1000.00,
             'LineasFactura' => [
                 [
                     'Id' => $seq * 10000 + 1, 'InvoiceId' => $seq * 1000,
@@ -95,6 +94,7 @@ class ProcessManifestImportTest extends TestCase
     private function storeJsonFile(array $invoices, string $path = 'imports/test.json'): string
     {
         Storage::disk('local')->put($path, json_encode($invoices));
+
         return $path;
     }
 
@@ -219,6 +219,7 @@ class ProcessManifestImportTest extends TestCase
 
         $hasError = $notifications->contains(function ($n) {
             $data = json_decode($n->data, true);
+
             return str_contains($data['body'] ?? '', 'bad.json');
         });
 
@@ -246,6 +247,7 @@ class ProcessManifestImportTest extends TestCase
 
         $hasError = $notifications->contains(function ($n) {
             $data = json_decode($n->data, true);
+
             return str_contains($data['body'] ?? '', 'proveedor activo');
         });
 

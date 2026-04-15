@@ -29,9 +29,11 @@ class DepositServiceTest extends TestCase
 {
     use RefreshDatabase;
 
-    private Manifest   $manifest;
-    private Warehouse  $warehouse;
-    private User       $user;
+    private Manifest $manifest;
+
+    private Warehouse $warehouse;
+
+    private User $user;
 
     protected function setUp(): void
     {
@@ -40,20 +42,20 @@ class DepositServiceTest extends TestCase
         Role::create(['name' => 'super_admin', 'guard_name' => 'web']);
         Role::create(['name' => 'admin',       'guard_name' => 'web']);
 
-        $supplier        = Supplier::factory()->create(['is_active' => true]);
+        $supplier = Supplier::factory()->create(['is_active' => true]);
         $this->warehouse = Warehouse::factory()->oac()->create();
-        $this->user      = User::factory()->create();
+        $this->user = User::factory()->create();
 
         // Manifiesto abierto con 1 factura de HNL 1,000
         $this->manifest = Manifest::factory()->create([
             'supplier_id' => $supplier->id,
-            'status'      => 'imported',
+            'status' => 'imported',
         ]);
 
         Invoice::factory()->create([
-            'manifest_id'  => $this->manifest->id,
+            'manifest_id' => $this->manifest->id,
             'warehouse_id' => $this->warehouse->id,
-            'total'        => 1000.00,
+            'total' => 1000.00,
         ]);
 
         // Inicializar total_to_deposit correctamente
@@ -69,10 +71,10 @@ class DepositServiceTest extends TestCase
     private function depositData(array $overrides = []): array
     {
         return array_merge([
-            'amount'       => 500.00,
+            'amount' => 500.00,
             'deposit_date' => now()->toDateString(),
-            'bank'         => 'BAC',
-            'reference'    => 'REF-001',
+            'bank' => 'BAC',
+            'reference' => 'REF-001',
             'observations' => null,
         ], $overrides);
     }

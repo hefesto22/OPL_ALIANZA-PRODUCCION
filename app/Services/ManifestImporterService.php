@@ -9,7 +9,8 @@ use Illuminate\Support\Facades\DB;
 
 class ManifestImporterService
 {
-    protected array $warnings          = [];
+    protected array $warnings = [];
+
     protected array $unknownWarehouses = [];
 
     /** Cache de bodegas: ['OAC' => 1, 'OAO' => 2, 'OAS' => 3] */
@@ -60,21 +61,21 @@ class ManifestImporterService
         // al administrador saber exactamente qué configurar para solucionarlo.
         $supplier = Supplier::where('is_active', true)->first()
             ?? throw new \RuntimeException(
-                'No se encontró ningún proveedor activo en el sistema. ' .
+                'No se encontró ningún proveedor activo en el sistema. '.
                 'Configure al menos un proveedor activo antes de importar manifiestos.'
             );
 
         $first = collect($rawData)->first();
 
         return Manifest::create([
-            'supplier_id'  => $supplier->id,
+            'supplier_id' => $supplier->id,
             'warehouse_id' => null,
-            'number'       => $first['NumeroManifiesto'],
-            'date'         => now()->toDateString(),
-            'status'       => 'imported',
-            'raw_json'     => $rawData,
-            'created_by'   => $userId,
-            'updated_by'   => $userId,
+            'number' => $first['NumeroManifiesto'],
+            'date' => now()->toDateString(),
+            'status' => 'imported',
+            'raw_json' => $rawData,
+            'created_by' => $userId,
+            'updated_by' => $userId,
         ]);
     }
 
@@ -90,10 +91,10 @@ class ManifestImporterService
         $invoiceRows = [];
         foreach ($chunk as $invoiceData) {
             $warehouseCode = $invoiceData['Almacen'] ?? null;
-            $warehouseId   = $this->warehouseMap[$warehouseCode] ?? null;
+            $warehouseId = $this->warehouseMap[$warehouseCode] ?? null;
 
-            if (!$warehouseId && $warehouseCode) {
-                if (!in_array($warehouseCode, $this->unknownWarehouses)) {
+            if (! $warehouseId && $warehouseCode) {
+                if (! in_array($warehouseCode, $this->unknownWarehouses)) {
                     $this->unknownWarehouses[] = $warehouseCode;
                 }
             }
@@ -160,10 +161,10 @@ class ManifestImporterService
         // conexión de Laravel, por lo que las FK se satisfacen sin commitear.
         DB::transaction(function () use ($invoiceRows, $chunk, $now) {
             // PASO 1: Insertar facturas con INSERT...RETURNING
-            $columnsList = implode(', ', array_map(fn($c) => "\"{$c}\"", self::INVOICE_COLUMNS));
-            $placeholder = '(' . implode(', ', array_fill(0, count(self::INVOICE_COLUMNS), '?')) . ')';
-            $bindings    = [];
-            $valueRows   = [];
+            $columnsList = implode(', ', array_map(fn ($c) => "\"{$c}\"", self::INVOICE_COLUMNS));
+            $placeholder = '('.implode(', ', array_fill(0, count(self::INVOICE_COLUMNS), '?')).')';
+            $bindings = [];
+            $valueRows = [];
 
             foreach ($invoiceRows as $row) {
                 $valueRows[] = $placeholder;
@@ -171,8 +172,8 @@ class ManifestImporterService
             }
 
             $sql = "INSERT INTO \"invoices\" ({$columnsList}) VALUES "
-                 . implode(', ', $valueRows)
-                 . " RETURNING \"id\", \"jaremar_id\"";
+                 .implode(', ', $valueRows)
+                 .' RETURNING "id", "jaremar_id"';
 
             $inserted = DB::select($sql, $bindings);
 
@@ -183,39 +184,39 @@ class ManifestImporterService
             foreach ($chunk as $invoiceData) {
                 $invoiceId = $jarimarToInvoiceId[$invoiceData['Id'] ?? null] ?? null;
 
-                if (!$invoiceId || empty($invoiceData['LineasFactura'])) {
+                if (! $invoiceId || empty($invoiceData['LineasFactura'])) {
                     continue;
                 }
 
                 foreach ($invoiceData['LineasFactura'] as $lineData) {
                     $lineRows[] = [
-                        'invoice_id'          => $invoiceId,
-                        'jaremar_line_id'     => $lineData['Id'] ?? null,
-                        'invoice_jaremar_id'  => isset($lineData['InvoiceId']) ? (int) $lineData['InvoiceId'] : null,
-                        'line_number'         => (int)    ($lineData['NumeroLinea']            ?? 0),
-                        'product_id'          => (string) ($lineData['ProductoId']             ?? ''),
-                        'product_description' => (string) ($lineData['ProductoDesc']           ?? ''),
-                        'product_type'        => isset($lineData['TipoProducto']) ? (string) $lineData['TipoProducto'] : null,
-                        'unit_sale'           => isset($lineData['UniVenta'])      ? (string) $lineData['UniVenta']     : null,
-                        'quantity_fractions'   => (float) ($lineData['CantidadFracciones']     ?? 0),
-                        'quantity_decimal'     => (float) ($lineData['CantidadDecimal']        ?? 0),
-                        'quantity_box'         => (float) ($lineData['CantidadCaja']           ?? 0),
-                        'quantity_min_sale'    => (float) ($lineData['CantidadUnidadMinVenta'] ?? 0),
-                        'conversion_factor'    => (int)   ($lineData['FactorConversion']       ?? 1),
-                        'cost'                => (float) ($lineData['Costo']                   ?? 0),
-                        'price'               => (float) ($lineData['Precio']                  ?? 0),
-                        'price_min_sale'      => (float) ($lineData['PrecioUnidadMinVenta']   ?? 0),
-                        'subtotal'            => (float) ($lineData['Subtotal']                ?? 0),
-                        'discount'            => (float) ($lineData['Descuento']               ?? 0),
-                        'discount_percent'    => (float) ($lineData['PorcentajeDescuento']     ?? 0),
-                        'tax'                 => (float) ($lineData['Impuesto']                ?? 0),
-                        'tax_percent'         => (float) ($lineData['PorcentajeImpuesto']      ?? 0),
-                        'tax18'               => (float) ($lineData['Impuesto18']              ?? 0),
-                        'total'               => (float) ($lineData['Total']                   ?? 0),
-                        'weight'              => (float) ($lineData['Peso']                    ?? 0),
-                        'volume'              => (float) ($lineData['Volumen']                 ?? 0),
-                        'created_at'          => $now,
-                        'updated_at'          => $now,
+                        'invoice_id' => $invoiceId,
+                        'jaremar_line_id' => $lineData['Id'] ?? null,
+                        'invoice_jaremar_id' => isset($lineData['InvoiceId']) ? (int) $lineData['InvoiceId'] : null,
+                        'line_number' => (int) ($lineData['NumeroLinea'] ?? 0),
+                        'product_id' => (string) ($lineData['ProductoId'] ?? ''),
+                        'product_description' => (string) ($lineData['ProductoDesc'] ?? ''),
+                        'product_type' => isset($lineData['TipoProducto']) ? (string) $lineData['TipoProducto'] : null,
+                        'unit_sale' => isset($lineData['UniVenta']) ? (string) $lineData['UniVenta'] : null,
+                        'quantity_fractions' => (float) ($lineData['CantidadFracciones'] ?? 0),
+                        'quantity_decimal' => (float) ($lineData['CantidadDecimal'] ?? 0),
+                        'quantity_box' => (float) ($lineData['CantidadCaja'] ?? 0),
+                        'quantity_min_sale' => (float) ($lineData['CantidadUnidadMinVenta'] ?? 0),
+                        'conversion_factor' => (int) ($lineData['FactorConversion'] ?? 1),
+                        'cost' => (float) ($lineData['Costo'] ?? 0),
+                        'price' => (float) ($lineData['Precio'] ?? 0),
+                        'price_min_sale' => (float) ($lineData['PrecioUnidadMinVenta'] ?? 0),
+                        'subtotal' => (float) ($lineData['Subtotal'] ?? 0),
+                        'discount' => (float) ($lineData['Descuento'] ?? 0),
+                        'discount_percent' => (float) ($lineData['PorcentajeDescuento'] ?? 0),
+                        'tax' => (float) ($lineData['Impuesto'] ?? 0),
+                        'tax_percent' => (float) ($lineData['PorcentajeImpuesto'] ?? 0),
+                        'tax18' => (float) ($lineData['Impuesto18'] ?? 0),
+                        'total' => (float) ($lineData['Total'] ?? 0),
+                        'weight' => (float) ($lineData['Peso'] ?? 0),
+                        'volume' => (float) ($lineData['Volumen'] ?? 0),
+                        'created_at' => $now,
+                        'updated_at' => $now,
                     ];
                 }
             }
@@ -231,7 +232,9 @@ class ManifestImporterService
 
     protected function parseDate(?string $date): ?string
     {
-        if (!$date) return null;
+        if (! $date) {
+            return null;
+        }
         try {
             return \Carbon\Carbon::parse($date)->toDateString();
         } catch (\Exception $e) {
@@ -239,7 +242,18 @@ class ManifestImporterService
         }
     }
 
-    public function getWarnings(): array         { return $this->warnings; }
-    public function getUnknownWarehouses(): array { return $this->unknownWarehouses; }
-    public function hasUnknownWarehouses(): bool  { return !empty($this->unknownWarehouses); }
+    public function getWarnings(): array
+    {
+        return $this->warnings;
+    }
+
+    public function getUnknownWarehouses(): array
+    {
+        return $this->unknownWarehouses;
+    }
+
+    public function hasUnknownWarehouses(): bool
+    {
+        return ! empty($this->unknownWarehouses);
+    }
 }

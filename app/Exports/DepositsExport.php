@@ -12,7 +12,7 @@ use Maatwebsite\Excel\Concerns\WithStyles;
 use Maatwebsite\Excel\Concerns\WithTitle;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 
-class DepositsExport implements FromQuery, WithHeadings, WithMapping, WithStyles, ShouldAutoSize, WithTitle
+class DepositsExport implements FromQuery, ShouldAutoSize, WithHeadings, WithMapping, WithStyles, WithTitle
 {
     public function __construct(
         private readonly ?string $dateFrom = null,
@@ -55,12 +55,12 @@ class DepositsExport implements FromQuery, WithHeadings, WithMapping, WithStyles
         return [
             $deposit->id,
             $deposit->manifest?->number ?? '—',
-            match($deposit->manifest?->status) {
-                'pending'    => 'Pendiente',
+            match ($deposit->manifest?->status) {
+                'pending' => 'Pendiente',
                 'processing' => 'Procesando',
-                'imported'   => 'Importado',
-                'closed'     => 'Cerrado',
-                default      => $deposit->manifest?->status ?? '—',
+                'imported' => 'Importado',
+                'closed' => 'Cerrado',
+                default => $deposit->manifest?->status ?? '—',
             },
             $deposit->deposit_date ? \Carbon\Carbon::parse($deposit->deposit_date)->format('d/m/Y') : '—',
             number_format($deposit->amount, 2),
@@ -76,8 +76,8 @@ class DepositsExport implements FromQuery, WithHeadings, WithMapping, WithStyles
     {
         return [
             1 => [
-                'font'      => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
-                'fill'      => ['fillType' => 'solid', 'startColor' => ['rgb' => '1B3A6B']],
+                'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
+                'fill' => ['fillType' => 'solid', 'startColor' => ['rgb' => '1B3A6B']],
                 'alignment' => ['horizontal' => 'center'],
             ],
         ];

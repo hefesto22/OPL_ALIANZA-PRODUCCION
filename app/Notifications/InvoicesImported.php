@@ -27,12 +27,12 @@ use Illuminate\Notifications\Notification;
 class InvoicesImported extends Notification
 {
     public function __construct(
-        protected string  $title,
-        protected string  $body,
+        protected string $title,
+        protected string $body,
         protected ?string $actionUrl = null,
         protected ?string $actionLabel = null,
-        protected string  $icon = 'heroicon-o-inbox-arrow-down',
-        protected string  $iconColor = 'success',
+        protected string $icon = 'heroicon-o-inbox-arrow-down',
+        protected string $iconColor = 'success',
     ) {}
 
     /**
@@ -56,40 +56,40 @@ class InvoicesImported extends Notification
     public function toDatabase(object $notifiable): array
     {
         $data = [
-            'title'     => $this->title,
-            'body'      => $this->body,
-            'icon'      => $this->icon,
+            'title' => $this->title,
+            'body' => $this->body,
+            'icon' => $this->icon,
             'iconColor' => $this->iconColor,
-            'format'    => 'filament',
-            'duration'  => 'persistent',
-            'actions'   => [],
+            'format' => 'filament',
+            'duration' => 'persistent',
+            'actions' => [],
         ];
 
         if ($this->actionUrl) {
             $data['actions'][] = [
-                'name'                 => 'ver_manifiesto',
-                'label'                => $this->actionLabel ?? 'Ver Manifiesto',
-                'url'                  => $this->actionUrl,
-                'color'                => null,
-                'icon'                 => null,
-                'iconPosition'         => null,
-                'iconSize'             => null,
-                'isOutlined'           => false,
-                'isDisabled'           => false,
-                'shouldClose'          => false,
-                'shouldMarkAsRead'     => true,
-                'shouldMarkAsUnread'   => false,
+                'name' => 'ver_manifiesto',
+                'label' => $this->actionLabel ?? 'Ver Manifiesto',
+                'url' => $this->actionUrl,
+                'color' => null,
+                'icon' => null,
+                'iconPosition' => null,
+                'iconSize' => null,
+                'isOutlined' => false,
+                'isDisabled' => false,
+                'shouldClose' => false,
+                'shouldMarkAsRead' => true,
+                'shouldMarkAsUnread' => false,
                 'shouldOpenUrlInNewTab' => false,
-                'shouldPostToUrl'      => false,
-                'size'                 => null,
-                'tooltip'              => null,
-                'view'                 => null,
-                'event'                => null,
-                'eventData'            => null,
-                'dispatchDirection'    => null,
-                'dispatchToComponent'  => null,
-                'extraAttributes'      => [],
-                'alpineClickHandler'   => null,
+                'shouldPostToUrl' => false,
+                'size' => null,
+                'tooltip' => null,
+                'view' => null,
+                'event' => null,
+                'eventData' => null,
+                'dispatchDirection' => null,
+                'dispatchToComponent' => null,
+                'extraAttributes' => [],
+                'alpineClickHandler' => null,
             ];
         }
 

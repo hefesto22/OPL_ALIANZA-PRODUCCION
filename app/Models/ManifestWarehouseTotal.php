@@ -17,11 +17,11 @@ class ManifestWarehouseTotal extends Model
     protected function casts(): array
     {
         return [
-            'total_invoices'   => 'decimal:2',
-            'total_returns'    => 'decimal:2',
+            'total_invoices' => 'decimal:2',
+            'total_returns' => 'decimal:2',
             'total_to_deposit' => 'decimal:2',
-            'total_deposited'  => 'decimal:2',
-            'difference'       => 'decimal:2',
+            'total_deposited' => 'decimal:2',
+            'difference' => 'decimal:2',
         ];
     }
 

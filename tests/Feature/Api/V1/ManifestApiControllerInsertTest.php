@@ -41,9 +41,9 @@ class ManifestApiControllerInsertTest extends TestCase
         // con el throttling durante los tests (excepto el test dedicado
         // de rate limit que lo baja explícitamente).
         config([
-            'api.jaremar_api_key'              => self::API_KEY,
+            'api.jaremar_api_key' => self::API_KEY,
             'api.rate_limit_insertar_per_minute' => 100,
-            'api.rate_limit_per_minute'          => 100,
+            'api.rate_limit_per_minute' => 100,
         ]);
 
         // Roles de Spatie: el controller llama User::role(['super_admin',
@@ -74,49 +74,49 @@ class ManifestApiControllerInsertTest extends TestCase
     private function invoicePayload(array $overrides = []): array
     {
         return array_merge([
-            'Nfactura'         => 'F' . fake()->unique()->numerify('########'),
+            'Nfactura' => 'F'.fake()->unique()->numerify('########'),
             'NumeroManifiesto' => 'MAN100001',
-            'Total'            => 450.0,
-            'FechaFactura'     => now()->toIso8601String(),
-            'Almacen'          => 'OAC',
-            'Vendedorid'       => 'V01',
-            'Vendedor'         => 'VENDEDOR PRUEBA',
-            'Clienteid'        => 'C001',
-            'Cliente'          => 'PULPERIA PRUEBA',
-            'Rtn'              => '',
-            'TipoPago'         => 'CONTADO',
-            'DiasCred'         => 0,
-            'TipoFactura'      => 'FAC',
-            'EstadoFactura'    => 1,
-            'NumeroFacturaLX'  => 'LX' . fake()->unique()->numerify('######'),
-            'NumeroPedido'     => 'PED' . fake()->unique()->numerify('######'),
-            'NumeroRuta'       => '001',
-            'Direccion'        => 'COL. TEST, TEGUCIGALPA',
-            'EntregarA'        => 'PULPERIA PRUEBA',
-            'LineasFactura'    => [[
-                'ProductoId'   => 'ART-TEST-001',
+            'Total' => 450.0,
+            'FechaFactura' => now()->toIso8601String(),
+            'Almacen' => 'OAC',
+            'Vendedorid' => 'V01',
+            'Vendedor' => 'VENDEDOR PRUEBA',
+            'Clienteid' => 'C001',
+            'Cliente' => 'PULPERIA PRUEBA',
+            'Rtn' => '',
+            'TipoPago' => 'CONTADO',
+            'DiasCred' => 0,
+            'TipoFactura' => 'FAC',
+            'EstadoFactura' => 1,
+            'NumeroFacturaLX' => 'LX'.fake()->unique()->numerify('######'),
+            'NumeroPedido' => 'PED'.fake()->unique()->numerify('######'),
+            'NumeroRuta' => '001',
+            'Direccion' => 'COL. TEST, TEGUCIGALPA',
+            'EntregarA' => 'PULPERIA PRUEBA',
+            'LineasFactura' => [[
+                'ProductoId' => 'ART-TEST-001',
                 'ProductoDesc' => 'PRODUCTO DE PRUEBA',
-                'NumeroLinea'  => 1,
-                'Total'        => 450.0,
-                'Precio'       => 15.0,
-                'Subtotal'     => 450.0,
-                'Costo'        => 0.0,
+                'NumeroLinea' => 1,
+                'Total' => 450.0,
+                'Precio' => 15.0,
+                'Subtotal' => 450.0,
+                'Costo' => 0.0,
                 'CantidadFracciones' => 30.0,
-                'CantidadDecimal'    => 30.0,
-                'CantidadCaja'       => 0.0,
-                'FactorConversion'   => 1,
-                'UniVenta'           => 'UN',
-                'TipoProducto'       => 'A',
-                'Descuento'          => 0.0,
-                'Impuesto'           => 0.0,
-                'Impuesto18'         => 0.0,
+                'CantidadDecimal' => 30.0,
+                'CantidadCaja' => 0.0,
+                'FactorConversion' => 1,
+                'UniVenta' => 'UN',
+                'TipoProducto' => 'A',
+                'Descuento' => 0.0,
+                'Impuesto' => 0.0,
+                'Impuesto18' => 0.0,
                 'PorcentajeDescuento' => 0.0,
-                'PorcentajeImpuesto'  => 0.0,
+                'PorcentajeImpuesto' => 0.0,
                 'CantidadUnidadMinVenta' => 30.0,
-                'PrecioUnidadMinVenta'   => 15.0,
-                'Peso'    => 0.0,
+                'PrecioUnidadMinVenta' => 15.0,
+                'Peso' => 0.0,
                 'Volumen' => 0.0,
-                'Id'      => fake()->unique()->numberBetween(1, 999999),
+                'Id' => fake()->unique()->numberBetween(1, 999999),
                 'InvoiceId' => fake()->numberBetween(1, 999999),
             ]],
         ], $overrides);
@@ -129,6 +129,7 @@ class ManifestApiControllerInsertTest extends TestCase
     private function postInsertar(array $payload, ?string $apiKey = self::API_KEY)
     {
         $headers = $apiKey !== null ? ['ApiKey' => $apiKey] : [];
+
         return $this->postJson('/api/v1/facturas/insertar', $payload, $headers);
     }
 
@@ -173,15 +174,15 @@ class ManifestApiControllerInsertTest extends TestCase
         // definidos; lo que validamos acá es que el server rechaza valores
         // vacíos, que es el caso realista.
         $badInvoice = [
-            'Nfactura'         => null,
+            'Nfactura' => null,
             'NumeroManifiesto' => null,
-            'LineasFactura'    => null,
-            'Total'            => 100,
-            'Almacen'          => 'OAC',
-            'Cliente'          => 'X',
-            'Clienteid'        => 'C1',
-            'Vendedorid'       => 'V01',
-            'FechaFactura'     => now()->toDateString(),
+            'LineasFactura' => null,
+            'Total' => 100,
+            'Almacen' => 'OAC',
+            'Cliente' => 'X',
+            'Clienteid' => 'C1',
+            'Vendedorid' => 'V01',
+            'FechaFactura' => now()->toDateString(),
         ];
 
         $response = $this->postInsertar([$badInvoice]);
@@ -201,10 +202,10 @@ class ManifestApiControllerInsertTest extends TestCase
     public function test_insert_creates_new_manifest_with_invoices_and_lines(): void
     {
         $payload = [$this->invoicePayload([
-            'Nfactura'         => 'F99100001',
+            'Nfactura' => 'F99100001',
             'NumeroManifiesto' => 'MAN999001',
-            'Total'            => 450.0,
-            'Almacen'          => 'OAC',
+            'Total' => 450.0,
+            'Almacen' => 'OAC',
         ])];
 
         $response = $this->postInsertar($payload);
@@ -213,7 +214,7 @@ class ManifestApiControllerInsertTest extends TestCase
         $response->assertJson([
             'success' => true,
             'resumen' => [
-                'recibidas'  => 1,
+                'recibidas' => 1,
                 'insertadas' => 1,
             ],
         ]);
@@ -249,17 +250,17 @@ class ManifestApiControllerInsertTest extends TestCase
         $payload = [
             $this->invoicePayload([
                 'Nfactura' => 'F10000001', 'NumeroManifiesto' => 'MAN001',
-                'Almacen'  => 'OAC', 'Total' => 1000.0,
+                'Almacen' => 'OAC', 'Total' => 1000.0,
                 'LineasFactura' => [array_merge($this->invoicePayload()['LineasFactura'][0], ['Total' => 1000.0])],
             ]),
             $this->invoicePayload([
                 'Nfactura' => 'F10000002', 'NumeroManifiesto' => 'MAN001',
-                'Almacen'  => 'OAS', 'Total' => 500.0,
+                'Almacen' => 'OAS', 'Total' => 500.0,
                 'LineasFactura' => [array_merge($this->invoicePayload()['LineasFactura'][0], ['Total' => 500.0])],
             ]),
             $this->invoicePayload([
                 'Nfactura' => 'F10000003', 'NumeroManifiesto' => 'MAN002',
-                'Almacen'  => 'OAO', 'Total' => 800.0,
+                'Almacen' => 'OAO', 'Total' => 800.0,
                 'LineasFactura' => [array_merge($this->invoicePayload()['LineasFactura'][0], ['Total' => 800.0])],
             ]),
         ];
@@ -291,9 +292,9 @@ class ManifestApiControllerInsertTest extends TestCase
         // timeout o error de red), el hash detector debe devolver 200
         // con el resumen del batch original SIN insertar nada nuevo.
         $payload = [$this->invoicePayload([
-            'Nfactura'         => 'FDUP0001',
+            'Nfactura' => 'FDUP0001',
             'NumeroManifiesto' => 'MANDUP001',
-            'Total'            => 200.0,
+            'Total' => 200.0,
         ])];
 
         $first = $this->postInsertar($payload);
@@ -315,10 +316,10 @@ class ManifestApiControllerInsertTest extends TestCase
     {
         // Primer POST: factura nueva.
         $first = [$this->invoicePayload([
-            'Nfactura'         => 'FCONF0001',
+            'Nfactura' => 'FCONF0001',
             'NumeroManifiesto' => 'MANCONF001',
-            'Total'            => 500.0,
-            'LineasFactura'    => [array_merge($this->invoicePayload()['LineasFactura'][0], ['Total' => 500.0])],
+            'Total' => 500.0,
+            'LineasFactura' => [array_merge($this->invoicePayload()['LineasFactura'][0], ['Total' => 500.0])],
         ])];
         $this->postInsertar($first)->assertStatus(200);
 
@@ -326,10 +327,10 @@ class ManifestApiControllerInsertTest extends TestCase
         // un conflict y terminar en invoices_pending_review, NO
         // sobrescribir la factura original.
         $second = [$this->invoicePayload([
-            'Nfactura'         => 'FCONF0001',
+            'Nfactura' => 'FCONF0001',
             'NumeroManifiesto' => 'MANCONF001',
-            'Total'            => 999.0,  // ← cambió
-            'LineasFactura'    => [array_merge($this->invoicePayload()['LineasFactura'][0], ['Total' => 999.0])],
+            'Total' => 999.0,  // ← cambió
+            'LineasFactura' => [array_merge($this->invoicePayload()['LineasFactura'][0], ['Total' => 999.0])],
         ])];
         $response = $this->postInsertar($second);
 
@@ -337,7 +338,7 @@ class ManifestApiControllerInsertTest extends TestCase
         $response->assertJson([
             'success' => true,
             'resumen' => [
-                'insertadas'          => 0,
+                'insertadas' => 0,
                 'pendientes_revision' => 1,
             ],
         ]);
@@ -356,9 +357,9 @@ class ManifestApiControllerInsertTest extends TestCase
         // Almacén desconocido — rechazo total del grupo de ese manifiesto
         // con 422 ALMACENES_DESCONOCIDOS.
         $payload = [$this->invoicePayload([
-            'Nfactura'         => 'FUNK0001',
+            'Nfactura' => 'FUNK0001',
             'NumeroManifiesto' => 'MANUNK001',
-            'Almacen'          => 'ZZZ',  // ← no existe en warehouseMap
+            'Almacen' => 'ZZZ',  // ← no existe en warehouseMap
         ])];
 
         $response = $this->postInsertar($payload);
@@ -366,7 +367,7 @@ class ManifestApiControllerInsertTest extends TestCase
         $response->assertStatus(422);
         $response->assertJson([
             'success' => false,
-            'motivo'  => 'ALMACENES_DESCONOCIDOS',
+            'motivo' => 'ALMACENES_DESCONOCIDOS',
         ]);
 
         // El manifest SÍ se creó (porque el controller crea el record de
@@ -384,9 +385,9 @@ class ManifestApiControllerInsertTest extends TestCase
         ]);
 
         $payload = [$this->invoicePayload([
-            'Nfactura'         => 'FCLOSED01',
+            'Nfactura' => 'FCLOSED01',
             'NumeroManifiesto' => 'MANCLOSED',
-            'Total'            => 300.0,
+            'Total' => 300.0,
         ])];
 
         $response = $this->postInsertar($payload);
@@ -414,13 +415,13 @@ class ManifestApiControllerInsertTest extends TestCase
         // que fue creado en un día anterior — eso indicaría que el OPL
         // mandó datos fuera de ventana.
         Manifest::factory()->create([
-            'number'     => 'MANPAST001',
+            'number' => 'MANPAST001',
             'created_at' => now()->subDay(),
             'updated_at' => now()->subDay(),
         ]);
 
         $payload = [$this->invoicePayload([
-            'Nfactura'         => 'FPAST0001',
+            'Nfactura' => 'FPAST0001',
             'NumeroManifiesto' => 'MANPAST001',
         ])];
 
@@ -429,7 +430,7 @@ class ManifestApiControllerInsertTest extends TestCase
         $response->assertStatus(422);
         $response->assertJson([
             'success' => false,
-            'motivo'  => 'MANIFIESTOS_FECHA_INVALIDA',
+            'motivo' => 'MANIFIESTOS_FECHA_INVALIDA',
         ]);
         $response->assertJsonStructure([
             'manifiestos_rechazados' => [
@@ -448,7 +449,7 @@ class ManifestApiControllerInsertTest extends TestCase
         // nuevo válido, Jaremar necesita saber QUÉ manifiestos reenviar
         // en un batch separado. El controller debe listar ambos grupos.
         Manifest::factory()->create([
-            'number'     => 'MANPAST002',
+            'number' => 'MANPAST002',
             'created_at' => now()->subDays(2),
             'updated_at' => now()->subDays(2),
         ]);
@@ -467,16 +468,16 @@ class ManifestApiControllerInsertTest extends TestCase
         $response->assertStatus(422);
         $response->assertJson([
             'success' => false,
-            'motivo'  => 'MANIFIESTOS_FECHA_INVALIDA',
+            'motivo' => 'MANIFIESTOS_FECHA_INVALIDA',
         ]);
         // Cantidades cuadran: 2 recibidas, 1 rechazada, 1 válida pero
         // no insertada porque todo el batch falla.
         $response->assertJson([
             'resumen' => [
-                'total_recibidas'  => 2,
+                'total_recibidas' => 2,
                 'total_rechazadas' => 1,
-                'total_validas'    => 1,
-                'insertadas'       => 0,
+                'total_validas' => 1,
+                'insertadas' => 0,
             ],
         ]);
         $this->assertNotEmpty($response->json('manifiestos_no_afectados'));
@@ -495,14 +496,14 @@ class ManifestApiControllerInsertTest extends TestCase
         config(['api.rate_limit_insertar_per_minute' => 1]);
 
         $payload = [$this->invoicePayload([
-            'Nfactura'         => 'FRL0001',
+            'Nfactura' => 'FRL0001',
             'NumeroManifiesto' => 'MANRL001',
         ])];
 
         $this->postInsertar($payload)->assertStatus(200);
 
         $second = $this->postInsertar([$this->invoicePayload([
-            'Nfactura'         => 'FRL0002',
+            'Nfactura' => 'FRL0002',
             'NumeroManifiesto' => 'MANRL002',
         ])]);
 

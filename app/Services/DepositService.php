@@ -18,7 +18,7 @@ class DepositService
         $this->assertAmountWithinPending($manifest, (float) $data['amount']);
 
         // Si se subió imagen, registrar la fecha/hora de subida para el cleanup automático.
-        if (!empty($data['receipt_image'])) {
+        if (! empty($data['receipt_image'])) {
             $data['receipt_image_uploaded_at'] = now();
         }
 
@@ -26,8 +26,8 @@ class DepositService
             return Deposit::create([
                 ...$data,
                 'manifest_id' => $manifest->id,
-                'created_by'  => $userId,
-                'updated_by'  => $userId,
+                'created_by' => $userId,
+                'updated_by' => $userId,
             ]);
         });
 

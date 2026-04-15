@@ -2,7 +2,6 @@
 
 namespace Tests\Feature\Api\V1;
 
-use App\Models\Invoice;
 use App\Models\Manifest;
 use App\Models\Warehouse;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -36,7 +35,7 @@ class ManifestApiControllerEstadoTest extends TestCase
         parent::setUp();
 
         config([
-            'api.jaremar_api_key'       => self::API_KEY,
+            'api.jaremar_api_key' => self::API_KEY,
             'api.rate_limit_per_minute' => 100,
         ]);
     }
@@ -87,11 +86,11 @@ class ManifestApiControllerEstadoTest extends TestCase
         // pending, processing, imported, closed. "imported" es el estado
         // activo normal cuando Jaremar termina de mandar todo.
         $manifest = Manifest::factory()->create([
-            'number'          => '555001',
-            'warehouse_id'    => $warehouse->id,
-            'status'          => 'imported',
-            'invoices_count'  => 3,
-            'total_invoices'  => 1234.56,
+            'number' => '555001',
+            'warehouse_id' => $warehouse->id,
+            'status' => 'imported',
+            'invoices_count' => 3,
+            'total_invoices' => 1234.56,
         ]);
 
         $response = $this->getEstado('555001');
@@ -117,10 +116,10 @@ class ManifestApiControllerEstadoTest extends TestCase
         $warehouse = Warehouse::factory()->create(['code' => 'OAS', 'name' => 'OAS']);
 
         Manifest::factory()->create([
-            'number'       => '555002',
+            'number' => '555002',
             'warehouse_id' => $warehouse->id,
-            'status'       => 'closed',
-            'closed_at'    => now(),
+            'status' => 'closed',
+            'closed_at' => now(),
         ]);
 
         $response = $this->getEstado('555002');

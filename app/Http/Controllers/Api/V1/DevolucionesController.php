@@ -36,9 +36,9 @@ class DevolucionesController extends Controller
         if (empty($fechaHeader)) {
             activity('api')
                 ->withProperties([
-                    'endpoint'  => 'GET v1/devoluciones/listar',
-                    'ip'        => $request->ip(),
-                    'fecha'     => null,
+                    'endpoint' => 'GET v1/devoluciones/listar',
+                    'ip' => $request->ip(),
+                    'fecha' => null,
                     'resultado' => 'error_fecha_faltante',
                 ])
                 ->log('Jaremar consultó devoluciones sin header Fecha');
@@ -62,9 +62,9 @@ class DevolucionesController extends Controller
         } catch (\Exception $e) {
             activity('api')
                 ->withProperties([
-                    'endpoint'  => 'GET v1/devoluciones/listar',
-                    'ip'        => $request->ip(),
-                    'fecha'     => $fechaHeader,
+                    'endpoint' => 'GET v1/devoluciones/listar',
+                    'ip' => $request->ip(),
+                    'fecha' => $fechaHeader,
                     'resultado' => 'error_fecha_invalida',
                 ])
                 ->log('Jaremar consultó devoluciones con fecha inválida');
@@ -78,14 +78,14 @@ class DevolucionesController extends Controller
         // ── 2. Paginación opcional ────────────────────────────
         // Jaremar no la usa hoy, pero queda disponible sin romper compatibilidad.
         // Si no mandan ?pagina=, se asume página 1.
-        $pagina    = max(1, (int) $request->query('pagina', 1));
+        $pagina = max(1, (int) $request->query('pagina', 1));
         $porPagina = 1000;
 
         // ── 3. Determinar TTL de cache según la fecha ─────────
         // Fechas pasadas nunca cambian → cache largo.
         // La fecha de hoy puede tener devoluciones nuevas → cache corto.
         $esHoy = $fecha === now()->toDateString();
-        $ttl   = $esHoy ? 300 : 3600; // 5 min hoy, 60 min fechas pasadas
+        $ttl = $esHoy ? 300 : 3600; // 5 min hoy, 60 min fechas pasadas
 
         // ── 4. Cache por fecha + versión + página ─────────────
         // La versión se incrementa cada vez que se crea o aprueba una
@@ -93,17 +93,17 @@ class DevolucionesController extends Controller
         // Al cambiar la versión, TODAS las páginas cacheadas de esa fecha
         // quedan obsoletas automáticamente sin necesidad de conocer cuántas
         // páginas existen. Las entradas antiguas expiran según su TTL.
-        $version  = (int) Cache::get("devoluciones:version:{$fecha}", 1);
+        $version = (int) Cache::get("devoluciones:version:{$fecha}", 1);
         $cacheKey = "devoluciones:listar:{$fecha}:v{$version}:pagina:{$pagina}";
 
         $resultado = Cache::remember($cacheKey, $ttl, function () use ($fecha, $pagina, $porPagina) {
             $devoluciones = InvoiceReturn::with([
-                    'invoice:id,invoice_number,client_id,client_name',
-                    'manifest:id,number',
-                    'warehouse:id,code',
-                    'returnReason:id,jaremar_id,code,description',
-                    'lines:id,return_id,line_number,product_id,product_description,quantity_box,quantity,line_total',
-                ])
+                'invoice:id,invoice_number,client_id,client_name',
+                'manifest:id,number',
+                'warehouse:id,code',
+                'returnReason:id,jaremar_id,code,description',
+                'lines:id,return_id,line_number,product_id,product_description,quantity_box,quantity,line_total',
+            ])
                 ->approved()
                 ->whereDate('processed_date', $fecha)
                 ->orderBy('id')
@@ -113,37 +113,37 @@ class DevolucionesController extends Controller
 
             return $devoluciones->map(function (InvoiceReturn $devolucion) {
                 return [
-                    'devolucion'       => (string) $devolucion->id,
-                    'factura'          => $devolucion->invoice->invoice_number ?? '',
-                    'clienteid'        => $devolucion->invoice->client_id ?? '',
-                    'cliente'          => $devolucion->invoice->client_name ?? '',
-                    'fecha'            => $devolucion->return_date
+                    'devolucion' => (string) $devolucion->id,
+                    'factura' => $devolucion->invoice->invoice_number ?? '',
+                    'clienteid' => $devolucion->invoice->client_id ?? '',
+                    'cliente' => $devolucion->invoice->client_name ?? '',
+                    'fecha' => $devolucion->return_date
                                             ? $devolucion->return_date->format('Y-m-d\TH:i:s')
                                             : null,
-                    'total'            => (float) $devolucion->total,
-                    'almacen'          => $devolucion->warehouse->code ?? '',
-                    'idConcepto'       => (string) ($devolucion->returnReason->jaremar_id
+                    'total' => (float) $devolucion->total,
+                    'almacen' => $devolucion->warehouse->code ?? '',
+                    'idConcepto' => (string) ($devolucion->returnReason->jaremar_id
                                             ?: $devolucion->returnReason->code
                                             ?? ''),
-                    'concepto'         => $devolucion->returnReason->description ?? '',
+                    'concepto' => $devolucion->returnReason->description ?? '',
                     'numeroManifiesto' => (string) ($devolucion->manifest->number ?? ''),
-                    'fechaProcesado'   => $devolucion->processed_date
+                    'fechaProcesado' => $devolucion->processed_date
                                             ? $devolucion->processed_date->format('Y-m-d\TH:i:s')
                                             : null,
-                    'horaProcesado'    => $devolucion->processed_time
+                    'horaProcesado' => $devolucion->processed_time
                                             ? (string) $devolucion->processed_time
                                             : null,
                     'lineasDevolucion' => $devolucion->lines->map(function ($linea) {
                         return [
-                            'productoId'  => $linea->product_id,
-                            'producto'    => $linea->product_description,
+                            'productoId' => $linea->product_id,
+                            'producto' => $linea->product_description,
                             // CJ products: quantity=0, quantity_box>0 → devolver cajas
                             // UN products: quantity_box=0, quantity>0 → devolver unidades
-                            'cantidad'    => (float) ($linea->quantity_box > 0
+                            'cantidad' => (float) ($linea->quantity_box > 0
                                                 ? $linea->quantity_box
                                                 : $linea->quantity),
                             'numeroLinea' => (string) $linea->line_number,
-                            'lineTotal'   => (float) $linea->line_total,
+                            'lineTotal' => (float) $linea->line_total,
                         ];
                     })->values()->all(),
                 ];
@@ -155,13 +155,13 @@ class DevolucionesController extends Controller
         // de cada llamada real de Jaremar, no solo las que van a BD.
         activity('api')
             ->withProperties([
-                'endpoint'    => 'GET v1/devoluciones/listar',
-                'ip'          => $request->ip(),
-                'fecha'       => $fecha,
-                'pagina'      => $pagina,
-                'total'       => count($resultado),
+                'endpoint' => 'GET v1/devoluciones/listar',
+                'ip' => $request->ip(),
+                'fecha' => $fecha,
+                'pagina' => $pagina,
+                'total' => count($resultado),
                 'desde_cache' => Cache::has($cacheKey),
-                'resultado'   => 'ok',
+                'resultado' => 'ok',
             ])
             ->log('Jaremar consultó devoluciones');
 

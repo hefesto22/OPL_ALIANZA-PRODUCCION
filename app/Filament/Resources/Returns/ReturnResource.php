@@ -16,11 +16,12 @@ class ReturnResource extends Resource
     protected static ?string $model = InvoiceReturn::class;
 
     protected static string|\BackedEnum|null $navigationIcon = 'heroicon-o-arrow-uturn-left';
-    protected static ?string $navigationLabel  = 'Devoluciones';
-    protected static ?string $modelLabel       = 'Devolución';
+
+    protected static ?string $navigationLabel = 'Devoluciones';
+
+    protected static ?string $modelLabel = 'Devolución';
+
     protected static ?string $pluralModelLabel = 'Devoluciones';
-
-
 
     public static function getEloquentQuery(): Builder
     {
@@ -39,10 +40,10 @@ class ReturnResource extends Resource
     public static function getPages(): array
     {
         return [
-            'index'  => ListReturns::route('/'),
+            'index' => ListReturns::route('/'),
             'create' => CreateReturn::route('/create'),
-            'view'   => ViewReturn::route('/{record}'),
-            'edit'   => EditReturn::route('/{record}/edit'),
+            'view' => ViewReturn::route('/{record}'),
+            'edit' => EditReturn::route('/{record}/edit'),
         ];
     }
 

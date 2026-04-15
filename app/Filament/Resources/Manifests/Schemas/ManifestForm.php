@@ -35,7 +35,7 @@ class ManifestForm
         string $fileName = 'manifiesto.json'
     ): bool {
         $validator = resolve('App\Services\JsonValidatorService');
-        $content   = file_get_contents($filePath);
+        $content = file_get_contents($filePath);
 
         if ($content === false) {
             Notification::make()
@@ -43,15 +43,17 @@ class ManifestForm
                 ->body('No se pudo leer el archivo subido.')
                 ->danger()
                 ->send();
+
             return false;
         }
 
-        if (!$validator->validate($content)) {
+        if (! $validator->validate($content)) {
             Notification::make()
                 ->title('JSON inválido')
                 ->body($validator->getFirstError())
                 ->danger()
                 ->send();
+
             return false;
         }
 
@@ -62,10 +64,11 @@ class ManifestForm
                 ->body("El manifiesto #{$number} ya fue importado anteriormente.")
                 ->warning()
                 ->send();
+
             return false;
         }
 
-        $storedPath = 'manifests/pending/' . basename($filePath);
+        $storedPath = 'manifests/pending/'.basename($filePath);
         Storage::disk('local')->put($storedPath, $content);
 
         ProcessManifestImport::dispatch($storedPath, $userId, $fileName);

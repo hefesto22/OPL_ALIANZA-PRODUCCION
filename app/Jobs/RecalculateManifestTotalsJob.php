@@ -27,9 +27,10 @@ use Illuminate\Support\Facades\Log;
  */
 class RecalculateManifestTotalsJob implements ShouldQueue
 {
-    use Queueable, InteractsWithQueue, SerializesModels;
+    use InteractsWithQueue, Queueable, SerializesModels;
 
-    public int $tries   = 3;
+    public int $tries = 3;
+
     public int $timeout = 60;
 
     public function __construct(
@@ -40,21 +41,22 @@ class RecalculateManifestTotalsJob implements ShouldQueue
     {
         $manifest = Manifest::find($this->manifestId);
 
-        if (!$manifest) {
+        if (! $manifest) {
             Log::warning('RecalculateManifestTotalsJob: manifiesto no encontrado.', [
                 'manifest_id' => $this->manifestId,
             ]);
+
             return;
         }
 
         $manifest->recalculateTotals();
 
         Log::info("Totales del manifiesto #{$manifest->number} recalculados en background.", [
-            'manifest_id'      => $manifest->id,
-            'total_invoices'   => $manifest->total_invoices,
-            'total_returns'    => $manifest->total_returns,
+            'manifest_id' => $manifest->id,
+            'total_invoices' => $manifest->total_invoices,
+            'total_returns' => $manifest->total_returns,
             'total_to_deposit' => $manifest->total_to_deposit,
-            'difference'       => $manifest->difference,
+            'difference' => $manifest->difference,
         ]);
     }
 
@@ -62,7 +64,7 @@ class RecalculateManifestTotalsJob implements ShouldQueue
     {
         Log::error('RecalculateManifestTotalsJob falló definitivamente.', [
             'manifest_id' => $this->manifestId,
-            'error'       => $exception->getMessage(),
+            'error' => $exception->getMessage(),
         ]);
     }
 }

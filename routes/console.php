@@ -2,9 +2,9 @@
 
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schedule;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Facades\Log;
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
@@ -17,13 +17,13 @@ Artisan::command('inspire', function () {
 Schedule::call(function () {
     $directory = 'public/pdf-preview';
 
-    if (!Storage::exists($directory)) {
+    if (! Storage::exists($directory)) {
         return;
     }
 
-    $files   = Storage::files($directory);
+    $files = Storage::files($directory);
     $deleted = 0;
-    $cutoff  = now()->subHours(2)->timestamp;
+    $cutoff = now()->subHours(2)->timestamp;
 
     foreach ($files as $file) {
         if (Storage::lastModified($file) < $cutoff) {
@@ -58,9 +58,9 @@ Schedule::call(function () {
 //   3. Correr: php artisan storage:delete-directory public/deposits/receipts
 //   El código del modelo y este task no cambiarían.
 Schedule::call(function () {
-    $cutoff  = now()->subDays(60);
+    $cutoff = now()->subDays(60);
     $deleted = 0;
-    $nulled  = 0;
+    $nulled = 0;
 
     \App\Models\Deposit::withTrashed()
         ->whereNotNull('receipt_image')
@@ -73,7 +73,7 @@ Schedule::call(function () {
                 }
                 // saveQuietly() ya suprime eventos y observers — no necesita withoutEvents().
                 $deposit->forceFill([
-                    'receipt_image'             => null,
+                    'receipt_image' => null,
                     'receipt_image_uploaded_at' => null,
                 ])->saveQuietly();
                 $nulled++;

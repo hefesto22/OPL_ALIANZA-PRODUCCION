@@ -13,7 +13,7 @@ use Maatwebsite\Excel\Concerns\WithMapping;
 use Maatwebsite\Excel\Concerns\WithTitle;
 use Maatwebsite\Excel\Events\AfterSheet;
 
-class ReturnsExport implements FromQuery, WithHeadings, WithMapping, ShouldAutoSize, WithTitle, WithEvents, ShouldQueue
+class ReturnsExport implements FromQuery, ShouldAutoSize, ShouldQueue, WithEvents, WithHeadings, WithMapping, WithTitle
 {
     public function __construct(
         private readonly ?string $status = null,
@@ -73,17 +73,17 @@ class ReturnsExport implements FromQuery, WithHeadings, WithMapping, ShouldAutoS
             $return->warehouse?->code ?? '—',
             $return->client_name,
             $return->returnReason?->code ?? '—',
-            match($return->type) {
-                'total'   => 'Total',
+            match ($return->type) {
+                'total' => 'Total',
                 'partial' => 'Parcial',
-                default   => $return->type,
+                default => $return->type,
             },
-            match($return->status) {
-                'pending'   => 'Pendiente',
-                'approved'  => 'Aprobada',
-                'rejected'  => 'Rechazada',
+            match ($return->status) {
+                'pending' => 'Pendiente',
+                'approved' => 'Aprobada',
+                'rejected' => 'Rechazada',
                 'cancelled' => 'Cancelada',
-                default     => $return->status,
+                default => $return->status,
             },
             number_format($return->total, 2),
             $return->return_date ? \Carbon\Carbon::parse($return->return_date)->format('d/m/Y') : '—',
@@ -98,8 +98,8 @@ class ReturnsExport implements FromQuery, WithHeadings, WithMapping, ShouldAutoS
             AfterSheet::class => function (AfterSheet $event) {
                 $sheet = $event->sheet->getDelegate();
                 $sheet->getStyle('A1:L1')->applyFromArray([
-                    'font'      => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
-                    'fill'      => ['fillType' => 'solid', 'startColor' => ['rgb' => '1A7A4A']],
+                    'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
+                    'fill' => ['fillType' => 'solid', 'startColor' => ['rgb' => '1A7A4A']],
                     'alignment' => ['horizontal' => 'center'],
                 ]);
             },

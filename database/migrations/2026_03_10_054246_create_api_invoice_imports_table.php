@@ -53,12 +53,12 @@ return new class extends Migration
             $table->id();
 
             $table->foreignId('api_invoice_import_id')
-                  ->constrained()
-                  ->cascadeOnDelete();
+                ->constrained()
+                ->cascadeOnDelete();
 
             $table->foreignId('invoice_id')
-                  ->constrained()
-                  ->cascadeOnDelete();
+                ->constrained()
+                ->cascadeOnDelete();
 
             $table->string('invoice_number', 30);               // Nfactura — para mostrar sin join
             $table->string('manifest_number', 20);              // NumeroManifiesto — para mostrar sin join
@@ -75,9 +75,9 @@ return new class extends Migration
             ])->default('pending');
 
             $table->foreignId('resolved_by')
-                  ->nullable()
-                  ->constrained('users')
-                  ->nullOnDelete();
+                ->nullable()
+                ->constrained('users')
+                ->nullOnDelete();
 
             $table->timestamp('resolved_at')->nullable();
             $table->text('resolution_notes')->nullable();       // Notas opcionales del revisor

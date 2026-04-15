@@ -3,8 +3,8 @@
 namespace App\Filament\Widgets;
 
 use App\Models\Manifest;
-use Filament\Widgets\ChartWidget;
 use BezhanSalleh\FilamentShield\Traits\HasWidgetShield;
+use Filament\Widgets\ChartWidget;
 use Illuminate\Support\Facades\Cache;
 
 /**
@@ -37,48 +37,48 @@ class ManifestStatusChart extends ChartWidget
         });
 
         $labels = [
-            'pending'    => 'Pendiente',
+            'pending' => 'Pendiente',
             'processing' => 'En Proceso',
-            'imported'   => 'Importado',
-            'closed'     => 'Cerrado',
+            'imported' => 'Importado',
+            'closed' => 'Cerrado',
         ];
 
         $colors = [
-            'pending'    => 'rgba(234, 179, 8, 0.85)',
+            'pending' => 'rgba(234, 179, 8, 0.85)',
             'processing' => 'rgba(59, 130, 246, 0.85)',
-            'imported'   => 'rgba(168, 85, 247, 0.85)',
-            'closed'     => 'rgba(107, 114, 128, 0.85)',
+            'imported' => 'rgba(168, 85, 247, 0.85)',
+            'closed' => 'rgba(107, 114, 128, 0.85)',
         ];
 
         $borderColors = [
-            'pending'    => 'rgba(234, 179, 8, 1)',
+            'pending' => 'rgba(234, 179, 8, 1)',
             'processing' => 'rgba(59, 130, 246, 1)',
-            'imported'   => 'rgba(168, 85, 247, 1)',
-            'closed'     => 'rgba(107, 114, 128, 1)',
+            'imported' => 'rgba(168, 85, 247, 1)',
+            'closed' => 'rgba(107, 114, 128, 1)',
         ];
 
-        $data        = [];
-        $bgColors    = [];
-        $borders     = [];
-        $lbls        = [];
+        $data = [];
+        $bgColors = [];
+        $borders = [];
+        $lbls = [];
 
         foreach ($labels as $key => $label) {
             if (($counts[$key] ?? 0) > 0) {
-                $lbls[]      = $label . ' (' . $counts[$key] . ')';
-                $data[]      = $counts[$key];
-                $bgColors[]  = $colors[$key];
-                $borders[]   = $borderColors[$key];
+                $lbls[] = $label.' ('.$counts[$key].')';
+                $data[] = $counts[$key];
+                $bgColors[] = $colors[$key];
+                $borders[] = $borderColors[$key];
             }
         }
 
         return [
             'datasets' => [
                 [
-                    'data'            => $data,
+                    'data' => $data,
                     'backgroundColor' => $bgColors,
-                    'borderColor'     => $borders,
-                    'borderWidth'     => 2,
-                    'hoverOffset'     => 6,
+                    'borderColor' => $borders,
+                    'borderWidth' => 2,
+                    'hoverOffset' => 6,
                 ],
             ],
             'labels' => $lbls,
@@ -96,7 +96,7 @@ class ManifestStatusChart extends ChartWidget
             'plugins' => [
                 'legend' => [
                     'position' => 'bottom',
-                    'labels'   => ['padding' => 16],
+                    'labels' => ['padding' => 16],
                 ],
             ],
             'cutout' => '65%',

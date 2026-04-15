@@ -40,8 +40,8 @@ class WarehouseScope
      */
     public static function applyViaRelation(
         Builder $query,
-        string  $relation,
-        string  $column = 'warehouse_id'
+        string $relation,
+        string $column = 'warehouse_id'
     ): Builder {
         if (self::isScoped()) {
             $warehouseId = self::getWarehouseId();
@@ -76,6 +76,7 @@ class WarehouseScope
     public static function isScoped(): bool
     {
         $user = Auth::user();
+
         return $user && $user->isWarehouseUser();
     }
 

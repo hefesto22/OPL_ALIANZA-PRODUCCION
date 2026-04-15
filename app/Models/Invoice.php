@@ -4,9 +4,9 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Invoice extends Model
 {
@@ -31,15 +31,15 @@ class Invoice extends Model
     protected function casts(): array
     {
         return [
-            'invoice_date'     => 'date',
-            'due_date'         => 'date',
+            'invoice_date' => 'date',
+            'due_date' => 'date',
             'print_limit_date' => 'date',
-            'printed_at'       => 'datetime',
-            'is_printed'       => 'boolean',
-            'total'            => 'decimal:2',
-            'total_returns'    => 'decimal:2',
-            'longitude'        => 'decimal:7',
-            'latitude'         => 'decimal:7',
+            'printed_at' => 'datetime',
+            'is_printed' => 'boolean',
+            'total' => 'decimal:2',
+            'total_returns' => 'decimal:2',
+            'longitude' => 'decimal:7',
+            'latitude' => 'decimal:7',
         ];
     }
 
@@ -67,7 +67,7 @@ class Invoice extends Model
 
     public function scopeByWarehouse($query, string $code)
     {
-        return $query->whereHas('warehouse', fn($q) => $q->where('code', $code));
+        return $query->whereHas('warehouse', fn ($q) => $q->where('code', $code));
     }
 
     public function scopeNotPrinted($query)

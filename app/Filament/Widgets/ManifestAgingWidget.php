@@ -4,9 +4,9 @@ namespace App\Filament\Widgets;
 
 use App\Models\Manifest;
 use App\Support\WarehouseScope;
+use BezhanSalleh\FilamentShield\Traits\HasWidgetShield;
 use Filament\Widgets\StatsOverviewWidget as BaseWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
-use BezhanSalleh\FilamentShield\Traits\HasWidgetShield;
 use Illuminate\Support\Facades\Cache;
 
 /**
@@ -36,7 +36,7 @@ class ManifestAgingWidget extends BaseWidget
     protected function getStats(): array
     {
         // Clave de caché única por bodega
-        $cacheKey    = WarehouseScope::cacheKey('dashboard:aging');
+        $cacheKey = WarehouseScope::cacheKey('dashboard:aging');
         $warehouseId = WarehouseScope::getWarehouseId();
 
         $aging = Cache::remember($cacheKey, now()->addMinutes(3), function () use ($warehouseId) {
@@ -64,23 +64,22 @@ class ManifestAgingWidget extends BaseWidget
                 ->keyBy('bucket');
 
             $buckets = ['0-7', '8-14', '15-30', '30+'];
-            $result  = [];
+            $result = [];
             foreach ($buckets as $b) {
-                $row        = $rows[$b] ?? null;
+                $row = $rows[$b] ?? null;
                 $result[$b] = [
-                    'manifests' => $row ? (int)   $row->manifests : 0,
-                    'saldo'     => $row ? (float)  $row->saldo     : 0.0,
-                    'cartera'   => $row ? (float)  $row->cartera   : 0.0,
+                    'manifests' => $row ? (int) $row->manifests : 0,
+                    'saldo' => $row ? (float) $row->saldo : 0.0,
+                    'cartera' => $row ? (float) $row->cartera : 0.0,
                 ];
             }
 
             return $result;
         });
 
-        $fmt  = fn(float $v): string => 'L. ' . number_format($v, 2);
-        $desc = fn(array $b): string =>
-            "{$b['manifests']} " . ($b['manifests'] === 1 ? 'manifiesto' : 'manifiestos') .
-            " — saldo: " . $fmt($b['saldo']);
+        $fmt = fn (float $v): string => 'L. '.number_format($v, 2);
+        $desc = fn (array $b): string => "{$b['manifests']} ".($b['manifests'] === 1 ? 'manifiesto' : 'manifiestos').
+            ' — saldo: '.$fmt($b['saldo']);
 
         return [
             Stat::make('Corriente (0 – 7 días)', $fmt($aging['0-7']['cartera']))

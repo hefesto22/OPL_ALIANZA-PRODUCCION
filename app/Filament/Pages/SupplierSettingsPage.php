@@ -4,6 +4,7 @@ namespace App\Filament\Pages;
 
 use App\Models\Supplier;
 use App\Models\User;
+use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
@@ -15,7 +16,6 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\Facades\Auth;
-use BackedEnum;
 
 class SupplierSettingsPage extends Page implements HasForms
 {
@@ -45,34 +45,42 @@ class SupplierSettingsPage extends Page implements HasForms
     }
 
     // Campos del formulario como propiedades públicas para Livewire
-    public ?string $name         = null;
-    public ?string $rtn          = null;
-    public ?string $email        = null;
-    public ?string $phone        = null;
-    public ?string $phone2       = null;
-    public ?string $address      = null;
+    public ?string $name = null;
+
+    public ?string $rtn = null;
+
+    public ?string $email = null;
+
+    public ?string $phone = null;
+
+    public ?string $phone2 = null;
+
+    public ?string $address = null;
+
     public ?string $neighborhood = null;
-    public ?string $api_url      = null;
-    public bool    $is_active    = true;
+
+    public ?string $api_url = null;
+
+    public bool $is_active = true;
 
     public function mount(): void
     {
         $supplier = Supplier::first();
 
-        if (!$supplier) {
+        if (! $supplier) {
             return;
         }
 
         $this->fill([
-            'name'         => $supplier->name,
-            'rtn'          => $supplier->rtn,
-            'email'        => $supplier->email,
-            'phone'        => $supplier->phone,
-            'phone2'       => $supplier->phone2 ?? null,
-            'address'      => $supplier->address,
+            'name' => $supplier->name,
+            'rtn' => $supplier->rtn,
+            'email' => $supplier->email,
+            'phone' => $supplier->phone,
+            'phone2' => $supplier->phone2 ?? null,
+            'address' => $supplier->address,
             'neighborhood' => $supplier->neighborhood ?? null,
-            'api_url'      => $supplier->api_url,
-            'is_active'    => (bool) $supplier->is_active,
+            'api_url' => $supplier->api_url,
+            'is_active' => (bool) $supplier->is_active,
         ]);
     }
 
@@ -139,26 +147,27 @@ class SupplierSettingsPage extends Page implements HasForms
     {
         $supplier = Supplier::first();
 
-        if (!$supplier) {
+        if (! $supplier) {
             Notification::make()
                 ->title('No se encontró el proveedor en el sistema.')
                 ->danger()
                 ->send();
+
             return;
         }
 
         $data = $this->form->getState();
 
         $supplier->update([
-            'name'         => $data['name'],
-            'rtn'          => $data['rtn'],
-            'email'        => $data['email'],
-            'phone'        => $data['phone'],
-            'phone2'       => $data['phone2'] ?? null,
-            'address'      => $data['address'],
+            'name' => $data['name'],
+            'rtn' => $data['rtn'],
+            'email' => $data['email'],
+            'phone' => $data['phone'],
+            'phone2' => $data['phone2'] ?? null,
+            'address' => $data['address'],
             'neighborhood' => $data['neighborhood'] ?? null,
-            'api_url'      => $data['api_url'],
-            'is_active'    => $data['is_active'],
+            'api_url' => $data['api_url'],
+            'is_active' => $data['is_active'],
         ]);
 
         Notification::make()

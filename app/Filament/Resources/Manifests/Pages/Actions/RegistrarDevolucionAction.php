@@ -8,11 +8,11 @@ use App\Services\ReturnService;
 use Filament\Actions\Action;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Hidden;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
-use Filament\Forms\Components\Placeholder;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
@@ -30,7 +30,7 @@ class RegistrarDevolucionAction
             ->icon('heroicon-o-arrow-uturn-left')
             ->color('danger')
             ->visible(function (Invoice $record): bool {
-                if (!in_array($record->status, ['imported', 'partial_return'])) {
+                if (! in_array($record->status, ['imported', 'partial_return'])) {
                     return false;
                 }
 
@@ -40,16 +40,16 @@ class RegistrarDevolucionAction
                 $record->load('lines');
                 $returnService = app(ReturnService::class);
 
-                $lineIds        = $record->lines->pluck('id')->toArray();
+                $lineIds = $record->lines->pluck('id')->toArray();
                 $returnedByLine = $returnService->getReturnedQuantitiesForLines($lineIds);
 
                 $lines = $record->lines->map(function ($line) use ($returnedByLine): array {
-                    $alreadyReturned = (float)($returnedByLine[$line->id] ?? 0);
-                    $available       = max(0, (float) $line->quantity_fractions - $alreadyReturned);
-                    $convFactor      = max(1, (int) ($line->conversion_factor ?? 1));
-                    $unitSale        = strtoupper($line->unit_sale ?? 'UN');
+                    $alreadyReturned = (float) ($returnedByLine[$line->id] ?? 0);
+                    $available = max(0, (float) $line->quantity_fractions - $alreadyReturned);
+                    $convFactor = max(1, (int) ($line->conversion_factor ?? 1));
+                    $unitSale = strtoupper($line->unit_sale ?? 'UN');
                     // Null → usar price; 0 → bonificación (gratis). No usar ?: porque 0 es falsy.
-                    $unitPrice       = $line->price_min_sale !== null ? (float) $line->price_min_sale : (float) $line->price;
+                    $unitPrice = $line->price_min_sale !== null ? (float) $line->price_min_sale : (float) $line->price;
 
                     $availableBoxes = ($unitSale === 'CJ')
                         ? (int) floor($available / $convFactor)
@@ -60,19 +60,19 @@ class RegistrarDevolucionAction
                         : 0.0;
 
                     return [
-                        'invoice_line_id'     => $line->id,
-                        'line_number'         => $line->line_number,
-                        'product_id'          => $line->product_id,
+                        'invoice_line_id' => $line->id,
+                        'line_number' => $line->line_number,
+                        'product_id' => $line->product_id,
                         'product_description' => $line->product_description,
-                        'unit_sale'           => $unitSale,
-                        'conversion_factor'   => $convFactor,
-                        'quantity_box'        => 0,
-                        'quantity'            => 0,
-                        'available_quantity'  => $available,
-                        'available_boxes'     => $availableBoxes,
-                        'unit_price'          => $unitPrice,
-                        'price_per_box'       => $pricePerBox,
-                        'line_total'          => 0,
+                        'unit_sale' => $unitSale,
+                        'conversion_factor' => $convFactor,
+                        'quantity_box' => 0,
+                        'quantity' => 0,
+                        'available_quantity' => $available,
+                        'available_boxes' => $availableBoxes,
+                        'unit_price' => $unitPrice,
+                        'price_per_box' => $pricePerBox,
+                        'line_total' => 0,
                     ];
                 })->toArray();
 
@@ -83,12 +83,12 @@ class RegistrarDevolucionAction
                 $availableTotal = max(0, round((float) $record->total - (float) $alreadyReturnedTotal, 2));
 
                 $form->fill([
-                    'return_date'      => now()->toDateString(),
-                    'invoice_number'   => $record->invoice_number,
-                    'client_name'      => $record->client_name,
-                    'invoice_total'    => round((float) $record->total, 2),
-                    'available_total'  => $availableTotal,
-                    'lines'            => $lines,
+                    'return_date' => now()->toDateString(),
+                    'invoice_number' => $record->invoice_number,
+                    'client_name' => $record->client_name,
+                    'invoice_total' => round((float) $record->total, 2),
+                    'available_total' => $availableTotal,
+                    'lines' => $lines,
                 ]);
             })
             ->schema([
@@ -104,13 +104,13 @@ class RegistrarDevolucionAction
                         Placeholder::make('invoice_header')
                             ->label('')
                             ->content(function (Get $get): HtmlString {
-                                $invoiceNumber  = htmlspecialchars($get('invoice_number') ?? '');
-                                $clientName     = htmlspecialchars($get('client_name')    ?? '');
-                                $invoiceTotal   = (float) ($get('invoice_total')          ?? 0);
-                                $availableTotal = (float) ($get('available_total')        ?? 0);
+                                $invoiceNumber = htmlspecialchars($get('invoice_number') ?? '');
+                                $clientName = htmlspecialchars($get('client_name') ?? '');
+                                $invoiceTotal = (float) ($get('invoice_total') ?? 0);
+                                $availableTotal = (float) ($get('available_total') ?? 0);
 
-                                $invoiceTotalFmt   = 'L.' . number_format($invoiceTotal,   2);
-                                $availableTotalFmt = 'L.' . number_format($availableTotal, 2);
+                                $invoiceTotalFmt = 'L.'.number_format($invoiceTotal, 2);
+                                $availableTotalFmt = 'L.'.number_format($availableTotal, 2);
 
                                 return new HtmlString("
                                     <div style=\"display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;padding:2px 0 6px;\">
@@ -181,22 +181,22 @@ class RegistrarDevolucionAction
                             ->action(function (Get $get, Set $set): void {
                                 $lines = $get('lines');
                                 foreach ($lines as $key => $line) {
-                                    $unitSale   = strtoupper($line['unit_sale'] ?? 'UN');
+                                    $unitSale = strtoupper($line['unit_sale'] ?? 'UN');
                                     $convFactor = max(1, (int) ($line['conversion_factor'] ?? 1));
-                                    $price      = (float) ($line['unit_price'] ?? 0);
+                                    $price = (float) ($line['unit_price'] ?? 0);
 
                                     if ($unitSale === 'CJ') {
-                                        $available                     = (float) ($line['available_quantity'] ?? 0);
-                                        $maxBoxes                      = (int) floor($available / $convFactor);
-                                        $looseUnits                    = $available - ($maxBoxes * $convFactor);
-                                        $lines[$key]['quantity_box']   = $maxBoxes;
-                                        $lines[$key]['quantity']       = max(0, round($looseUnits, 4));
-                                        $lines[$key]['line_total']     = round($available * $price, 2);
+                                        $available = (float) ($line['available_quantity'] ?? 0);
+                                        $maxBoxes = (int) floor($available / $convFactor);
+                                        $looseUnits = $available - ($maxBoxes * $convFactor);
+                                        $lines[$key]['quantity_box'] = $maxBoxes;
+                                        $lines[$key]['quantity'] = max(0, round($looseUnits, 4));
+                                        $lines[$key]['line_total'] = round($available * $price, 2);
                                     } else {
-                                        $maxUnits                      = (float) ($line['available_quantity'] ?? 0);
-                                        $lines[$key]['quantity']       = $maxUnits;
-                                        $lines[$key]['quantity_box']   = 0;
-                                        $lines[$key]['line_total']     = round($maxUnits * $price, 2);
+                                        $maxUnits = (float) ($line['available_quantity'] ?? 0);
+                                        $lines[$key]['quantity'] = $maxUnits;
+                                        $lines[$key]['quantity_box'] = 0;
+                                        $lines[$key]['line_total'] = round($maxUnits * $price, 2);
                                     }
                                 }
                                 $set('lines', $lines);
@@ -210,9 +210,9 @@ class RegistrarDevolucionAction
                             ->action(function (Get $get, Set $set): void {
                                 $lines = $get('lines');
                                 foreach ($lines as $key => $line) {
-                                    $lines[$key]['quantity']     = 0;
+                                    $lines[$key]['quantity'] = 0;
                                     $lines[$key]['quantity_box'] = 0;
-                                    $lines[$key]['line_total']   = 0;
+                                    $lines[$key]['line_total'] = 0;
                                 }
                                 $set('lines', $lines);
                             }),
@@ -258,17 +258,18 @@ class RegistrarDevolucionAction
                                         ->live(debounce: 500)
                                         ->helperText(function (Get $get): string {
                                             $pricePerBox = (float) ($get('price_per_box') ?? 0);
-                                            $maxBoxes    = (int) ($get('available_boxes') ?? 0);
+                                            $maxBoxes = (int) ($get('available_boxes') ?? 0);
                                             if ($pricePerBox > 0) {
-                                                return 'L' . number_format($pricePerBox, 2) . ' /caja · máx: ' . $maxBoxes;
+                                                return 'L'.number_format($pricePerBox, 2).' /caja · máx: '.$maxBoxes;
                                             }
-                                            return 'Bonificación · máx: ' . $maxBoxes;
+
+                                            return 'Bonificación · máx: '.$maxBoxes;
                                         })
                                         ->afterStateUpdated(function ($state, Get $get, Set $set): void {
-                                            $boxes      = max(0, (int) $state);
-                                            $maxBoxes   = (int) ($get('available_boxes') ?? 0);
+                                            $boxes = max(0, (int) $state);
+                                            $maxBoxes = (int) ($get('available_boxes') ?? 0);
                                             $convFactor = max(1, (int) ($get('conversion_factor') ?? 1));
-                                            $price      = (float) ($get('unit_price') ?? 0);
+                                            $price = (float) ($get('unit_price') ?? 0);
                                             $looseUnits = max(0, (float) $get('quantity'));
 
                                             if ($boxes > $maxBoxes) {
@@ -277,7 +278,7 @@ class RegistrarDevolucionAction
                                             }
 
                                             $totalFractions = ($boxes * $convFactor) + $looseUnits;
-                                            $available      = (float) $get('available_quantity');
+                                            $available = (float) $get('available_quantity');
                                             if ($totalFractions > $available) {
                                                 $looseUnits = max(0, $available - ($boxes * $convFactor));
                                                 $set('quantity', $looseUnits);
@@ -297,35 +298,37 @@ class RegistrarDevolucionAction
                                         ->live(debounce: 500)
                                         ->helperText(function (Get $get): string {
                                             $unitPrice = (float) ($get('unit_price') ?? 0);
-                                            $isCJ      = ($get('unit_sale') ?? 'UN') === 'CJ';
+                                            $isCJ = ($get('unit_sale') ?? 'UN') === 'CJ';
 
                                             if ($isCJ) {
                                                 $convFactor = max(1, (float) $get('conversion_factor'));
-                                                $boxes      = max(0, (float) $get('quantity_box'));
-                                                $available  = (float) ($get('available_quantity') ?? 0);
-                                                $maxLoose   = max(0, $available - ($boxes * $convFactor));
+                                                $boxes = max(0, (float) $get('quantity_box'));
+                                                $available = (float) ($get('available_quantity') ?? 0);
+                                                $maxLoose = max(0, $available - ($boxes * $convFactor));
                                                 $priceLabel = $unitPrice > 0
-                                                    ? 'L' . number_format($unitPrice, 2) . ' /ud.'
+                                                    ? 'L'.number_format($unitPrice, 2).' /ud.'
                                                     : 'Bonificación';
-                                                return $priceLabel . ' · máx: ' . number_format($maxLoose, 0);
+
+                                                return $priceLabel.' · máx: '.number_format($maxLoose, 0);
                                             }
 
                                             $maxQty = (float) ($get('available_quantity') ?? 0);
                                             if ($unitPrice > 0) {
-                                                return 'L' . number_format($unitPrice, 2) . ' /ud. · máx: ' . number_format($maxQty, 0);
+                                                return 'L'.number_format($unitPrice, 2).' /ud. · máx: '.number_format($maxQty, 0);
                                             }
-                                            return 'Bonificación · máx: ' . number_format($maxQty, 0);
+
+                                            return 'Bonificación · máx: '.number_format($maxQty, 0);
                                         })
                                         ->afterStateUpdated(function ($state, Get $get, Set $set): void {
                                             $units = max(0, (float) $state);
                                             $price = (float) ($get('unit_price') ?? 0);
-                                            $isCJ  = ($get('unit_sale') ?? 'UN') === 'CJ';
+                                            $isCJ = ($get('unit_sale') ?? 'UN') === 'CJ';
 
                                             if ($isCJ) {
                                                 $convFactor = max(1, (float) $get('conversion_factor'));
-                                                $boxes      = max(0, (float) $get('quantity_box'));
-                                                $available  = (float) $get('available_quantity');
-                                                $maxLoose   = max(0, $available - ($boxes * $convFactor));
+                                                $boxes = max(0, (float) $get('quantity_box'));
+                                                $available = (float) $get('available_quantity');
+                                                $maxLoose = max(0, $available - ($boxes * $convFactor));
 
                                                 if ($units > $maxLoose) {
                                                     $units = $maxLoose;
@@ -368,9 +371,8 @@ class RegistrarDevolucionAction
                                 $lines = $get('lines') ?? [];
 
                                 $selectedLines = collect($lines)->filter(
-                                    fn ($l) =>
-                                        (float) ($l['quantity_box'] ?? 0) > 0 ||
-                                        (float) ($l['quantity']     ?? 0) > 0
+                                    fn ($l) => (float) ($l['quantity_box'] ?? 0) > 0 ||
+                                        (float) ($l['quantity'] ?? 0) > 0
                                 );
 
                                 if ($selectedLines->isEmpty()) {
@@ -393,36 +395,36 @@ class RegistrarDevolucionAction
                                     ');
                                 }
 
-                                $rows       = '';
+                                $rows = '';
                                 $grandTotal = 0.0;
-                                $lineCount  = 0;
+                                $lineCount = 0;
 
                                 foreach ($selectedLines as $line) {
                                     $lineCount++;
-                                    $unitSale    = strtoupper($line['unit_sale'] ?? 'UN');
-                                    $unitPrice   = (float) ($line['unit_price']   ?? 0);
+                                    $unitSale = strtoupper($line['unit_sale'] ?? 'UN');
+                                    $unitPrice = (float) ($line['unit_price'] ?? 0);
                                     $pricePerBox = (float) ($line['price_per_box'] ?? 0);
-                                    $boxes       = (float) ($line['quantity_box'] ?? 0);
-                                    $units       = (float) ($line['quantity']     ?? 0);
-                                    $lineTotal   = (float) ($line['line_total']   ?? 0);
+                                    $boxes = (float) ($line['quantity_box'] ?? 0);
+                                    $units = (float) ($line['quantity'] ?? 0);
+                                    $lineTotal = (float) ($line['line_total'] ?? 0);
                                     $description = htmlspecialchars($line['product_description'] ?? '—');
                                     $grandTotal += $lineTotal;
 
                                     $isBonif = ($lineTotal == 0 && ($unitPrice == 0 && $pricePerBox == 0));
 
                                     if ($unitSale === 'CJ') {
-                                        $qtyBadge = number_format($boxes, 0) . ' caja' . ($boxes != 1 ? 's' : '');
-                                        $priceStr = $isBonif ? '' : '× L.' . number_format($pricePerBox, 2) . '/caja';
+                                        $qtyBadge = number_format($boxes, 0).' caja'.($boxes != 1 ? 's' : '');
+                                        $priceStr = $isBonif ? '' : '× L.'.number_format($pricePerBox, 2).'/caja';
                                     } else {
-                                        $qtyBadge = number_format($units, 0) . ' und.';
-                                        $priceStr = $isBonif ? '' : '× L.' . number_format($unitPrice, 2) . '/und.';
+                                        $qtyBadge = number_format($units, 0).' und.';
+                                        $priceStr = $isBonif ? '' : '× L.'.number_format($unitPrice, 2).'/und.';
                                     }
 
-                                    $bgRow      = ($lineCount % 2 === 0) ? '#f9fafb' : '#ffffff';
+                                    $bgRow = ($lineCount % 2 === 0) ? '#f9fafb' : '#ffffff';
                                     $totalColor = $isBonif ? '#9ca3af' : '#111827';
-                                    $totalStr   = $isBonif
+                                    $totalStr = $isBonif
                                         ? '<span style="font-size:11px;background:#e5e7eb;color:#6b7280;padding:2px 6px;border-radius:4px;">Bonificación</span>'
-                                        : '<strong style="color:' . $totalColor . '">L.' . number_format($lineTotal, 2) . '</strong>';
+                                        : '<strong style="color:'.$totalColor.'">L.'.number_format($lineTotal, 2).'</strong>';
 
                                     $rows .= "
                                         <tr style=\"background:{$bgRow};\">
@@ -440,8 +442,8 @@ class RegistrarDevolucionAction
                                     ";
                                 }
 
-                                $grandTotalFmt = 'L.' . number_format($grandTotal, 2);
-                                $itemLabel     = $lineCount === 1 ? '1 producto' : "{$lineCount} productos";
+                                $grandTotalFmt = 'L.'.number_format($grandTotal, 2);
+                                $itemLabel = $lineCount === 1 ? '1 producto' : "{$lineCount} productos";
 
                                 return new HtmlString("
                                     <div style=\"
@@ -509,13 +511,12 @@ class RegistrarDevolucionAction
             ])
             ->action(function (array $data, Invoice $record): void {
                 $hasLines = collect($data['lines'] ?? [])
-                    ->filter(fn ($l) =>
-                        (float) ($l['quantity_box'] ?? 0) > 0 ||
-                        (float) ($l['quantity']     ?? 0) > 0
+                    ->filter(fn ($l) => (float) ($l['quantity_box'] ?? 0) > 0 ||
+                        (float) ($l['quantity'] ?? 0) > 0
                     )
                     ->isNotEmpty();
 
-                if (!$hasLines) {
+                if (! $hasLines) {
                     Notification::make()
                         ->title('Debes ingresar al menos un producto a devolver.')
                         ->warning()->send();
@@ -525,11 +526,11 @@ class RegistrarDevolucionAction
 
                 try {
                     app(ReturnService::class)->createReturn([
-                        'invoice_id'       => $record->id,
+                        'invoice_id' => $record->id,
                         'return_reason_id' => $data['return_reason_id'],
-                        'return_date'      => $data['return_date'],
-                        'lines'            => $data['lines'],
-                        'created_by'       => Auth::id(),
+                        'return_date' => $data['return_date'],
+                        'lines' => $data['lines'],
+                        'created_by' => Auth::id(),
                     ]);
                 } catch (ValidationException $e) {
                     $firstError = collect($e->errors())->flatten()->first()

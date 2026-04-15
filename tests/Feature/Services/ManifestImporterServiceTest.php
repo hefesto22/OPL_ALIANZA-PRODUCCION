@@ -50,83 +50,83 @@ class ManifestImporterServiceTest extends TestCase
         $seq++;
 
         return array_merge([
-            'Id'                => $seq * 1000,
-            'NumeroManifiesto'  => 'MAN-TEST-001',
-            'Nfactura'          => "F-{$seq}",
-            'NumeroFacturaLX'   => null,
-            'NumeroPedido'      => null,
-            'FechaFactura'      => '2026-04-10',
-            'FechaVencimiento'  => null,
-            'FechaLimImpre'     => null,
-            'Vendedorid'        => 'V01',
-            'Vendedor'          => 'VENDEDOR TEST',
-            'Clienteid'         => 'C001',
-            'Cliente'           => 'PULPERIA PRUEBA',
-            'Rtn'               => null,
-            'EntregarA'         => null,
-            'Depto'             => 'COPAN',
-            'Municipio'         => 'SANTA ROSA',
-            'Barrio'            => null,
-            'Direccion'         => 'CALLE PRINCIPAL',
-            'Tel'               => null,
-            'Longitud'          => null,
-            'Latitud'           => null,
-            'NumeroRuta'        => 'R01',
-            'Cai'               => null,
-            'Rinicial'          => null,
-            'Rfinal'            => null,
-            'TipoPago'          => 'CONTADO',
-            'DiasCred'          => 0,
-            'TipoFactura'      => 'FACTURA',
-            'EstadoFactura'     => 1,
-            'DirCasaMatriz'     => null,
-            'DirSucursal'       => null,
-            'Almacen'           => 'OAC',
-            'Total'             => 1500.00,
+            'Id' => $seq * 1000,
+            'NumeroManifiesto' => 'MAN-TEST-001',
+            'Nfactura' => "F-{$seq}",
+            'NumeroFacturaLX' => null,
+            'NumeroPedido' => null,
+            'FechaFactura' => '2026-04-10',
+            'FechaVencimiento' => null,
+            'FechaLimImpre' => null,
+            'Vendedorid' => 'V01',
+            'Vendedor' => 'VENDEDOR TEST',
+            'Clienteid' => 'C001',
+            'Cliente' => 'PULPERIA PRUEBA',
+            'Rtn' => null,
+            'EntregarA' => null,
+            'Depto' => 'COPAN',
+            'Municipio' => 'SANTA ROSA',
+            'Barrio' => null,
+            'Direccion' => 'CALLE PRINCIPAL',
+            'Tel' => null,
+            'Longitud' => null,
+            'Latitud' => null,
+            'NumeroRuta' => 'R01',
+            'Cai' => null,
+            'Rinicial' => null,
+            'Rfinal' => null,
+            'TipoPago' => 'CONTADO',
+            'DiasCred' => 0,
+            'TipoFactura' => 'FACTURA',
+            'EstadoFactura' => 1,
+            'DirCasaMatriz' => null,
+            'DirSucursal' => null,
+            'Almacen' => 'OAC',
+            'Total' => 1500.00,
             'DescuentosRebajas' => 0,
-            'Isv18'             => 0,
-            'Isv15'             => 0,
-            'ImporteExcento'        => 0,
-            'ImporteExento_Desc'    => 0,
-            'ImporteExento_ISV18'   => 0,
-            'ImporteExento_ISV15'   => 0,
-            'ImporteExento_Total'   => 0,
-            'ImporteExonerado'      => 0,
+            'Isv18' => 0,
+            'Isv15' => 0,
+            'ImporteExcento' => 0,
+            'ImporteExento_Desc' => 0,
+            'ImporteExento_ISV18' => 0,
+            'ImporteExento_ISV15' => 0,
+            'ImporteExento_Total' => 0,
+            'ImporteExonerado' => 0,
             'ImporteExonerado_Desc' => 0,
-            'ImporteExonerado_ISV18'=> 0,
-            'ImporteExonerado_ISV15'=> 0,
-            'ImporteExonerado_Total'=> 0,
-            'ImporteGrabado'        => 1500.00,
-            'ImporteGravado_Desc'   => 0,
-            'ImporteGravado_ISV18'  => 0,
-            'ImporteGravado_ISV15'  => 0,
-            'ImporteGravado_Total'  => 1500.00,
+            'ImporteExonerado_ISV18' => 0,
+            'ImporteExonerado_ISV15' => 0,
+            'ImporteExonerado_Total' => 0,
+            'ImporteGrabado' => 1500.00,
+            'ImporteGravado_Desc' => 0,
+            'ImporteGravado_ISV18' => 0,
+            'ImporteGravado_ISV15' => 0,
+            'ImporteGravado_Total' => 1500.00,
             'LineasFactura' => [
                 [
-                    'Id'                     => $seq * 10000 + 1,
-                    'InvoiceId'              => $seq * 1000,
-                    'NumeroLinea'            => 1,
-                    'ProductoId'             => 'ART-001',
-                    'ProductoDesc'           => 'PRODUCTO DE PRUEBA',
-                    'TipoProducto'           => 'CAJA',
-                    'UniVenta'               => 'UND',
-                    'CantidadFracciones'     => 12.0,
-                    'CantidadDecimal'        => 1.0,
-                    'CantidadCaja'           => 1.0,
+                    'Id' => $seq * 10000 + 1,
+                    'InvoiceId' => $seq * 1000,
+                    'NumeroLinea' => 1,
+                    'ProductoId' => 'ART-001',
+                    'ProductoDesc' => 'PRODUCTO DE PRUEBA',
+                    'TipoProducto' => 'CAJA',
+                    'UniVenta' => 'UND',
+                    'CantidadFracciones' => 12.0,
+                    'CantidadDecimal' => 1.0,
+                    'CantidadCaja' => 1.0,
                     'CantidadUnidadMinVenta' => 12.0,
-                    'FactorConversion'       => 12,
-                    'Costo'                  => 100.0,
-                    'Precio'                 => 125.0,
-                    'PrecioUnidadMinVenta'   => 10.42,
-                    'Subtotal'               => 1500.00,
-                    'Descuento'              => 0,
-                    'PorcentajeDescuento'    => 0,
-                    'Impuesto'               => 0,
-                    'PorcentajeImpuesto'     => 0,
-                    'Impuesto18'             => 0,
-                    'Total'                  => 1500.00,
-                    'Peso'                   => 5.0,
-                    'Volumen'                => 0.5,
+                    'FactorConversion' => 12,
+                    'Costo' => 100.0,
+                    'Precio' => 125.0,
+                    'PrecioUnidadMinVenta' => 10.42,
+                    'Subtotal' => 1500.00,
+                    'Descuento' => 0,
+                    'PorcentajeDescuento' => 0,
+                    'Impuesto' => 0,
+                    'PorcentajeImpuesto' => 0,
+                    'Impuesto18' => 0,
+                    'Total' => 1500.00,
+                    'Peso' => 5.0,
+                    'Volumen' => 0.5,
                 ],
             ],
         ], $overrides);
@@ -136,12 +136,12 @@ class ManifestImporterServiceTest extends TestCase
     //  createManifest()
     // ═══════════════════════════════════════════════════════════════
 
-    public function test_createManifest_persists_manifest_with_correct_fields(): void
+    public function test_create_manifest_persists_manifest_with_correct_fields(): void
     {
         Supplier::factory()->create(['is_active' => true]);
         Warehouse::factory()->oac()->create();
 
-        $rawData  = [$this->invoicePayload()];
+        $rawData = [$this->invoicePayload()];
         $manifest = $this->makeImporter()->createManifest($rawData, $this->user->id);
 
         $this->assertInstanceOf(Manifest::class, $manifest);
@@ -151,7 +151,7 @@ class ManifestImporterServiceTest extends TestCase
         $this->assertSame($this->user->id, $manifest->created_by);
     }
 
-    public function test_createManifest_throws_when_no_active_supplier(): void
+    public function test_create_manifest_throws_when_no_active_supplier(): void
     {
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('proveedor activo');
@@ -159,12 +159,12 @@ class ManifestImporterServiceTest extends TestCase
         $this->makeImporter()->createManifest([$this->invoicePayload()], $this->user->id);
     }
 
-    public function test_createManifest_stores_raw_json(): void
+    public function test_create_manifest_stores_raw_json(): void
     {
         Supplier::factory()->create(['is_active' => true]);
         Warehouse::factory()->oac()->create();
 
-        $rawData  = [$this->invoicePayload()];
+        $rawData = [$this->invoicePayload()];
         $manifest = $this->makeImporter()->createManifest($rawData, $this->user->id);
 
         $stored = $manifest->fresh()->raw_json;
@@ -176,9 +176,9 @@ class ManifestImporterServiceTest extends TestCase
     //  importChunk() — facturas
     // ═══════════════════════════════════════════════════════════════
 
-    public function test_importChunk_creates_invoice_with_correct_fields(): void
+    public function test_import_chunk_creates_invoice_with_correct_fields(): void
     {
-        $supplier  = Supplier::factory()->create(['is_active' => true]);
+        $supplier = Supplier::factory()->create(['is_active' => true]);
         $warehouse = Warehouse::factory()->oac()->create();
 
         $importer = $this->makeImporter();
@@ -194,7 +194,7 @@ class ManifestImporterServiceTest extends TestCase
         $this->assertEquals(1500.00, (float) $invoice->total);
     }
 
-    public function test_importChunk_creates_multiple_invoices(): void
+    public function test_import_chunk_creates_multiple_invoices(): void
     {
         Supplier::factory()->create(['is_active' => true]);
         Warehouse::factory()->oac()->create();
@@ -210,7 +210,7 @@ class ManifestImporterServiceTest extends TestCase
         $this->assertSame(2, $count);
     }
 
-    public function test_importChunk_sets_pending_warehouse_for_unknown_code(): void
+    public function test_import_chunk_sets_pending_warehouse_for_unknown_code(): void
     {
         Supplier::factory()->create(['is_active' => true]);
         Warehouse::factory()->oac()->create();
@@ -229,13 +229,13 @@ class ManifestImporterServiceTest extends TestCase
         $this->assertContains('ZZZ', $importer->getUnknownWarehouses());
     }
 
-    public function test_importChunk_parses_dates_correctly(): void
+    public function test_import_chunk_parses_dates_correctly(): void
     {
         Supplier::factory()->create(['is_active' => true]);
         Warehouse::factory()->oac()->create();
 
         $inv = $this->invoicePayload([
-            'FechaFactura'     => '2026-04-10T00:00:00',
+            'FechaFactura' => '2026-04-10T00:00:00',
             'FechaVencimiento' => '2026-05-10',
         ]);
 
@@ -252,7 +252,7 @@ class ManifestImporterServiceTest extends TestCase
     //  importChunk() — líneas
     // ═══════════════════════════════════════════════════════════════
 
-    public function test_importChunk_creates_invoice_lines(): void
+    public function test_import_chunk_creates_invoice_lines(): void
     {
         Supplier::factory()->create(['is_active' => true]);
         Warehouse::factory()->oac()->create();
@@ -264,7 +264,7 @@ class ManifestImporterServiceTest extends TestCase
         $importer->importChunk($manifest, [$inv]);
 
         $invoiceId = DB::table('invoices')->where('manifest_id', $manifest->id)->value('id');
-        $lines     = DB::table('invoice_lines')->where('invoice_id', $invoiceId)->get();
+        $lines = DB::table('invoice_lines')->where('invoice_id', $invoiceId)->get();
 
         $this->assertCount(1, $lines);
         $this->assertSame('ART-001', $lines[0]->product_id);
@@ -272,7 +272,7 @@ class ManifestImporterServiceTest extends TestCase
         $this->assertEquals(1500.00, (float) $lines[0]->total);
     }
 
-    public function test_importChunk_creates_multiple_lines_per_invoice(): void
+    public function test_import_chunk_creates_multiple_lines_per_invoice(): void
     {
         Supplier::factory()->create(['is_active' => true]);
         Warehouse::factory()->oac()->create();
@@ -303,7 +303,7 @@ class ManifestImporterServiceTest extends TestCase
         $this->assertSame(2, $lineCount);
     }
 
-    public function test_importChunk_still_inserts_lines_when_jaremar_id_is_null(): void
+    public function test_import_chunk_still_inserts_lines_when_jaremar_id_is_null(): void
     {
         Supplier::factory()->create(['is_active' => true]);
         Warehouse::factory()->oac()->create();
@@ -324,7 +324,7 @@ class ManifestImporterServiceTest extends TestCase
         $this->assertSame(1, $lineCount);
     }
 
-    public function test_importChunk_maps_line_numeric_fields_correctly(): void
+    public function test_import_chunk_maps_line_numeric_fields_correctly(): void
     {
         Supplier::factory()->create(['is_active' => true]);
         Warehouse::factory()->oac()->create();
@@ -348,11 +348,11 @@ class ManifestImporterServiceTest extends TestCase
         $importer->importChunk($manifest, [$inv]);
 
         $invoiceId = DB::table('invoices')->where('manifest_id', $manifest->id)->value('id');
-        $line      = DB::table('invoice_lines')->where('invoice_id', $invoiceId)->first();
+        $line = DB::table('invoice_lines')->where('invoice_id', $invoiceId)->first();
 
         $this->assertSame(3, $line->line_number);
         $this->assertEquals(24.0, (float) $line->quantity_fractions);
-        $this->assertEquals(2.0,  (float) $line->quantity_box);
+        $this->assertEquals(2.0, (float) $line->quantity_box);
         $this->assertSame(12, $line->conversion_factor);
         $this->assertEquals(168.30, (float) $line->total);
     }
@@ -361,7 +361,7 @@ class ManifestImporterServiceTest extends TestCase
     //  Transaccionalidad
     // ═══════════════════════════════════════════════════════════════
 
-    public function test_importChunk_rolls_back_on_failure(): void
+    public function test_import_chunk_rolls_back_on_failure(): void
     {
         Supplier::factory()->create(['is_active' => true]);
         Warehouse::factory()->oac()->create();
@@ -379,7 +379,7 @@ class ManifestImporterServiceTest extends TestCase
         // falla, no queda nada suelto.
 
         $badInv = $this->invoicePayload([
-            'Id'       => 7777,
+            'Id' => 7777,
             'Nfactura' => null, // NOT NULL constraint violation
         ]);
 
@@ -420,7 +420,7 @@ class ManifestImporterServiceTest extends TestCase
         $this->assertContains('YYY', $unknown);
     }
 
-    public function test_importChunk_handles_empty_chunk(): void
+    public function test_import_chunk_handles_empty_chunk(): void
     {
         Supplier::factory()->create(['is_active' => true]);
         Warehouse::factory()->oac()->create();
@@ -443,7 +443,7 @@ class ManifestImporterServiceTest extends TestCase
         }
     }
 
-    public function test_importChunk_invoice_without_lines_creates_no_line_rows(): void
+    public function test_import_chunk_invoice_without_lines_creates_no_line_rows(): void
     {
         Supplier::factory()->create(['is_active' => true]);
         Warehouse::factory()->oac()->create();

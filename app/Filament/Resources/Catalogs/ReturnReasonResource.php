@@ -4,11 +4,12 @@ namespace App\Filament\Resources\Catalogs;
 
 use App\Models\ReturnReason;
 use App\Models\User;
+use BackedEnum;
 use Filament\Actions\CreateAction;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
-use Filament\Actions\RestoreAction;
 use Filament\Actions\ForceDeleteAction;
+use Filament\Actions\RestoreAction;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
@@ -23,7 +24,6 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Illuminate\Support\Facades\Auth;
-use BackedEnum;
 
 class ReturnReasonResource extends Resource
 {
@@ -109,9 +109,9 @@ class ReturnReasonResource extends Resource
                     ->sortable()
                     ->badge()
                     ->color(fn (string $state): string => match ($state) {
-                        'BE'    => 'info',
-                        'PD'    => 'danger',
-                        'PV'    => 'warning',
+                        'BE' => 'info',
+                        'PD' => 'danger',
+                        'PV' => 'warning',
                         default => 'gray',
                     }),
 

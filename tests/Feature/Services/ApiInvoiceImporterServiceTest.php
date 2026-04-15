@@ -31,9 +31,12 @@ class ApiInvoiceImporterServiceTest extends TestCase
     use RefreshDatabase;
 
     private Warehouse $oac;
+
     private Warehouse $oas;
+
     private Warehouse $oao;
-    private Supplier  $supplier;
+
+    private Supplier $supplier;
 
     protected function setUp(): void
     {
@@ -61,13 +64,13 @@ class ApiInvoiceImporterServiceTest extends TestCase
     private function importRecord(): ApiInvoiceImport
     {
         return ApiInvoiceImport::create([
-            'batch_uuid'     => fake()->uuid(),
-            'api_key_hint'   => 'test***',
-            'ip_address'     => '127.0.0.1',
+            'batch_uuid' => fake()->uuid(),
+            'api_key_hint' => 'test***',
+            'ip_address' => '127.0.0.1',
             'total_received' => 1,
-            'raw_payload'    => [],
-            'payload_hash'   => md5('test'),
-            'status'         => 'received',
+            'raw_payload' => [],
+            'payload_hash' => md5('test'),
+            'status' => 'received',
         ]);
     }
 
@@ -78,50 +81,50 @@ class ApiInvoiceImporterServiceTest extends TestCase
     private function invoicePayload(array $overrides = []): array
     {
         return array_merge([
-            'Nfactura'         => 'F' . fake()->unique()->numerify('########'),
+            'Nfactura' => 'F'.fake()->unique()->numerify('########'),
             'NumeroManifiesto' => 'MAN100001',
-            'Total'            => 450.0,
-            'FechaFactura'     => now()->toIso8601String(),
-            'Almacen'          => 'OAC',
-            'Vendedorid'       => 'V01',
-            'Vendedor'         => 'VENDEDOR PRUEBA',
-            'Clienteid'        => 'C001',
-            'Cliente'          => 'PULPERIA PRUEBA',
-            'Rtn'              => '',
-            'TipoPago'         => 'CONTADO',
-            'DiasCred'         => 0,
-            'TipoFactura'     => 'FAC',
-            'EstadoFactura'   => 1,
-            'NumeroFacturaLX' => 'LX' . fake()->unique()->numerify('######'),
-            'NumeroPedido'    => 'PED' . fake()->unique()->numerify('######'),
-            'NumeroRuta'      => '001',
-            'Direccion'       => 'COL. TEST',
-            'EntregarA'       => 'PULPERIA PRUEBA',
-            'LineasFactura'   => [[
-                'ProductoId'            => 'ART-001',
-                'ProductoDesc'          => 'PRODUCTO PRUEBA',
-                'NumeroLinea'           => 1,
-                'Total'                 => 450.0,
-                'Precio'                => 15.0,
-                'Subtotal'              => 450.0,
-                'Costo'                 => 0.0,
-                'CantidadFracciones'    => 30.0,
-                'CantidadDecimal'       => 30.0,
-                'CantidadCaja'          => 0.0,
-                'FactorConversion'      => 1,
-                'UniVenta'              => 'UN',
-                'TipoProducto'          => 'A',
-                'Descuento'             => 0.0,
-                'Impuesto'              => 0.0,
-                'Impuesto18'            => 0.0,
-                'PorcentajeDescuento'   => 0.0,
-                'PorcentajeImpuesto'    => 0.0,
+            'Total' => 450.0,
+            'FechaFactura' => now()->toIso8601String(),
+            'Almacen' => 'OAC',
+            'Vendedorid' => 'V01',
+            'Vendedor' => 'VENDEDOR PRUEBA',
+            'Clienteid' => 'C001',
+            'Cliente' => 'PULPERIA PRUEBA',
+            'Rtn' => '',
+            'TipoPago' => 'CONTADO',
+            'DiasCred' => 0,
+            'TipoFactura' => 'FAC',
+            'EstadoFactura' => 1,
+            'NumeroFacturaLX' => 'LX'.fake()->unique()->numerify('######'),
+            'NumeroPedido' => 'PED'.fake()->unique()->numerify('######'),
+            'NumeroRuta' => '001',
+            'Direccion' => 'COL. TEST',
+            'EntregarA' => 'PULPERIA PRUEBA',
+            'LineasFactura' => [[
+                'ProductoId' => 'ART-001',
+                'ProductoDesc' => 'PRODUCTO PRUEBA',
+                'NumeroLinea' => 1,
+                'Total' => 450.0,
+                'Precio' => 15.0,
+                'Subtotal' => 450.0,
+                'Costo' => 0.0,
+                'CantidadFracciones' => 30.0,
+                'CantidadDecimal' => 30.0,
+                'CantidadCaja' => 0.0,
+                'FactorConversion' => 1,
+                'UniVenta' => 'UN',
+                'TipoProducto' => 'A',
+                'Descuento' => 0.0,
+                'Impuesto' => 0.0,
+                'Impuesto18' => 0.0,
+                'PorcentajeDescuento' => 0.0,
+                'PorcentajeImpuesto' => 0.0,
                 'CantidadUnidadMinVenta' => 30.0,
-                'PrecioUnidadMinVenta'  => 15.0,
-                'Peso'                  => 0.0,
-                'Volumen'               => 0.0,
-                'Id'                    => fake()->unique()->numberBetween(1, 999999),
-                'InvoiceId'             => fake()->numberBetween(1, 999999),
+                'PrecioUnidadMinVenta' => 15.0,
+                'Peso' => 0.0,
+                'Volumen' => 0.0,
+                'Id' => fake()->unique()->numberBetween(1, 999999),
+                'InvoiceId' => fake()->numberBetween(1, 999999),
             ]],
         ], $overrides);
     }
@@ -144,9 +147,9 @@ class ApiInvoiceImporterServiceTest extends TestCase
     public function test_new_invoice_creates_manifest_invoice_and_lines(): void
     {
         $invoice = $this->invoicePayload([
-            'Nfactura'         => 'F-HAPPY-001',
+            'Nfactura' => 'F-HAPPY-001',
             'NumeroManifiesto' => 'MAN-HAPPY-01',
-            'Total'            => 900.0,
+            'Total' => 900.0,
         ]);
 
         $summary = $this->service()->processBatch([$invoice], $this->importRecord());
@@ -177,15 +180,15 @@ class ApiInvoiceImporterServiceTest extends TestCase
     {
         $inv1 = $this->invoicePayload([
             'NumeroManifiesto' => 'MAN-A',
-            'Almacen'          => 'OAC',
+            'Almacen' => 'OAC',
         ]);
         $inv2 = $this->invoicePayload([
             'NumeroManifiesto' => 'MAN-B',
-            'Almacen'          => 'OAC',
+            'Almacen' => 'OAC',
         ]);
         $inv3 = $this->invoicePayload([
             'NumeroManifiesto' => 'MAN-B',
-            'Almacen'          => 'OAS',
+            'Almacen' => 'OAS',
         ]);
 
         $summary = $this->service()->processBatch([$inv1, $inv2, $inv3], $this->importRecord());
@@ -203,11 +206,11 @@ class ApiInvoiceImporterServiceTest extends TestCase
     {
         $inv1 = $this->invoicePayload([
             'NumeroManifiesto' => 'MAN-BAD',
-            'Almacen'          => 'XXX',
+            'Almacen' => 'XXX',
         ]);
         $inv2 = $this->invoicePayload([
             'NumeroManifiesto' => 'MAN-BAD',
-            'Almacen'          => 'OAC',   // válida, pero comparte manifiesto
+            'Almacen' => 'OAC',   // válida, pero comparte manifiesto
         ]);
 
         $summary = $this->service()->processBatch([$inv1, $inv2], $this->importRecord());
@@ -223,7 +226,7 @@ class ApiInvoiceImporterServiceTest extends TestCase
     {
         $inv = $this->invoicePayload([
             'NumeroManifiesto' => 'MAN-EMPTY-WH',
-            'Almacen'          => '',
+            'Almacen' => '',
         ]);
 
         $summary = $this->service()->processBatch([$inv], $this->importRecord());
@@ -239,7 +242,7 @@ class ApiInvoiceImporterServiceTest extends TestCase
     public function test_closed_manifest_rejects_all_invoices(): void
     {
         Manifest::factory()->closed()->create([
-            'number'      => 'MAN-CLOSED',
+            'number' => 'MAN-CLOSED',
             'supplier_id' => $this->supplier->id,
         ]);
 
@@ -277,18 +280,18 @@ class ApiInvoiceImporterServiceTest extends TestCase
     {
         // Crear manifiesto A con factura F-DUP
         $manifestA = Manifest::factory()->create([
-            'number'      => 'MAN-A-DUP',
+            'number' => 'MAN-A-DUP',
             'supplier_id' => $this->supplier->id,
         ]);
         Invoice::factory()->create([
-            'manifest_id'    => $manifestA->id,
-            'warehouse_id'   => $this->oac->id,
+            'manifest_id' => $manifestA->id,
+            'warehouse_id' => $this->oac->id,
             'invoice_number' => 'F-DUP',
         ]);
 
         // Enviar F-DUP en manifiesto B
         $inv = $this->invoicePayload([
-            'Nfactura'         => 'F-DUP',
+            'Nfactura' => 'F-DUP',
             'NumeroManifiesto' => 'MAN-B-DUP',
         ]);
 
@@ -302,48 +305,48 @@ class ApiInvoiceImporterServiceTest extends TestCase
     {
         // Crear manifiesto con factura existente
         $manifest = Manifest::factory()->create([
-            'number'      => 'MAN-SAME',
+            'number' => 'MAN-SAME',
             'supplier_id' => $this->supplier->id,
         ]);
         Invoice::factory()->create([
-            'manifest_id'    => $manifest->id,
-            'warehouse_id'   => $this->oac->id,
+            'manifest_id' => $manifest->id,
+            'warehouse_id' => $this->oac->id,
             'invoice_number' => 'F-SAME-001',
-            'total'          => 450.0,
-            'client_name'    => 'PULPERIA PRUEBA',
-            'seller_id'      => 'V01',
-            'payment_type'   => 'CONTADO',
-            'credit_days'    => 0,
-            'invoice_date'   => now()->toDateString(),
-            'route_number'   => '001',
-            'isv15'          => 0,
-            'isv18'          => 0,
-            'discounts'      => 0,
-            'importe_gravado'       => 0,
+            'total' => 450.0,
+            'client_name' => 'PULPERIA PRUEBA',
+            'seller_id' => 'V01',
+            'payment_type' => 'CONTADO',
+            'credit_days' => 0,
+            'invoice_date' => now()->toDateString(),
+            'route_number' => '001',
+            'isv15' => 0,
+            'isv18' => 0,
+            'discounts' => 0,
+            'importe_gravado' => 0,
             'importe_gravado_isv15' => 0,
             'importe_gravado_total' => 0,
-            'importe_exento_total'  => 0,
+            'importe_exento_total' => 0,
             'importe_exonerado_total' => 0,
-            'client_rtn'    => '',
-            'deliver_to'    => 'PULPERIA PRUEBA',
-            'seller_name'   => 'VENDEDOR PRUEBA',
-            'due_date'      => null,
+            'client_rtn' => '',
+            'deliver_to' => 'PULPERIA PRUEBA',
+            'seller_name' => 'VENDEDOR PRUEBA',
+            'due_date' => null,
         ]);
 
         // Reenviar misma factura con mismos datos
         $inv = $this->invoicePayload([
-            'Nfactura'         => 'F-SAME-001',
+            'Nfactura' => 'F-SAME-001',
             'NumeroManifiesto' => 'MAN-SAME',
-            'Total'            => 450.0,
-            'Cliente'          => 'PULPERIA PRUEBA',
-            'Vendedorid'       => 'V01',
-            'TipoPago'         => 'CONTADO',
-            'DiasCred'         => 0,
-            'FechaFactura'     => now()->format('d/m/Y'),
-            'NumeroRuta'       => '001',
-            'Rtn'              => '',
-            'EntregarA'        => 'PULPERIA PRUEBA',
-            'Vendedor'         => 'VENDEDOR PRUEBA',
+            'Total' => 450.0,
+            'Cliente' => 'PULPERIA PRUEBA',
+            'Vendedorid' => 'V01',
+            'TipoPago' => 'CONTADO',
+            'DiasCred' => 0,
+            'FechaFactura' => now()->format('d/m/Y'),
+            'NumeroRuta' => '001',
+            'Rtn' => '',
+            'EntregarA' => 'PULPERIA PRUEBA',
+            'Vendedor' => 'VENDEDOR PRUEBA',
         ]);
 
         $summary = $this->service()->processBatch([$inv], $this->importRecord());
@@ -356,23 +359,23 @@ class ApiInvoiceImporterServiceTest extends TestCase
     public function test_changed_invoice_creates_conflict_row(): void
     {
         $manifest = Manifest::factory()->create([
-            'number'      => 'MAN-DIFF',
+            'number' => 'MAN-DIFF',
             'supplier_id' => $this->supplier->id,
         ]);
         Invoice::factory()->create([
-            'manifest_id'    => $manifest->id,
-            'warehouse_id'   => $this->oac->id,
+            'manifest_id' => $manifest->id,
+            'warehouse_id' => $this->oac->id,
             'invoice_number' => 'F-DIFF-001',
-            'total'          => 100.0,
-            'client_name'    => 'CLIENTE VIEJO',
+            'total' => 100.0,
+            'client_name' => 'CLIENTE VIEJO',
         ]);
 
         // Reenviar con total y cliente distintos
         $inv = $this->invoicePayload([
-            'Nfactura'         => 'F-DIFF-001',
+            'Nfactura' => 'F-DIFF-001',
             'NumeroManifiesto' => 'MAN-DIFF',
-            'Total'            => 999.0,
-            'Cliente'          => 'CLIENTE NUEVO',
+            'Total' => 999.0,
+            'Cliente' => 'CLIENTE NUEVO',
         ]);
 
         $importRecord = $this->importRecord();
@@ -396,33 +399,33 @@ class ApiInvoiceImporterServiceTest extends TestCase
     public function test_box_product_computes_quantity_fractions_from_box_times_factor(): void
     {
         $inv = $this->invoicePayload([
-            'Nfactura'         => 'F-BOX-001',
+            'Nfactura' => 'F-BOX-001',
             'NumeroManifiesto' => 'MAN-BOX',
-            'LineasFactura'    => [[
-                'ProductoId'            => 'ART-CJ-001',
-                'ProductoDesc'          => 'PRODUCTO CAJA',
-                'NumeroLinea'           => 1,
-                'Total'                 => 600.0,
-                'Precio'                => 50.0,
-                'Subtotal'              => 600.0,
-                'Costo'                 => 0.0,
-                'CantidadFracciones'    => 0.0,    // <-- CERO: es producto caja
-                'CantidadDecimal'       => 12.0,
-                'CantidadCaja'          => 12.0,   // 12 cajas
-                'FactorConversion'      => 24,     // 24 unidades por caja
-                'UniVenta'              => 'CJ',
-                'TipoProducto'          => 'A',
-                'Descuento'             => 0.0,
-                'Impuesto'              => 0.0,
-                'Impuesto18'            => 0.0,
-                'PorcentajeDescuento'   => 0.0,
-                'PorcentajeImpuesto'    => 0.0,
+            'LineasFactura' => [[
+                'ProductoId' => 'ART-CJ-001',
+                'ProductoDesc' => 'PRODUCTO CAJA',
+                'NumeroLinea' => 1,
+                'Total' => 600.0,
+                'Precio' => 50.0,
+                'Subtotal' => 600.0,
+                'Costo' => 0.0,
+                'CantidadFracciones' => 0.0,    // <-- CERO: es producto caja
+                'CantidadDecimal' => 12.0,
+                'CantidadCaja' => 12.0,   // 12 cajas
+                'FactorConversion' => 24,     // 24 unidades por caja
+                'UniVenta' => 'CJ',
+                'TipoProducto' => 'A',
+                'Descuento' => 0.0,
+                'Impuesto' => 0.0,
+                'Impuesto18' => 0.0,
+                'PorcentajeDescuento' => 0.0,
+                'PorcentajeImpuesto' => 0.0,
                 'CantidadUnidadMinVenta' => 12.0,
-                'PrecioUnidadMinVenta'  => 50.0,
-                'Peso'                  => 0.0,
-                'Volumen'               => 0.0,
-                'Id'                    => 88001,
-                'InvoiceId'             => 88001,
+                'PrecioUnidadMinVenta' => 50.0,
+                'Peso' => 0.0,
+                'Volumen' => 0.0,
+                'Id' => 88001,
+                'InvoiceId' => 88001,
             ]],
         ]);
 
@@ -445,13 +448,13 @@ class ApiInvoiceImporterServiceTest extends TestCase
     {
         $inv1 = $this->invoicePayload([
             'NumeroManifiesto' => 'MAN-TOTALS',
-            'Total'            => 200.0,
-            'Almacen'          => 'OAC',
+            'Total' => 200.0,
+            'Almacen' => 'OAC',
         ]);
         $inv2 = $this->invoicePayload([
             'NumeroManifiesto' => 'MAN-TOTALS',
-            'Total'            => 300.0,
-            'Almacen'          => 'OAC',
+            'Total' => 300.0,
+            'Almacen' => 'OAC',
         ]);
 
         $this->service()->processBatch([$inv1, $inv2], $this->importRecord());
@@ -485,9 +488,9 @@ class ApiInvoiceImporterServiceTest extends TestCase
     public function test_validate_dates_marks_today_manifest_as_valid(): void
     {
         Manifest::factory()->create([
-            'number'      => 'MAN-TODAY',
+            'number' => 'MAN-TODAY',
             'supplier_id' => $this->supplier->id,
-            'created_at'  => now(),
+            'created_at' => now(),
         ]);
 
         $invoices = [$this->invoicePayload(['NumeroManifiesto' => 'MAN-TODAY'])];
@@ -504,9 +507,9 @@ class ApiInvoiceImporterServiceTest extends TestCase
     public function test_validate_dates_marks_yesterday_manifest_as_invalid(): void
     {
         Manifest::factory()->create([
-            'number'      => 'MAN-YESTERDAY',
+            'number' => 'MAN-YESTERDAY',
             'supplier_id' => $this->supplier->id,
-            'created_at'  => now()->subDay(),
+            'created_at' => now()->subDay(),
         ]);
 
         $invoices = [$this->invoicePayload(['NumeroManifiesto' => 'MAN-YESTERDAY'])];
