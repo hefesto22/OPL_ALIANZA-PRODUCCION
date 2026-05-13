@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Services\ManifestImporterService;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\InteractsWithQueue;
@@ -14,13 +15,21 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
-class ProcessManifestImport implements ShouldQueue
+class ProcessManifestImport implements ShouldBeUnique, ShouldQueue
 {
     use InteractsWithQueue, Queueable, SerializesModels;
 
     public int $tries = 3;
 
     public int $timeout = 1800;
+
+    /**
+     * Cota máxima para el lock de unicidad (1h). Si el job queda zombie por
+     * cualquier razón, después de 1h Horizon libera el lock y permite que
+     * un nuevo intento se encole. 1h es generoso: el timeout del job es 30
+     * min, así que con margen para retries internos.
+     */
+    public int $uniqueFor = 3600;
 
     protected const CHUNK_SIZE = 1000; // Subido de 500 → 1000
 
@@ -30,10 +39,16 @@ class ProcessManifestImport implements ShouldQueue
      * debe NO bloquear la cola `high` donde corren las notificaciones
      * al usuario que acaba de subir el manifiesto.
      *
-     * Nota: tries=3 acá OVERRIDE el tries=1 del supervisor-reports,
-     * que es intencional: el importer es idempotente a nivel de chunk
-     * (cada factura usa updateOrCreate) y un fallo transitorio de red
-     * o de BD no debería obligar al usuario a volver a subir el JSON.
+     * Nota: tries=3 acá OVERRIDE el tries=1 del supervisor-reports.
+     * Es intencional: el importer es idempotente a nivel de chunk gracias
+     * a INSERT ... ON CONFLICT DO UPDATE en invoices/invoice_lines, por lo
+     * que un fallo transitorio de red o BD no obliga al usuario a re-subir.
+     *
+     * ShouldBeUnique + uniqueId() bloquean la corrida concurrente del mismo
+     * archivo (escenario clásico: timeout intermedio → Horizon reintenta
+     * sin saber si el primero todavía está vivo). El uniqueId combina el
+     * userId con el hash del path para que dos usuarios diferentes puedan
+     * subir archivos distintos en paralelo sin colisión.
      *
      * Se setea vía onQueue() en vez de `public $queue = 'reports'` porque
      * en PHP 8.3 + Laravel 11 el trait Queueable ya declara `public $queue`
@@ -46,6 +61,19 @@ class ProcessManifestImport implements ShouldQueue
         protected string $originalFileName,
     ) {
         $this->onQueue('reports');
+    }
+
+    /**
+     * Lock determinístico por (usuario, archivo).
+     *
+     * - md5 del path es suficiente: no es para seguridad, es solo un
+     *   identificador estable y corto del archivo en el lock store.
+     * - Incluir userId previene falsos negativos si dos usuarios
+     *   coinciden en path tras Storage::disk reciclando nombres.
+     */
+    public function uniqueId(): string
+    {
+        return 'process-manifest-import:'.$this->userId.':'.md5($this->storedPath);
     }
 
     public function handle(ManifestImporterService $importer): void

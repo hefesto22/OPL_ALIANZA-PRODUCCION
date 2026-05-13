@@ -253,4 +253,68 @@ class ProcessManifestImportTest extends TestCase
 
         $this->assertTrue($hasError);
     }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  Idempotencia — retry del job NO duplica datos
+    // ═══════════════════════════════════════════════════════════════
+
+    public function test_job_is_idempotent_when_executed_twice_with_same_file(): void
+    {
+        // Si Horizon reintenta el job (timeout, fallo de red intermedio,
+        // worker reciclado), la segunda corrida debe reusar el manifest
+        // creado por la primera y ACTUALIZAR facturas/líneas en vez de
+        // duplicar o explotar por unique constraint.
+        //
+        // Mecanismo: createManifest usa firstOrCreate por number;
+        // importChunk usa INSERT ON CONFLICT DO UPDATE en invoices y
+        // upsert en invoice_lines. Las dos capas forman idempotencia real.
+        $inv1 = $this->invoicePayload(['Id' => 9001, 'Nfactura' => 'FIDEM-A', 'Total' => 500]);
+        $inv2 = $this->invoicePayload(['Id' => 9002, 'Nfactura' => 'FIDEM-B', 'Total' => 800]);
+        $payload = [$inv1, $inv2];
+
+        // Primera ejecución
+        $path1 = $this->storeJsonFile($payload, 'imports/idem-1.json');
+        (new ProcessManifestImport($path1, $this->user->id, 'idem.json'))
+            ->handle(app(\App\Services\ManifestImporterService::class));
+
+        // El job borra el archivo al final → re-crear para el segundo intento.
+        // Path distinto para evitar conflicto del Storage::fake con el delete previo.
+        $path2 = $this->storeJsonFile($payload, 'imports/idem-2.json');
+        (new ProcessManifestImport($path2, $this->user->id, 'idem.json'))
+            ->handle(app(\App\Services\ManifestImporterService::class));
+
+        // 1 manifest, 2 invoices, 2 lines — no 2/4/4.
+        $manifests = DB::table('manifests')->where('number', 'MAN-JOB-001')->count();
+        $this->assertSame(1, $manifests, 'firstOrCreate debe reusar el manifest existente');
+
+        $manifest = Manifest::where('number', 'MAN-JOB-001')->first();
+        $invoiceCount = DB::table('invoices')->where('manifest_id', $manifest->id)->count();
+        $this->assertSame(2, $invoiceCount, 'ON CONFLICT DO UPDATE no debe duplicar facturas');
+
+        $invoiceIds = DB::table('invoices')->where('manifest_id', $manifest->id)->pluck('id');
+        $lineCount = DB::table('invoice_lines')->whereIn('invoice_id', $invoiceIds)->count();
+        $this->assertSame(2, $lineCount, 'upsert por (invoice_id, line_number) no debe duplicar líneas');
+    }
+
+    public function test_job_declares_should_be_unique_with_deterministic_unique_id(): void
+    {
+        // Contrato §12 del CLAUDE.md: jobs financieros / críticos deben ser
+        // únicos en runtime para que Horizon no encole dos instancias del
+        // mismo trabajo en paralelo. Este test congela el contrato:
+        //  - Implementa ShouldBeUnique
+        //  - uniqueId es estable por (path, userId)
+        //  - Cambiar userId o path produce un uniqueId distinto (no bloquea
+        //    a otros usuarios ni a otros archivos)
+        //  - uniqueFor está configurado
+        $job1 = new ProcessManifestImport('imports/a.json', 42, 'a.json');
+        $job2 = new ProcessManifestImport('imports/a.json', 42, 'a.json');
+        $job3 = new ProcessManifestImport('imports/a.json', 99, 'a.json');
+        $job4 = new ProcessManifestImport('imports/b.json', 42, 'b.json');
+
+        $this->assertInstanceOf(\Illuminate\Contracts\Queue\ShouldBeUnique::class, $job1);
+        $this->assertSame($job1->uniqueId(), $job2->uniqueId(), 'mismo (path, user) → mismo lock');
+        $this->assertNotSame($job1->uniqueId(), $job3->uniqueId(), 'distinto userId → distinto lock');
+        $this->assertNotSame($job1->uniqueId(), $job4->uniqueId(), 'distinto path → distinto lock');
+        $this->assertGreaterThan(0, $job1->uniqueFor, 'uniqueFor debe estar configurado');
+    }
 }

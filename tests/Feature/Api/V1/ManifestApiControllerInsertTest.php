@@ -487,6 +487,75 @@ class ManifestApiControllerInsertTest extends TestCase
         );
     }
 
+    // ── Idempotencia: protección a nivel de motor (race TOCTOU) ─────────
+
+    public function test_payload_hash_unique_constraint_blocks_concurrent_duplicate(): void
+    {
+        // El check de payload_hash en el controller tiene ventana TOCTOU:
+        // dos llamadas concurrentes podrían pasar el SELECT antes de que
+        // la primera complete el INSERT. La unique partial constraint a
+        // nivel motor cierra esa ventana — el segundo INSERT lanza
+        // QueryException. Este test simula la race insertando directo a
+        // BD para validar que la constraint protege contra el peor caso.
+        $hash = hash('sha256', '{"test":"toctou-payload"}');
+
+        ApiInvoiceImport::create([
+            'batch_uuid' => \Illuminate\Support\Str::uuid()->toString(),
+            'api_key_hint' => 'abcd1234',
+            'ip_address' => '1.2.3.4',
+            'total_received' => 1,
+            'raw_payload' => ['test' => 'toctou-payload'],
+            'payload_hash' => $hash,
+            'status' => 'received',
+        ]);
+
+        $this->expectException(\Illuminate\Database\QueryException::class);
+
+        ApiInvoiceImport::create([
+            'batch_uuid' => \Illuminate\Support\Str::uuid()->toString(),
+            'api_key_hint' => 'abcd1234',
+            'ip_address' => '1.2.3.4',
+            'total_received' => 1,
+            'raw_payload' => ['test' => 'toctou-payload'],
+            'payload_hash' => $hash,
+            'status' => 'processed',
+        ]);
+    }
+
+    public function test_payload_hash_unique_constraint_allows_retry_after_failed_import(): void
+    {
+        // Si un import falla (status='failed'), el partial unique index lo
+        // excluye y permite reintentar con el mismo payload. Es necesario
+        // para que un bug corregido permita reenviar el batch original
+        // sin tener que mutar manualmente el registro fallido.
+        $hash = hash('sha256', '{"retry":"after-failure"}');
+
+        ApiInvoiceImport::create([
+            'batch_uuid' => \Illuminate\Support\Str::uuid()->toString(),
+            'api_key_hint' => 'abcd1234',
+            'ip_address' => '1.2.3.4',
+            'total_received' => 1,
+            'raw_payload' => ['retry' => 'after-failure'],
+            'payload_hash' => $hash,
+            'status' => 'failed',
+            'failure_message' => 'Bug temporal corregido',
+        ]);
+
+        // Insertar con el mismo hash pero status válido NO debe fallar.
+        $retry = ApiInvoiceImport::create([
+            'batch_uuid' => \Illuminate\Support\Str::uuid()->toString(),
+            'api_key_hint' => 'abcd1234',
+            'ip_address' => '1.2.3.4',
+            'total_received' => 1,
+            'raw_payload' => ['retry' => 'after-failure'],
+            'payload_hash' => $hash,
+            'status' => 'processed',
+        ]);
+
+        $this->assertSame('processed', $retry->status);
+        $this->assertSame(2, ApiInvoiceImport::where('payload_hash', $hash)->count());
+    }
+
     // ── Rate limiting ───────────────────────────────────────────────────
 
     public function test_insert_rate_limit_returns_429_after_configured_limit(): void

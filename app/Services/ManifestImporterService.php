@@ -67,16 +67,24 @@ class ManifestImporterService
 
         $first = collect($rawData)->first();
 
-        return Manifest::create([
-            'supplier_id' => $supplier->id,
-            'warehouse_id' => null,
-            'number' => $first['NumeroManifiesto'],
-            'date' => now()->toDateString(),
-            'status' => 'imported',
-            'raw_json' => $rawData,
-            'created_by' => $userId,
-            'updated_by' => $userId,
-        ]);
+        // firstOrCreate por `number` (que tiene unique constraint en BD):
+        // si el job se ejecuta dos veces con el mismo archivo (retry de
+        // Horizon, etc.), la segunda corrida reusa el manifest existente
+        // en vez de explotar por unique violation. Es idempotencia real
+        // al nivel del manifiesto. Las facturas/líneas dentro usan upsert
+        // por su clave natural (ver importChunk).
+        return Manifest::firstOrCreate(
+            ['number' => $first['NumeroManifiesto']],
+            [
+                'supplier_id' => $supplier->id,
+                'warehouse_id' => null,
+                'date' => now()->toDateString(),
+                'status' => 'imported',
+                'raw_json' => $rawData,
+                'created_by' => $userId,
+                'updated_by' => $userId,
+            ]
+        );
     }
 
     // ─── Chunk: INSERT facturas + INSERT líneas ─────────────────
@@ -160,9 +168,22 @@ class ManifestImporterService
         // Todo en una sola transacción — facturas y líneas usan la misma
         // conexión de Laravel, por lo que las FK se satisfacen sin commitear.
         DB::transaction(function () use ($invoiceRows, $chunk, $now) {
-            // PASO 1: Insertar facturas con INSERT...RETURNING
+            // PASO 1: Insertar facturas con INSERT ... ON CONFLICT DO UPDATE
+            //
+            // Idempotencia real: si la factura ya existe (retry del job, etc.)
+            // y pertenece al MISMO manifest, hacemos UPDATE (no-op efectivo)
+            // y retornamos su id. Si pertenece a OTRO manifest, la cláusula
+            // WHERE bloquea el UPDATE — la fila se omite silenciosamente del
+            // RETURNING. Detectamos esos casos comparando contra los IDs
+            // Jaremar esperados y los registramos como warning para el admin.
+            //
+            // SET excluye `invoice_number` (clave de conflict — no se actualiza
+            // sobre sí misma) y `created_at` (preservar timestamp original
+            // del primer insert). El resto se sobreescribe con EXCLUDED.*.
             $columnsList = implode(', ', array_map(fn ($c) => "\"{$c}\"", self::INVOICE_COLUMNS));
             $placeholder = '('.implode(', ', array_fill(0, count(self::INVOICE_COLUMNS), '?')).')';
+            $updateCols = array_diff(self::INVOICE_COLUMNS, ['invoice_number', 'created_at']);
+            $setList = implode(', ', array_map(fn ($c) => "\"{$c}\" = EXCLUDED.\"{$c}\"", $updateCols));
             $bindings = [];
             $valueRows = [];
 
@@ -173,11 +194,26 @@ class ManifestImporterService
 
             $sql = "INSERT INTO \"invoices\" ({$columnsList}) VALUES "
                  .implode(', ', $valueRows)
+                 .' ON CONFLICT ("invoice_number") DO UPDATE SET '.$setList
+                 .' WHERE "invoices"."manifest_id" = EXCLUDED."manifest_id"'
                  .' RETURNING "id", "jaremar_id"';
 
             $inserted = DB::select($sql, $bindings);
 
             $jarimarToInvoiceId = collect($inserted)->pluck('id', 'jaremar_id')->toArray();
+
+            // Detectar facturas que NO retornaron — pertenecen a otro manifest
+            // y se omitieron por el WHERE del ON CONFLICT. Levantamos warning
+            // por cada una para que el admin lo vea en la notificación.
+            //
+            // INVOICE_COLUMNS posición 3 = jaremar_id, posición 4 = invoice_number.
+            foreach ($invoiceRows as $row) {
+                $jaremarId = $row[3];
+                if ($jaremarId !== null && ! isset($jarimarToInvoiceId[$jaremarId])) {
+                    $invoiceNumber = $row[4];
+                    $this->warnings[] = "Factura {$invoiceNumber} ya existe en otro manifiesto y se omitió.";
+                }
+            }
 
             // PASO 2: Preparar líneas como arrays asociativos e insertar en chunks
             $lineRows = [];
@@ -221,9 +257,28 @@ class ManifestImporterService
                 }
             }
 
-            // Insertar líneas en chunks de 500 vía DB facade (misma conexión = FK OK)
+            // Insertar líneas con upsert por (invoice_id, line_number) —
+            // unique compuesto agregado en la migración. Idempotente: si la
+            // misma línea ya existe (retry del job), DO UPDATE no duplica.
+            // Las columnas inmutables (invoice_id, line_number, created_at)
+            // quedan fuera del SET — el resto se refresca con los valores
+            // entrantes.
+            $lineUpdateCols = [
+                'jaremar_line_id', 'invoice_jaremar_id',
+                'product_id', 'product_description', 'product_type', 'unit_sale',
+                'quantity_fractions', 'quantity_decimal', 'quantity_box',
+                'quantity_min_sale', 'conversion_factor',
+                'cost', 'price', 'price_min_sale',
+                'subtotal', 'discount', 'discount_percent',
+                'tax', 'tax_percent', 'tax18', 'total',
+                'weight', 'volume', 'updated_at',
+            ];
             foreach (array_chunk($lineRows, self::LINE_CHUNK_SIZE) as $lineChunk) {
-                DB::table('invoice_lines')->insert($lineChunk);
+                DB::table('invoice_lines')->upsert(
+                    $lineChunk,
+                    ['invoice_id', 'line_number'],
+                    $lineUpdateCols
+                );
             }
         });
     }
