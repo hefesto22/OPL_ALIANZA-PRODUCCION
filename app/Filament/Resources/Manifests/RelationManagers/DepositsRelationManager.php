@@ -103,7 +103,10 @@ class DepositsRelationManager extends RelationManager
                     ->icon('heroicon-o-photo')
                     ->color('info')
                     ->visible(fn (Deposit $record): bool => (bool) $record->receipt_image)
-                    ->url(fn (Deposit $record): string => route('deposits.receipt', $record))
+                    // Signed URL con TTL 30min — el accessor receipt_url
+                    // del modelo lo genera. Usar el accessor centraliza
+                    // el TTL en un solo lugar.
+                    ->url(fn (Deposit $record): string => $record->receipt_url)
                     ->openUrlInNewTab(),
 
                 // ── Editar depósito ────────────────────────────────────

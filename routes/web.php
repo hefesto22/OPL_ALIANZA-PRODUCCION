@@ -7,16 +7,19 @@ use App\Http\Controllers\PrintReportsController;
 use Illuminate\Support\Facades\Route;
 
 // ── Descarga de exportaciones generadas en background ────────────────────
+// Triple defensa: `signed` valida que el link fue emitido por nosotros y
+// no expiró (TTL 24h, ver NotifyExportReady); `auth` exige sesión activa;
+// el controller hace check de path traversal y existencia del archivo.
 Route::get('/exports/download', ExportDownloadController::class)
-    ->middleware(['web', 'auth'])
+    ->middleware(['web', 'auth', 'signed'])
     ->name('exports.download');
 
-// ── Comprobante de depósito (imagen privada, solo usuarios autenticados) ──
-// La imagen se guarda en el disco 'local' (fuera del public/) y solo se
-// sirve a través de esta ruta. Cualquier intento de acceso sin sesión activa
-// recibe un 403 gracias al middleware 'auth'.
+// ── Comprobante de depósito (imagen privada, signed + auth + Policy) ─────
+// Cuatro capas: `signed` (TTL 30min — ver Deposit::receipt_url), `auth`
+// (sesión activa), DepositPolicy::view en el controller (aislamiento por
+// bodega del manifest), y archivo en disco 'local' fuera de public/.
 Route::get('/depositos/{deposit}/comprobante', [DepositReceiptController::class, 'show'])
-    ->middleware(['web', 'auth'])
+    ->middleware(['web', 'auth', 'signed'])
     ->name('deposits.receipt');
 
 // ── Vista de impresión de facturas ────────────────────────────────────────

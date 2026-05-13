@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\URL;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 
@@ -39,15 +40,21 @@ class Deposit extends Model
     }
 
     /**
-     * Ruta interna autenticada para ver el comprobante.
-     * Las imágenes se guardan en el disco 'local' (privado):
-     *   storage/app/deposits/receipts/{uuid}.jpg
-     * Solo accesibles a través de esta ruta con sesión activa.
+     * Ruta firmada y temporal para ver el comprobante.
+     *
+     * TTL corto (30 minutos): la imagen es un comprobante bancario sensible.
+     * Si el operador deja un modal abierto y vuelve después, el link expira
+     * — fresh URL en el próximo page render. Es trade-off intencional UX/seguridad.
+     *
+     * Seguridad en capas: signed URL acota tiempo, middleware `auth` exige
+     * sesión, y DepositPolicy::view (invocada en el controller) exige que
+     * el usuario pertenezca a la bodega del manifest. Tres barreras
+     * independientes — si una falla, las otras siguen protegiendo.
      */
     public function getReceiptUrlAttribute(): ?string
     {
         return $this->receipt_image
-            ? route('deposits.receipt', $this)
+            ? URL::temporarySignedRoute('deposits.receipt', now()->addMinutes(30), ['deposit' => $this->id])
             : null;
     }
 

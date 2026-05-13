@@ -9,6 +9,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\URL;
 
 /**
  * Notifica al usuario que una exportación Excel está lista para descargar.
@@ -103,7 +104,15 @@ class NotifyExportReady implements ShouldQueue
             ->actions([
                 Action::make('download')
                     ->label('Descargar')
-                    ->url(route('exports.download', ['file' => $this->filePath]))
+                    // Signed URL con TTL 24h — alineado con la limpieza
+                    // automática del archivo (storage/app/exports/ se
+                    // recicla a las 24h). Si el archivo desaparece el
+                    // controller responde 404; si el link expira, 403.
+                    ->url(URL::temporarySignedRoute(
+                        'exports.download',
+                        now()->addHours(24),
+                        ['file' => $this->filePath]
+                    ))
                     ->markAsRead(),
             ])
             ->sendToDatabase($user);

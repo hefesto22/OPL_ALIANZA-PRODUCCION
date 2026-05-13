@@ -4,24 +4,33 @@ namespace App\Http\Controllers;
 
 use App\Models\Deposit;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class DepositReceiptController extends Controller
 {
     /**
-     * Sirve la imagen del comprobante de depósito de forma segura.
+     * Sirve la imagen del comprobante de depósito con triple capa de seguridad:
+     *
+     *  1. Middleware `signed` — el link debe haber sido emitido por nosotros
+     *     y no estar expirado (TTL 30min, ver Deposit::receipt_url accessor).
+     *  2. Middleware `auth` — el usuario debe tener sesión activa.
+     *  3. Policy `DepositPolicy::view` — el usuario debe pertenecer a la
+     *     bodega del manifest que contiene el depósito (aislamiento por
+     *     bodega vía userOwnsRecordViaRelation('manifest')).
      *
      * La imagen está en el disco 'local' (storage/app/deposits/receipts/)
      * y nunca es accesible directamente vía URL pública.
-     * El middleware 'auth' garantiza que solo usuarios autenticados
-     * pueden ver los comprobantes.
-     *
-     * Para ampliar la restricción en el futuro (ej. solo el creador
-     * o usuarios de la misma bodega), agregar un Gate o Policy aquí.
      */
     public function show(Deposit $deposit): StreamedResponse|Response
     {
+        // Gate::authorize lanza AuthorizationException si la Policy retorna
+        // false; Laravel la mapea a 403 automáticamente. Se usa la facade
+        // Gate en vez de $this->authorize porque Controller.php base no
+        // trae el trait AuthorizesRequests en Laravel 11+.
+        Gate::authorize('view', $deposit);
+
         if (! $deposit->receipt_image) {
             abort(404, 'Este depósito no tiene comprobante adjunto.');
         }
