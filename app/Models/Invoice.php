@@ -7,10 +7,12 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Spatie\Activitylog\LogOptions;
+use Spatie\Activitylog\Traits\LogsActivity;
 
 class Invoice extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, LogsActivity, SoftDeletes;
 
     protected $fillable = [
         'manifest_id', 'warehouse_id', 'status', 'jaremar_id', 'invoice_number',
@@ -36,11 +38,68 @@ class Invoice extends Model
             'print_limit_date' => 'date',
             'printed_at' => 'datetime',
             'is_printed' => 'boolean',
-            'total' => 'decimal:2',
-            'total_returns' => 'decimal:2',
+
+            // Coordenadas (precisión geográfica, no fiscal)
             'longitude' => 'decimal:7',
             'latitude' => 'decimal:7',
+
+            // ── Importes fiscales Honduras ──────────────────────────────
+            // Todos en HNL con 2 decimales por Decreto 51-2003 y normativa SAR.
+            // Usar `decimal:2` garantiza precisión al leer del modelo y evita
+            // la pérdida silenciosa que ocurriría con float al hacer aritmética
+            // sobre valores como 0.1 + 0.2 ≠ 0.3.
+            //
+            // El cast retorna string formateado "123.45". Los callsites de
+            // aritmética en este proyecto (ReturnsDetailExport, PrintReports,
+            // ApiInvoiceImporterService) ya manejan esto vía cast explícito
+            // a float, helpers, o getRawOriginal() para evitar el cast.
+            'total' => 'decimal:2',
+            'total_returns' => 'decimal:2',
+            'discounts' => 'decimal:2',
+            'isv15' => 'decimal:2',
+            'isv18' => 'decimal:2',
+            'importe_excento' => 'decimal:2',
+            'importe_exento_desc' => 'decimal:2',
+            'importe_exento_isv18' => 'decimal:2',
+            'importe_exento_isv15' => 'decimal:2',
+            'importe_exento_total' => 'decimal:2',
+            'importe_exonerado' => 'decimal:2',
+            'importe_exonerado_desc' => 'decimal:2',
+            'importe_exonerado_isv18' => 'decimal:2',
+            'importe_exonerado_isv15' => 'decimal:2',
+            'importe_exonerado_total' => 'decimal:2',
+            'importe_gravado' => 'decimal:2',
+            'importe_gravado_desc' => 'decimal:2',
+            'importe_gravado_isv18' => 'decimal:2',
+            'importe_gravado_isv15' => 'decimal:2',
+            'importe_gravado_total' => 'decimal:2',
         ];
+    }
+
+    /**
+     * Auditoría de Invoice — registra cambios en los campos críticos del
+     * ciclo de vida y asignación. NO loguea los importes fiscales porque:
+     *   1. Una factura importada NO cambia sus importes (vienen de Jaremar).
+     *   2. Re-importaciones masivas generarían ruido en activity_log.
+     *   3. Los cambios de importe son raros y, si ocurren, los importadores
+     *      ya los registran vía `api_invoice_imports` y conflict tracking.
+     *
+     * Campos auditados:
+     *   - status: ciclo de vida (imported → pending_warehouse → assigned →
+     *             partial_return → returned → rejected). Cambio regulatorio.
+     *   - warehouse_id: asignación a bodega. Decisión operativa.
+     *   - manifest_id: reasignación entre manifiestos. Rara pero existe.
+     *   - is_printed: control operativo de impresión.
+     *   - total_returns: indicador derivado pero útil para detectar
+     *                    recálculos anómalos sin contexto.
+     */
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->logOnly(['status', 'warehouse_id', 'manifest_id', 'is_printed', 'total_returns'])
+            ->logOnlyDirty()
+            ->dontSubmitEmptyLogs()
+            ->setDescriptionForEvent(fn (string $eventName) => "Factura {$eventName}");
     }
 
     // ─── Scopes ───────────────────────────────────────────────
