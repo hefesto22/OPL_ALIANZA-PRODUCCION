@@ -2,11 +2,14 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ReturnLine extends Model
 {
+    use HasFactory;
+
     protected $fillable = [
         'return_id', 'invoice_line_id', 'line_number',
         'product_id', 'product_description',

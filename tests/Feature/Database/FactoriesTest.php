@@ -2,10 +2,15 @@
 
 namespace Tests\Feature\Database;
 
+use App\Models\ApiInvoiceImport;
+use App\Models\ApiInvoiceImportConflict;
 use App\Models\Invoice;
 use App\Models\InvoiceReturn;
 use App\Models\Manifest;
+use App\Models\ManifestWarehouseTotal;
+use App\Models\ReturnLine;
 use App\Models\ReturnReason;
+use App\Models\Route;
 use App\Models\Supplier;
 use App\Models\Warehouse;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -154,5 +159,159 @@ class FactoriesTest extends TestCase
         $this->assertSame(3, $manifest->invoices_count);
         $this->assertSame(3000.0, (float) $manifest->total_invoices);
         $this->assertSame(3000.0, (float) $manifest->total_to_deposit);
+    }
+
+    public function test_return_line_factory_creates_valid_record(): void
+    {
+        $line = ReturnLine::factory()->create();
+
+        $this->assertNotNull($line->return_id);
+        $this->assertNotNull($line->invoice_line_id);
+        $this->assertSame(1, (int) $line->quantity_box);
+        $this->assertSame(0.0, (float) $line->quantity);
+        $this->assertSame(120.0, (float) $line->line_total);
+    }
+
+    public function test_return_line_loose_state(): void
+    {
+        // Devolución de unidades sueltas, sin cajas enteras.
+        $line = ReturnLine::factory()->loose(5, 7.5)->create();
+
+        $this->assertSame(0, (int) $line->quantity_box);
+        $this->assertSame(5.0, (float) $line->quantity);
+        $this->assertSame(37.5, (float) $line->line_total);
+    }
+
+    public function test_return_line_mixed_state(): void
+    {
+        // 2 cajas × 12 unidades + 3 sueltas = 27 unidades × Q10 = Q270.
+        $line = ReturnLine::factory()->mixed(2, 3, 10.0, 12)->create();
+
+        $this->assertSame(2, (int) $line->quantity_box);
+        $this->assertSame(3.0, (float) $line->quantity);
+        $this->assertSame(270.0, (float) $line->line_total);
+    }
+
+    public function test_route_factory_creates_valid_record(): void
+    {
+        $route = Route::factory()->create();
+
+        $this->assertNotNull($route->warehouse_id);
+        $this->assertNotEmpty($route->code);
+        $this->assertTrue($route->is_active);
+        $this->assertInstanceOf(Warehouse::class, $route->warehouse);
+    }
+
+    public function test_route_inactive_state(): void
+    {
+        $route = Route::factory()->inactive()->create();
+
+        $this->assertFalse($route->is_active);
+    }
+
+    public function test_route_without_seller_state(): void
+    {
+        // Escenario válido en Jaremar: ruta creada sin vendedor todavía asignado.
+        $route = Route::factory()->withoutSeller()->create();
+
+        $this->assertNull($route->seller_id);
+        $this->assertNull($route->seller_name);
+    }
+
+    public function test_manifest_warehouse_total_factory_creates_valid_record(): void
+    {
+        $mwt = ManifestWarehouseTotal::factory()->create();
+
+        $this->assertNotNull($mwt->manifest_id);
+        $this->assertNotNull($mwt->warehouse_id);
+        $this->assertSame(0.0, (float) $mwt->total_invoices);
+        $this->assertSame(0, $mwt->invoices_count);
+        $this->assertSame(0, $mwt->clients_count);
+    }
+
+    public function test_manifest_warehouse_total_with_totals_state(): void
+    {
+        $mwt = ManifestWarehouseTotal::factory()->withTotals()->create();
+
+        $this->assertSame(25000.0, (float) $mwt->total_invoices);
+        $this->assertSame(1500.0, (float) $mwt->total_returns);
+        $this->assertSame(23500.0, (float) $mwt->total_to_deposit);
+        $this->assertSame(10, $mwt->invoices_count);
+    }
+
+    public function test_manifest_warehouse_total_settled_state(): void
+    {
+        $mwt = ManifestWarehouseTotal::factory()->settled()->create();
+
+        $this->assertSame(0.0, (float) $mwt->difference);
+        $this->assertSame((float) $mwt->total_to_deposit, (float) $mwt->total_deposited);
+    }
+
+    public function test_api_invoice_import_factory_creates_valid_record(): void
+    {
+        $import = ApiInvoiceImport::factory()->create();
+
+        $this->assertSame('received', $import->status);
+        $this->assertNotEmpty($import->batch_uuid);
+        $this->assertSame(64, strlen($import->payload_hash));
+        $this->assertIsArray($import->raw_payload);
+        $this->assertSame(0, $import->invoices_inserted);
+    }
+
+    public function test_api_invoice_import_processed_state(): void
+    {
+        $import = ApiInvoiceImport::factory()->processed()->create();
+
+        $this->assertSame('processed', $import->status);
+        $this->assertSame(1, $import->invoices_inserted);
+    }
+
+    public function test_api_invoice_import_partial_state(): void
+    {
+        $import = ApiInvoiceImport::factory()->partial(3)->create();
+
+        $this->assertSame('partial', $import->status);
+        $this->assertSame(3, $import->invoices_pending_review);
+        $this->assertIsArray($import->warnings);
+    }
+
+    public function test_api_invoice_import_failed_state(): void
+    {
+        $import = ApiInvoiceImport::factory()->failed('Timeout on Jaremar')->create();
+
+        $this->assertSame('failed', $import->status);
+        $this->assertSame('Timeout on Jaremar', $import->failure_message);
+    }
+
+    public function test_api_invoice_import_conflict_factory_creates_valid_record(): void
+    {
+        $conflict = ApiInvoiceImportConflict::factory()->create();
+
+        $this->assertNotNull($conflict->api_invoice_import_id);
+        $this->assertNotNull($conflict->invoice_id);
+        $this->assertSame('pending', $conflict->resolution);
+        $this->assertNull($conflict->resolved_by);
+        $this->assertNull($conflict->resolved_at);
+        $this->assertIsArray($conflict->previous_values);
+        $this->assertIsArray($conflict->incoming_values);
+    }
+
+    public function test_api_invoice_import_conflict_accepted_state(): void
+    {
+        $conflict = ApiInvoiceImportConflict::factory()->accepted('Validado por admin')->create();
+
+        $this->assertSame('accepted', $conflict->resolution);
+        $this->assertNotNull($conflict->resolved_by);
+        $this->assertNotNull($conflict->resolved_at);
+        $this->assertSame('Validado por admin', $conflict->resolution_notes);
+    }
+
+    public function test_api_invoice_import_conflict_rejected_state(): void
+    {
+        $conflict = ApiInvoiceImportConflict::factory()->rejected()->create();
+
+        $this->assertSame('rejected', $conflict->resolution);
+        $this->assertNotNull($conflict->resolved_by);
+        $this->assertNotNull($conflict->resolved_at);
     }
 }
