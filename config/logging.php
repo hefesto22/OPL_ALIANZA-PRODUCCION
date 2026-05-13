@@ -127,6 +127,53 @@ return [
             'path' => storage_path('logs/laravel.log'),
         ],
 
+        // ─────────────────────────────────────────────────────────────────
+        // Channels separados por dominio.
+        //
+        // Por qué: a 10k facturas/día el log default acumula decenas de miles
+        // de líneas que mezclan errores de imports, fallos de jobs, llamadas
+        // API y eventos de seguridad. Diagnosticar un problema específico se
+        // vuelve buscar aguja en pajar. Channels separados:
+        //   - permiten `tail -f storage/logs/jobs-2026-05-13.log` para
+        //     monitorear solo un dominio en tiempo real;
+        //   - tienen TTLs diferenciados según valor regulatorio;
+        //   - mantienen el canal default limpio para errores genéricos.
+        //
+        // Uso desde código: Log::channel('jobs')->error('...', [...]);
+        // ─────────────────────────────────────────────────────────────────
+
+        'jobs' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/jobs.log'),
+            'level' => env('LOG_LEVEL', 'debug'),
+            'days' => 7,
+            'replace_placeholders' => true,
+        ],
+
+        'api' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/api.log'),
+            'level' => env('LOG_LEVEL', 'debug'),
+            'days' => 14,
+            'replace_placeholders' => true,
+        ],
+
+        'imports' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/imports.log'),
+            'level' => env('LOG_LEVEL', 'debug'),
+            'days' => 30,
+            'replace_placeholders' => true,
+        ],
+
+        'security' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/security.log'),
+            'level' => env('LOG_LEVEL', 'info'),
+            'days' => 90,
+            'replace_placeholders' => true,
+        ],
+
     ],
 
 ];

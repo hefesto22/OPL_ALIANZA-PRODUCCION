@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\Manifest;
+use Illuminate\Contracts\Queue\ShouldBeUniqueUntilProcessing;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\InteractsWithQueue;
@@ -19,13 +20,18 @@ use Illuminate\Support\Facades\Log;
  *   - La queue suele procesar en < 1 segundo, por lo que el usuario
  *     ve los totales actualizados al navegar de vuelta al manifiesto.
  *
- * Idempotencia:
- *   - Si dos returns se crean casi simultáneamente para el mismo manifiesto,
- *     ambos jobs se encolan. Cada job leerá los datos más frescos al ejecutar,
- *     y el último en terminar tendrá los totales correctos. No hay riesgo de
- *     inconsistencia porque el cálculo siempre lee de la BD en ese momento.
+ * Idempotencia bajo encolado paralelo (ShouldBeUniqueUntilProcessing):
+ *   - Si llegan N devoluciones rápidas al mismo manifiesto, sin uniqueness
+ *     se encolarían N jobs IDÉNTICOS, todos haciendo el mismo trabajo.
+ *   - ShouldBeUniqueUntilProcessing libera el lock al EMPEZAR a procesarse
+ *     (no al terminar). Variante elegida sobre ShouldBeUnique clásico
+ *     porque permite que un cambio que llegue DURANTE la ejecución del
+ *     primer job se encole y procese a continuación — preservando la
+ *     garantía existente de que "el último cálculo siempre gana".
+ *   - El uniqueId se basa en manifest_id: jobs para manifiestos distintos
+ *     corren en paralelo sin contención.
  */
-class RecalculateManifestTotalsJob implements ShouldQueue
+class RecalculateManifestTotalsJob implements ShouldBeUniqueUntilProcessing, ShouldQueue
 {
     use InteractsWithQueue, Queueable, SerializesModels;
 
@@ -50,6 +56,18 @@ class RecalculateManifestTotalsJob implements ShouldQueue
         protected int $manifestId,
     ) {
         $this->onQueue('high');
+    }
+
+    /**
+     * ID único para deduplicar jobs pendientes. Mientras este job está
+     * encolado (no comenzó a procesarse aún), cualquier otro dispatch con
+     * el mismo manifest_id es descartado por Laravel. Al iniciar el handle,
+     * el lock se libera (ShouldBeUniqueUntilProcessing) y nuevos jobs
+     * pueden encolarse — garantía: el último siempre gana.
+     */
+    public function uniqueId(): string
+    {
+        return 'recalc-manifest:'.$this->manifestId;
     }
 
     public function handle(): void

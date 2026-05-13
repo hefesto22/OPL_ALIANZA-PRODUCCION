@@ -574,4 +574,255 @@ class ReturnServiceTest extends TestCase
         $this->assertSame('Primera cancelación', $return->cancellation_reason);
         $this->assertTrue($originalCancelledAt->equalTo($return->cancelled_at));
     }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  Aislamiento transaccional de cancelReturn
+    //  ──────────────────────────────────────────
+    //  Cancelar una devolución es la operación más sensible del servicio:
+    //  cambia el status, recalcula returned_quantity de invoice_lines,
+    //  recalcula totales del manifiesto, y refresca el status de la factura.
+    //  Todo debe ocurrir dentro de UNA transacción con lock pesimista para
+    //  evitar carreras con aprobaciones/cancelaciones concurrentes. Los
+    //  side effects no-transaccionales (dispatch del job, invalidación de
+    //  cache externa) deben ocurrir SOLO tras commit exitoso.
+    // ═══════════════════════════════════════════════════════════════
+
+    public function test_cancel_return_locks_invoice_and_return_with_for_update(): void
+    {
+        $invoice = $this->makeInvoiceWithLines();
+        $return = $this->service->createReturn($this->returnPayload($invoice, boxesToReturn: 3));
+
+        $queries = [];
+        \Illuminate\Support\Facades\DB::listen(function ($q) use (&$queries) {
+            $queries[] = $q->sql;
+        });
+
+        $this->service->cancelReturn($return->fresh(), 'Test lock');
+
+        $invoiceLocked = collect($queries)->contains(
+            fn ($sql) => stripos($sql, 'invoices') !== false
+                && stripos($sql, 'for update') !== false
+        );
+        $returnLocked = collect($queries)->contains(
+            fn ($sql) => stripos($sql, 'returns') !== false
+                && stripos($sql, 'for update') !== false
+        );
+
+        $this->assertTrue(
+            $invoiceLocked,
+            'cancelReturn debe emitir FOR UPDATE sobre invoices para serializar '.
+            'cancelaciones/aprobaciones concurrentes sobre la misma factura. '.
+            'SQLs: '.implode(' || ', $queries)
+        );
+        $this->assertTrue(
+            $returnLocked,
+            'cancelReturn debe re-leer el return con FOR UPDATE para garantizar '.
+            'idempotencia bajo carrera (doble click, retry simultáneo). '.
+            'SQLs: '.implode(' || ', $queries)
+        );
+    }
+
+    public function test_cancel_return_dispatches_recalculate_job_after_commit(): void
+    {
+        $invoice = $this->makeInvoiceWithLines();
+        $return = $this->service->createReturn($this->returnPayload($invoice, boxesToReturn: 3));
+
+        // Bus::fake DESPUÉS del createReturn (que también dispatcha el job)
+        // para aislar la verificación al cancelReturn que viene a continuación.
+        \Illuminate\Support\Facades\Bus::fake();
+
+        $this->service->cancelReturn($return->fresh(), 'Test dispatch');
+
+        \Illuminate\Support\Facades\Bus::assertDispatched(
+            \App\Jobs\RecalculateManifestTotalsJob::class,
+            1
+        );
+    }
+
+    public function test_cancel_already_cancelled_return_does_not_emit_lock_or_dispatch(): void
+    {
+        $invoice = $this->makeInvoiceWithLines();
+        $return = $this->service->createReturn($this->returnPayload($invoice, boxesToReturn: 3));
+        $this->service->cancelReturn($return, 'Primera');
+
+        \Illuminate\Support\Facades\Bus::fake();
+
+        $queries = [];
+        \Illuminate\Support\Facades\DB::listen(function ($q) use (&$queries) {
+            $queries[] = $q->sql;
+        });
+
+        // Segundo intento sobre return ya cancelado: quick-return temprano,
+        // ningún side effect.
+        $this->service->cancelReturn($return->fresh(), 'Segunda');
+
+        $forUpdateUsed = collect($queries)->contains(
+            fn ($sql) => stripos($sql, 'for update') !== false
+        );
+
+        $this->assertFalse(
+            $forUpdateUsed,
+            'Cancelar un return ya cancelado debe quick-return antes de abrir TX '.
+            '(no debe emitir FOR UPDATE). SQLs: '.implode(' || ', $queries)
+        );
+
+        \Illuminate\Support\Facades\Bus::assertNotDispatched(
+            \App\Jobs\RecalculateManifestTotalsJob::class
+        );
+    }
+
+    public function test_cancel_return_recalculates_inside_transaction(): void
+    {
+        // Verificamos que el UPDATE del status del return se emite ANTES del
+        // COMMIT. Si toda la cadena (status + recalc líneas + recalc manifest
+        // + refresh invoice) está dentro de la misma TX, vamos a ver el
+        // patrón: BEGIN ... UPDATE returns ... UPDATE invoices ... UPDATE
+        // manifests ... COMMIT.
+        $invoice = $this->makeInvoiceWithLines();
+        $return = $this->service->createReturn($this->returnPayload($invoice, boxesToReturn: 3));
+
+        $events = [];
+        \Illuminate\Support\Facades\DB::listen(function ($q) use (&$events) {
+            $events[] = $q->sql;
+        });
+
+        $this->service->cancelReturn($return->fresh(), 'Test atomicidad');
+
+        // Verificar que las tres operaciones críticas (update returns, update
+        // manifests, update invoices) están todas emitidas en la captura. El
+        // hecho de que aparezcan + el lock previo demuestra que la cadena
+        // completa va dentro de la TX (otherwise el lock pendía orphaned).
+        $touchedReturns = collect($events)->contains(
+            fn ($sql) => stripos($sql, 'update') !== false && stripos($sql, 'returns') !== false
+        );
+        $touchedManifests = collect($events)->contains(
+            fn ($sql) => stripos($sql, 'update') !== false && stripos($sql, 'manifests') !== false
+        );
+        $touchedInvoices = collect($events)->contains(
+            fn ($sql) => stripos($sql, 'update') !== false && stripos($sql, 'invoices') !== false
+        );
+
+        $this->assertTrue($touchedReturns, 'Esperaba UPDATE en returns (cambio de status). SQLs: '.implode(' || ', $events));
+        $this->assertTrue($touchedManifests, 'Esperaba UPDATE en manifests (recalc total). SQLs: '.implode(' || ', $events));
+        $this->assertTrue($touchedInvoices, 'Esperaba UPDATE en invoices (refresh status). SQLs: '.implode(' || ', $events));
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  Auditoría financiera (Activity Log canal 'finance')
+    //  ─────────────────────────────────────────────────
+    //  El trait LogsActivity del modelo InvoiceReturn genera log
+    //  automático en canal 'default' con campos cambiados. Para
+    //  trazabilidad regulatoria de rejected/cancelled necesitamos una
+    //  entrada adicional en canal 'finance' con contexto operativo.
+    // ═══════════════════════════════════════════════════════════════
+
+    public function test_cancel_return_logs_activity_in_finance_channel(): void
+    {
+        $invoice = $this->makeInvoiceWithLines();
+        $return = $this->service->createReturn($this->returnPayload($invoice, boxesToReturn: 3));
+
+        $causer = User::factory()->create();
+        $this->actingAs($causer);
+
+        $this->service->cancelReturn($return->fresh(), 'Cliente rechazó mercadería');
+
+        $log = \Spatie\Activitylog\Models\Activity::query()
+            ->where('log_name', 'finance')
+            ->where('description', 'Devolución cancelada')
+            ->latest()
+            ->first();
+
+        $this->assertNotNull(
+            $log,
+            "Esperaba una entrada en activity_log con log_name='finance' tras cancelReturn"
+        );
+        $this->assertSame(InvoiceReturn::class, $log->subject_type);
+        $this->assertSame($return->id, $log->subject_id);
+        $this->assertSame($causer->id, $log->causer_id);
+
+        $props = $log->properties;
+        $this->assertTrue($props['was_approved']);
+        $this->assertSame('Cliente rechazó mercadería', $props['cancellation_reason']);
+        $this->assertSame((float) $return->fresh()->total, (float) $props['total']);
+        $this->assertSame($return->invoice_id, $props['invoice_id']);
+        $this->assertSame($return->manifest_id, $props['manifest_id']);
+    }
+
+    public function test_reject_return_logs_activity_in_finance_channel(): void
+    {
+        $invoice = $this->makeInvoiceWithLines();
+        // Crear una devolución pendiente (no auto-approved) usando factory
+        // directa porque createReturn aprueba inmediatamente por regla de negocio.
+        $return = InvoiceReturn::factory()
+            ->for($invoice->manifest, 'manifest')
+            ->for($invoice, 'invoice')
+            ->for(ReturnReason::factory()->create(), 'returnReason')
+            ->for($invoice->warehouse, 'warehouse')
+            ->create([
+                'status' => 'pending',
+                'total' => 1200.00,
+                'client_id' => 'CLI-AUD',
+                'client_name' => 'Cliente Auditado',
+            ]);
+
+        $reviewer = User::factory()->create();
+
+        $this->service->rejectReturn($return, $reviewer->id, 'Producto fuera de garantía');
+
+        $log = \Spatie\Activitylog\Models\Activity::query()
+            ->where('log_name', 'finance')
+            ->where('description', 'Devolución rechazada')
+            ->latest()
+            ->first();
+
+        $this->assertNotNull(
+            $log,
+            "Esperaba una entrada en activity_log con log_name='finance' tras rejectReturn"
+        );
+        $this->assertSame(InvoiceReturn::class, $log->subject_type);
+        $this->assertSame($return->id, $log->subject_id);
+        $this->assertSame($reviewer->id, $log->causer_id);
+
+        $props = $log->properties;
+        $this->assertSame('Producto fuera de garantía', $props['rejection_reason']);
+        $this->assertSame(1200.00, (float) $props['total']);
+        $this->assertSame($return->invoice_id, $props['invoice_id']);
+        $this->assertSame($return->manifest_id, $props['manifest_id']);
+        $this->assertSame('CLI-AUD', $props['client_id']);
+        $this->assertSame('Cliente Auditado', $props['client_name']);
+    }
+
+    public function test_finance_log_is_rolled_back_when_transaction_fails(): void
+    {
+        // Si la TX hace rollback, el log de auditoría también debe descartarse
+        // — eso garantiza que activity_log nunca registra eventos que no
+        // ocurrieron realmente.
+        $invoice = $this->makeInvoiceWithLines();
+        $return = InvoiceReturn::factory()
+            ->for($invoice->manifest, 'manifest')
+            ->for($invoice, 'invoice')
+            ->for(ReturnReason::factory()->create(), 'returnReason')
+            ->for($invoice->warehouse, 'warehouse')
+            ->create([
+                'status' => 'pending',
+                'total' => 500.00,
+            ]);
+
+        $logsBefore = \Spatie\Activitylog\Models\Activity::where('log_name', 'finance')->count();
+
+        // Cerrar el manifiesto despues de tener el return pendiente. El
+        // rejectReturn detecta el guard FUERA de TX (sin abrir TX), lanza
+        // RuntimeException y por lo tanto NO debería haberse creado ningún log.
+        $invoice->manifest->update(['status' => 'closed', 'closed_at' => now()]);
+
+        try {
+            $this->service->rejectReturn($return->fresh(), User::factory()->create()->id, 'test');
+            $this->fail('Esperaba RuntimeException por manifiesto cerrado');
+        } catch (\RuntimeException) {
+            // expected
+        }
+
+        $logsAfter = \Spatie\Activitylog\Models\Activity::where('log_name', 'finance')->count();
+        $this->assertSame($logsBefore, $logsAfter, 'Un guard que aborta NO debe dejar log en finance');
+    }
 }

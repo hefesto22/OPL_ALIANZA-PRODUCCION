@@ -91,4 +91,33 @@ class RecalculateManifestTotalsJobTest extends TestCase
         $this->assertEquals(800.00, (float) $manifest->total_invoices);
         $this->assertSame(1, $manifest->invoices_count);
     }
+
+    public function test_job_implements_should_be_unique_until_processing(): void
+    {
+        // Contrato de unicidad: jobs pendientes para el mismo manifest se
+        // deduplican. ShouldBeUniqueUntilProcessing libera el lock al iniciar
+        // el handle — preserva la garantía "el último gana" para cambios
+        // que lleguen DURANTE la ejecución de un recálculo en curso.
+        $reflection = new \ReflectionClass(RecalculateManifestTotalsJob::class);
+
+        $this->assertTrue(
+            $reflection->implementsInterface(\Illuminate\Contracts\Queue\ShouldBeUniqueUntilProcessing::class),
+            'RecalculateManifestTotalsJob debe implementar ShouldBeUniqueUntilProcessing '.
+            'para evitar acumular N jobs idénticos pendientes cuando llegan múltiples '.
+            'devoluciones rápidas al mismo manifest.'
+        );
+    }
+
+    public function test_job_unique_id_uses_manifest_id_as_scope(): void
+    {
+        // Verifica que el scope del lock es por manifest_id — jobs para
+        // distintos manifests NO compiten, jobs del mismo manifest SÍ.
+        $job1 = new RecalculateManifestTotalsJob(101);
+        $job2 = new RecalculateManifestTotalsJob(101);
+        $job3 = new RecalculateManifestTotalsJob(102);
+
+        $this->assertSame($job1->uniqueId(), $job2->uniqueId(), 'Mismo manifest = mismo uniqueId');
+        $this->assertNotSame($job1->uniqueId(), $job3->uniqueId(), 'Manifest distinto = uniqueId distinto');
+        $this->assertSame('recalc-manifest:101', $job1->uniqueId());
+    }
 }

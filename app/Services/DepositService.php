@@ -7,6 +7,27 @@ use App\Models\Manifest;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
+/**
+ * Servicio de depósitos. Cada operación corre dentro de una transacción
+ * con bloqueo pesimista (lockForUpdate) sobre el manifiesto.
+ *
+ * Por qué el lock: los depósitos son operaciones financieras concurrentes.
+ * Si dos usuarios registran depósitos del mismo manifiesto en paralelo, sin
+ * lock ambos leen el mismo `total_to_deposit`, validan contra el mismo saldo
+ * pendiente, y ambos commitean — quedando el manifiesto sobre-depositado y
+ * la `difference` en negativo. El lock pesimista serializa esas operaciones
+ * sobre la fila del manifiesto y elimina la carrera.
+ *
+ * Por qué el recálculo va DENTRO de la TX: el `recalculateTotals` toca
+ * columnas financieras (total_deposited, difference, warehouse_totals). Si
+ * la TX hace rollback, esas columnas deben volver al estado previo. Mantener
+ * el recálculo dentro garantiza atomicidad ACID completa.
+ *
+ * Por qué las operaciones de archivo (deleteReceiptImage) usan DB::afterCommit:
+ * el filesystem NO es transaccional. Si borráramos el archivo antes de la TX y
+ * la TX hiciera rollback, quedaría una referencia rota (BD apunta a un archivo
+ * que ya no existe). afterCommit ejecuta el borrado solo si la TX commiteó.
+ */
 class DepositService
 {
     /**
@@ -14,28 +35,35 @@ class DepositService
      */
     public function createDeposit(Manifest $manifest, array $data, int $userId): Deposit
     {
-        $this->assertManifestOpen($manifest);
-        $this->assertAmountWithinPending($manifest, (float) $data['amount']);
-
         // Si se subió imagen, registrar la fecha/hora de subida para el cleanup automático.
         if (! empty($data['receipt_image'])) {
             $data['receipt_image_uploaded_at'] = now();
         }
 
-        $deposit = DB::transaction(function () use ($manifest, $data, $userId) {
-            return Deposit::create([
+        return DB::transaction(function () use ($manifest, $data, $userId) {
+            // Lock pesimista sobre el manifiesto. Re-leemos la fila desde BD
+            // para garantizar que los saldos calculados a continuación reflejan
+            // cualquier depósito recién commiteado por otra sesión.
+            $manifestLocked = Manifest::query()
+                ->whereKey($manifest->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $this->assertManifestOpen($manifestLocked);
+            $this->assertAmountWithinPending($manifestLocked, (float) $data['amount']);
+
+            $deposit = Deposit::create([
                 ...$data,
-                'manifest_id' => $manifest->id,
+                'manifest_id' => $manifestLocked->id,
                 'created_by' => $userId,
                 'updated_by' => $userId,
             ]);
+
+            // Recálculo dentro de la TX: si falla, rollback de TODO el depósito.
+            $manifestLocked->recalculateTotals();
+
+            return $deposit;
         });
-
-        // Para depósitos el recálculo es sincrónico: el usuario necesita ver
-        // el saldo actualizado inmediatamente después de registrar el depósito.
-        $manifest->recalculateTotals();
-
-        return $deposit;
     }
 
     /**
@@ -43,54 +71,67 @@ class DepositService
      */
     public function updateDeposit(Deposit $deposit, array $data, int $userId): Deposit
     {
-        $this->assertManifestOpen($deposit->manifest);
-
-        // Al editar, el saldo pendiente se calcula excluyendo el depósito actual
-        // para no rechazar un edit que no cambia el monto.
-        $pendingExcludingCurrent = max(
-            0,
-            (float) $deposit->manifest->total_to_deposit
-                - $this->getTotalDeposited($deposit->manifest)
-                + (float) $deposit->amount  // devolver el monto actual al pool
-        );
-
-        $this->assertAmountWithinPending(
-            $deposit->manifest,
-            (float) $data['amount'],
-            $pendingExcludingCurrent
-        );
-
-        $manifestId = $deposit->manifest_id;
-
-        // Si se reemplaza la imagen, borrar la anterior del disco.
+        // Preparar metadatos de imagen fuera de la TX (solo cálculo, no IO).
         $oldImage = $deposit->receipt_image;
         $newImage = $data['receipt_image'] ?? null;
+        $shouldDeleteOld = false;
 
         if ($oldImage && $newImage && $oldImage !== $newImage) {
-            $deposit->deleteReceiptImage();
+            $shouldDeleteOld = true;
         }
-
-        // Si se elimina la imagen (campo enviado como null/vacío), borrar del disco.
         if ($oldImage && array_key_exists('receipt_image', $data) && empty($newImage)) {
-            $deposit->deleteReceiptImage();
+            $shouldDeleteOld = true;
         }
-
-        // Actualizar timestamp si hay imagen nueva.
         if ($newImage && $newImage !== $oldImage) {
             $data['receipt_image_uploaded_at'] = now();
         }
 
-        DB::transaction(function () use ($deposit, $data, $userId) {
+        return DB::transaction(function () use ($deposit, $data, $userId, $shouldDeleteOld, $oldImage) {
+            // Lock sobre el manifiesto al que pertenece este depósito.
+            $manifestLocked = Manifest::query()
+                ->whereKey($deposit->manifest_id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $this->assertManifestOpen($manifestLocked);
+
+            // Saldo pendiente excluyendo el depósito actual: permite editar el
+            // mismo depósito sin que el saldo rechace el nuevo monto. Se calcula
+            // con el manifiesto ya bloqueado para evitar TOCTOU.
+            $depositFresh = $deposit->fresh();
+            $pendingExcludingCurrent = max(
+                0,
+                (float) $manifestLocked->total_to_deposit
+                    - $this->getTotalDeposited($manifestLocked)
+                    + (float) $depositFresh->amount
+            );
+
+            $this->assertAmountWithinPending(
+                $manifestLocked,
+                (float) $data['amount'],
+                $pendingExcludingCurrent
+            );
+
             $deposit->update([
                 ...$data,
                 'updated_by' => $userId,
             ]);
+
+            $manifestLocked->recalculateTotals();
+
+            // El borrado físico del archivo viejo solo ocurre tras commit exitoso.
+            // Si la TX hace rollback, el archivo queda intacto y la BD sigue
+            // apuntando correctamente — sin referencias rotas.
+            if ($shouldDeleteOld && $oldImage) {
+                DB::afterCommit(function () use ($deposit, $oldImage) {
+                    // Re-obtener el modelo del path actual por si cambió.
+                    $deposit->receipt_image = $oldImage;
+                    $deposit->deleteReceiptImage();
+                });
+            }
+
+            return $deposit;
         });
-
-        $deposit->manifest->refresh();
-        $deposit->manifest->recalculateTotals();
-
-        return $deposit;
     }
 
     /**
@@ -99,19 +140,46 @@ class DepositService
      */
     public function deleteDeposit(Deposit $deposit): void
     {
-        $this->assertManifestOpen($deposit->manifest);
+        // Capturamos el path antes de cualquier operación para usarlo en afterCommit.
+        $receiptPath = $deposit->receipt_image;
 
-        $manifestId = $deposit->manifest_id;
+        DB::transaction(function () use ($deposit, $receiptPath) {
+            $manifestLocked = Manifest::query()
+                ->whereKey($deposit->manifest_id)
+                ->lockForUpdate()
+                ->firstOrFail();
 
-        // Borrar imagen antes de eliminar el registro.
-        $deposit->deleteReceiptImage();
+            $this->assertManifestOpen($manifestLocked);
 
-        DB::transaction(function () use ($deposit) {
+            // Auditoría financiera DENTRO de la TX: si rollback, se descarta.
+            // El trait LogsActivity del modelo Deposit genera un log automático
+            // de "deleted" sobre default. Esta entrada extra en canal 'finance'
+            // documenta el evento de negocio con contexto (monto, manifiesto)
+            // para responder "¿quién y por qué borró este depósito?".
+            activity('finance')
+                ->performedOn($deposit)
+                ->causedBy(auth()->user())
+                ->withProperties([
+                    'amount' => (float) $deposit->amount,
+                    'deposit_date' => $deposit->deposit_date?->toDateString(),
+                    'bank' => $deposit->bank,
+                    'reference' => $deposit->reference,
+                    'manifest_id' => $deposit->manifest_id,
+                    'manifest_number' => $manifestLocked->number,
+                ])
+                ->log('Depósito eliminado');
+
             $deposit->delete();
-        });
 
-        $manifest = Manifest::find($manifestId);
-        $manifest?->recalculateTotals();
+            $manifestLocked->recalculateTotals();
+
+            if ($receiptPath) {
+                DB::afterCommit(function () use ($deposit, $receiptPath) {
+                    $deposit->receipt_image = $receiptPath;
+                    $deposit->deleteReceiptImage();
+                });
+            }
+        });
     }
 
     /**

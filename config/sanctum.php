@@ -41,13 +41,18 @@ return [
     | Expiration Minutes
     |--------------------------------------------------------------------------
     |
-    | This value controls the number of minutes until an issued token will be
-    | considered expired. This will override any values set in the token's
-    | "expires_at" attribute, but first-party sessions are not affected.
+    | Default a 1 año (525600 minutos). El default ANTERIOR de Laravel era
+    | `null` — tokens eternos. En este proyecto cualquier token API que se
+    | filtre da acceso indefinido al sistema (incluyendo la API de Jaremar).
+    |
+    | Trade-off elegido: 1 año es lo suficientemente largo para no romper
+    | integraciones que no rotan tokens automáticamente (la mayoría), y lo
+    | suficientemente corto para limitar la ventana de daño si uno se filtra.
+    | Para roles más sensibles, bajar SANCTUM_EXPIRATION en el .env del entorno.
     |
     */
 
-    'expiration' => null,
+    'expiration' => env('SANCTUM_EXPIRATION', 525600),
 
     /*
     |--------------------------------------------------------------------------

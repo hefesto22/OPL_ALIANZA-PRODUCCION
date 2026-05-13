@@ -164,6 +164,46 @@ class QueueContractTest extends TestCase
         }
     }
 
+    public function test_every_job_declares_tries_and_timeout(): void
+    {
+        // Sin tries/timeout declarados, los jobs heredan los defaults del
+        // worker (1 try, sin timeout específico). Eso es trampa: un job que
+        // falla por un blip de Redis cae al failed_jobs sin retry, y un job
+        // que se cuelga consume el slot del worker indefinidamente.
+        // Forzar declaración explícita en CADA job hace la decisión visible.
+        foreach ($this->discoverClassesIn(app_path('Jobs')) as $class) {
+            if (in_array($class, self::JOB_EXCEPTIONS, true)) {
+                continue;
+            }
+
+            $reflection = new ReflectionClass($class);
+
+            $this->assertTrue(
+                $reflection->hasProperty('tries'),
+                "El Job {$class} debe declarar `public int \$tries`. Sin esto ".
+                'hereda 1 try y un blip transitorio (Redis intermitente, lock '.
+                'momentáneo) condena el job a failed_jobs sin reintento.'
+            );
+
+            $this->assertTrue(
+                $reflection->hasProperty('timeout'),
+                "El Job {$class} debe declarar `public int \$timeout`. Sin esto ".
+                'un job colgado puede mantener el slot del worker indefinidamente, '.
+                'degradando el throughput de la cola.'
+            );
+
+            // Verificar que tries declarado es razonable (>= 1, <= 10).
+            $tries = $reflection->getProperty('tries')->getDefaultValue();
+            $this->assertGreaterThanOrEqual(1, $tries, "tries del Job {$class} debe ser >= 1");
+            $this->assertLessThanOrEqual(10, $tries, "tries del Job {$class} > 10 es spam de retries");
+
+            // Verificar que timeout declarado es razonable (>= 10s, <= 3600s).
+            $timeout = $reflection->getProperty('timeout')->getDefaultValue();
+            $this->assertGreaterThanOrEqual(10, $timeout, "timeout del Job {$class} debe ser >= 10s");
+            $this->assertLessThanOrEqual(3600, $timeout, "timeout del Job {$class} > 3600s es excesivo — partir el job");
+        }
+    }
+
     /**
      * Lee el código fuente de un método específico leyendo las líneas del archivo
      * entre getStartLine() y getEndLine(). Útil para inspección estructural cuando

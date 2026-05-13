@@ -18,7 +18,10 @@ return [
     |
     */
 
-    'driver' => env('SESSION_DRIVER', 'database'),
+    // Default a 'redis' por contrato del proyecto. Sessions en DB con
+    // múltiples PHP-FPM workers = contención de locks en cada login/logout.
+    // Si el .env falta este key, queremos caer a redis, no a database.
+    'driver' => env('SESSION_DRIVER', 'redis'),
 
     /*
     |--------------------------------------------------------------------------

@@ -24,6 +24,31 @@ class NotifyExportReady implements ShouldQueue
     use Queueable;
 
     /**
+     * Número máximo de intentos. Tres es el balance entre cubrir fallos
+     * transitorios (Redis intermitente, lock momentáneo en notifications
+     * table) y no spammear logs con un job condenado.
+     */
+    public int $tries = 3;
+
+    /**
+     * Timeout en segundos. El job es ligero — un find + una notificación
+     * a DB. 60s es generoso pero deja margen si Postgres tiene contención.
+     */
+    public int $timeout = 60;
+
+    /**
+     * Backoff exponencial entre reintentos. 10s para reintentar fallos
+     * transitorios casi-inmediatos, 30s y 60s para fallos de infraestructura
+     * que pueden tardar más en resolverse.
+     *
+     * @return int[]
+     */
+    public function backoff(): array
+    {
+        return [10, 30, 60];
+    }
+
+    /**
      * Cola por defecto: `high`.
      *
      * Este job es liviano (una notificación a DB) pero *bloquea* la UX:
@@ -82,5 +107,20 @@ class NotifyExportReady implements ShouldQueue
                     ->markAsRead(),
             ])
             ->sendToDatabase($user);
+    }
+
+    /**
+     * Handler de fallo definitivo (tras agotar tries). Loguea con contexto
+     * para diagnóstico. NO intenta notificar al usuario porque si llegamos
+     * acá es probable que el sistema de notificaciones sea justo lo que falló.
+     */
+    public function failed(\Throwable $exception): void
+    {
+        Log::error('NotifyExportReady falló definitivamente.', [
+            'user_id' => $this->userId,
+            'file_path' => $this->filePath,
+            'file_name' => $this->fileName,
+            'error' => $exception->getMessage(),
+        ]);
     }
 }

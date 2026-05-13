@@ -13,7 +13,11 @@ return [
     |
     */
 
-    'default' => env('QUEUE_CONNECTION', 'database'),
+    // Default a 'redis' por contrato del proyecto (Horizon sobre Redis).
+    // 'database' como fallback en multi-worker es contención de locks y
+    // tabla `jobs` inflada con 10k facturas/día. Si por alguna razón el
+    // .env falta este key, queremos fallar correctamente a redis, no a database.
+    'default' => env('QUEUE_CONNECTION', 'redis'),
 
     /*
     |--------------------------------------------------------------------------

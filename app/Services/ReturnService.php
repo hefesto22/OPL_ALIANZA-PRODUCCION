@@ -402,6 +402,23 @@ class ReturnService
                 'reviewed_at' => now(),
             ]);
 
+            // Auditoría financiera: documenta el evento de negocio en canal
+            // 'finance' con contexto operativo (motivo, monto, factura). El
+            // LogsActivity automático sobre default solo captura el cambio de
+            // status, sin contexto. Esto va DENTRO de TX: rollback descarta el log.
+            activity('finance')
+                ->performedOn($return)
+                ->causedBy($reviewedBy)
+                ->withProperties([
+                    'rejection_reason' => $reason,
+                    'total' => (float) $return->total,
+                    'invoice_id' => $return->invoice_id,
+                    'manifest_id' => $return->manifest_id,
+                    'client_id' => $return->client_id,
+                    'client_name' => $return->client_name,
+                ])
+                ->log('Devolución rechazada');
+
             $this->updateInvoiceStatus($return->invoice);
         });
 
@@ -704,38 +721,91 @@ class ReturnService
      */
     public function cancelReturn(InvoiceReturn $return, ?string $reason = null): void
     {
+        // Quick-return barato fuera de TX: si ya está cancelada, evitar abrir
+        // una transacción solo para descubrirlo. La re-verificación dentro del
+        // lock cubre el caso de carrera (dos cancelaciones casi simultáneas).
         if ($return->isCancelled()) {
             return;
         }
 
-        $wasApproved = $return->isApproved();
-        $processedDate = $return->processed_date?->toDateString();
-
         DB::transaction(function () use ($return, $reason) {
-            $return->update([
+            // Lock pesimista sobre la factura. Bloquea cualquier otra cancelación
+            // o aprobación concurrente sobre la misma factura, garantizando que
+            // los cálculos de cantidades y estatus dentro de esta TX son la
+            // fuente de verdad sin contención.
+            Invoice::query()
+                ->whereKey($return->invoice_id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            // Re-leer la devolución bloqueada para idempotencia bajo carrera:
+            // si otra TX ya la canceló entre nuestro quick-return y el lock,
+            // salimos limpiamente sin duplicar efectos.
+            $returnLocked = InvoiceReturn::query()
+                ->whereKey($return->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ($returnLocked->isCancelled()) {
+                return;
+            }
+
+            $wasApproved = $returnLocked->isApproved();
+            $processedDate = $returnLocked->processed_date?->toDateString();
+
+            $returnLocked->update([
                 'status' => 'cancelled',
                 'cancelled_at' => now(),
                 'cancelled_by' => auth()->id(),
                 'cancellation_reason' => $reason,
             ]);
+
+            // Auditoría financiera: documenta el evento de negocio en canal
+            // 'finance'. Especialmente importante para devoluciones que YA
+            // estaban aprobadas — su cancelación impacta total_returns del
+            // manifiesto y returned_quantity de cada línea de la factura.
+            activity('finance')
+                ->performedOn($returnLocked)
+                ->causedBy(auth()->user())
+                ->withProperties([
+                    'was_approved' => $wasApproved,
+                    'cancellation_reason' => $reason,
+                    'total' => (float) $returnLocked->total,
+                    'invoice_id' => $returnLocked->invoice_id,
+                    'manifest_id' => $returnLocked->manifest_id,
+                    'processed_date' => $processedDate,
+                    'client_id' => $returnLocked->client_id,
+                    'client_name' => $returnLocked->client_name,
+                ])
+                ->log('Devolución cancelada');
+
+            // Todos los efectos cascade DENTRO de la TX. Si cualquier paso
+            // falla, rollback de TODO — el return vuelve a aprobado/pendiente
+            // y los totales del manifiesto y la factura quedan intactos.
+            $this->recalculateLineReturnedQuantities($returnLocked->invoice_id);
+
+            $manifest = Manifest::query()
+                ->whereKey($returnLocked->manifest_id)
+                ->lockForUpdate()
+                ->first();
+            $manifest?->recalculateTotals();
+
+            $invoice = $returnLocked->invoice()->first();
+            if ($invoice) {
+                $this->refreshInvoiceStatus($invoice);
+            }
+
+            // Side effects no-transaccionales DESPUÉS del commit. Si la TX hace
+            // rollback, NADA de esto se ejecuta — sin job fantasma encolado en
+            // Redis ni invalidación de cache sin razón.
+            $manifestId = $returnLocked->manifest_id;
+            DB::afterCommit(function () use ($manifestId, $wasApproved, $processedDate) {
+                RecalculateManifestTotalsJob::dispatch($manifestId);
+
+                if ($wasApproved && $processedDate) {
+                    $this->invalidateDevolucionesCache($processedDate);
+                }
+            });
         });
-
-        // Recalcular returned_quantity de las líneas de la factura
-        $this->recalculateLineReturnedQuantities($return->invoice_id);
-
-        // Recalcular totales del manifiesto
-        Manifest::find($return->manifest_id)?->recalculateTotals();
-        RecalculateManifestTotalsJob::dispatch($return->manifest_id);
-
-        // Refrescar status de la factura (devuelta → parcial → importada)
-        $invoice = $return->invoice()->first();
-        if ($invoice) {
-            $this->refreshInvoiceStatus($invoice);
-        }
-
-        // Invalidar cache de Jaremar si era aprobada
-        if ($wasApproved && $processedDate) {
-            $this->invalidateDevolucionesCache($processedDate);
-        }
     }
 }

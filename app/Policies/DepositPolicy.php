@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace App\Policies;
 
 use App\Models\Deposit;
+use App\Policies\Concerns\HandlesWarehouseScope;
 use Illuminate\Auth\Access\HandlesAuthorization;
 use Illuminate\Foundation\Auth\User as AuthUser;
 
 class DepositPolicy
 {
     use HandlesAuthorization;
+    use HandlesWarehouseScope;
 
     public function viewAny(AuthUser $authUser): bool
     {
@@ -19,7 +21,8 @@ class DepositPolicy
 
     public function view(AuthUser $authUser, Deposit $deposit): bool
     {
-        return $authUser->can('View:Deposit');
+        return $authUser->can('View:Deposit')
+            && $this->userOwnsRecordViaRelation($authUser, $deposit, 'manifest');
     }
 
     public function create(AuthUser $authUser): bool
@@ -29,22 +32,26 @@ class DepositPolicy
 
     public function update(AuthUser $authUser, Deposit $deposit): bool
     {
-        return $authUser->can('Update:Deposit');
+        return $authUser->can('Update:Deposit')
+            && $this->userOwnsRecordViaRelation($authUser, $deposit, 'manifest');
     }
 
     public function delete(AuthUser $authUser, Deposit $deposit): bool
     {
-        return $authUser->can('Delete:Deposit');
+        return $authUser->can('Delete:Deposit')
+            && $this->userOwnsRecordViaRelation($authUser, $deposit, 'manifest');
     }
 
     public function restore(AuthUser $authUser, Deposit $deposit): bool
     {
-        return $authUser->can('Restore:Deposit');
+        return $authUser->can('Restore:Deposit')
+            && $this->userOwnsRecordViaRelation($authUser, $deposit, 'manifest');
     }
 
     public function forceDelete(AuthUser $authUser, Deposit $deposit): bool
     {
-        return $authUser->can('ForceDelete:Deposit');
+        return $authUser->can('ForceDelete:Deposit')
+            && $this->userOwnsRecordViaRelation($authUser, $deposit, 'manifest');
     }
 
     public function forceDeleteAny(AuthUser $authUser): bool
@@ -59,7 +66,8 @@ class DepositPolicy
 
     public function replicate(AuthUser $authUser, Deposit $deposit): bool
     {
-        return $authUser->can('Replicate:Deposit');
+        return $authUser->can('Replicate:Deposit')
+            && $this->userOwnsRecordViaRelation($authUser, $deposit, 'manifest');
     }
 
     public function reorder(AuthUser $authUser): bool

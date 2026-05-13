@@ -41,7 +41,7 @@ Schedule::call(function () {
     if ($deleted > 0) {
         Log::info("Limpieza nocturna: {$deleted} archivo(s) temporal(es) eliminado(s) de pdf-preview/.");
     }
-})->hourly()->name('limpiar-pdf-preview')->withoutOverlapping();
+})->hourly()->name('limpiar-pdf-preview')->withoutOverlapping()->onOneServer();
 
 // ── Limpieza mensual de comprobantes de depósito ──────────────────────────
 // Las imágenes de comprobantes se guardan en storage/app/public/deposits/receipts/.
@@ -83,7 +83,7 @@ Schedule::call(function () {
     if ($deleted > 0) {
         Log::info("Cleanup comprobantes: {$deleted} imagen(es) de depósito eliminada(s) (> 60 días), {$nulled} registro(s) actualizado(s).");
     }
-})->dailyAt('03:00')->name('limpiar-comprobantes-deposito')->withoutOverlapping();
+})->dailyAt('03:00')->name('limpiar-comprobantes-deposito')->withoutOverlapping()->onOneServer();
 
 // ── Limpieza de activity_log (retención 90 días) ────────────────────────
 // Los registros de auditoría mayores a 90 días se eliminan para evitar
@@ -92,7 +92,8 @@ Schedule::call(function () {
 Schedule::command('activitylog:prune --days=90')
     ->dailyAt('03:30')
     ->name('limpiar-activity-log')
-    ->withoutOverlapping();
+    ->withoutOverlapping()
+    ->onOneServer();
 
 // ── Limpieza de exportaciones Excel no descargadas (retención 24h) ──────
 // Las exportaciones generadas en background (ShouldQueue) se almacenan en
@@ -102,4 +103,5 @@ Schedule::command('activitylog:prune --days=90')
 Schedule::command('exports:clean --hours=24')
     ->dailyAt('04:00')
     ->name('limpiar-exports-huerfanos')
-    ->withoutOverlapping();
+    ->withoutOverlapping()
+    ->onOneServer();

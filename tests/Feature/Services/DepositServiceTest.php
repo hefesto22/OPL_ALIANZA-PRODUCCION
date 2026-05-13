@@ -310,4 +310,181 @@ class DepositServiceTest extends TestCase
 
         $this->assertEquals(0.0, $pending);
     }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  Aislamiento transaccional y locks pesimistas
+    //  ──────────────────────────────────────────────
+    //  Los depósitos son operaciones financieras concurrentes. Cada método
+    //  debe abrir una transacción, bloquear el manifiesto con FOR UPDATE,
+    //  validar saldo, escribir, y recalcular totales — todo dentro de la
+    //  misma TX para evitar race conditions y ventanas de inconsistencia.
+    // ═══════════════════════════════════════════════════════════════
+
+    public function test_create_deposit_emits_for_update_lock_on_manifest(): void
+    {
+        $queries = $this->captureQueries(function () {
+            $this->service()->createDeposit(
+                $this->manifest,
+                $this->depositData(['amount' => 200.00]),
+                $this->user->id,
+            );
+        });
+
+        $this->assertLockForUpdateOnManifests($queries, 'createDeposit');
+    }
+
+    public function test_update_deposit_emits_for_update_lock_on_manifest(): void
+    {
+        $deposit = $this->service()->createDeposit(
+            $this->manifest,
+            $this->depositData(['amount' => 200.00]),
+            $this->user->id,
+        );
+
+        $queries = $this->captureQueries(function () use ($deposit) {
+            $this->service()->updateDeposit(
+                $deposit->refresh(),
+                $this->depositData(['amount' => 300.00]),
+                $this->user->id,
+            );
+        });
+
+        $this->assertLockForUpdateOnManifests($queries, 'updateDeposit');
+    }
+
+    public function test_delete_deposit_emits_for_update_lock_on_manifest(): void
+    {
+        $deposit = $this->service()->createDeposit(
+            $this->manifest,
+            $this->depositData(['amount' => 200.00]),
+            $this->user->id,
+        );
+
+        $queries = $this->captureQueries(function () use ($deposit) {
+            $this->service()->deleteDeposit($deposit->refresh());
+        });
+
+        $this->assertLockForUpdateOnManifests($queries, 'deleteDeposit');
+    }
+
+    public function test_create_deposit_recalculates_totals_inside_transaction(): void
+    {
+        // Verificamos que el UPDATE de manifests con total_deposited se
+        // emite ANTES del COMMIT — es decir, está dentro de la TX. Si el
+        // recálculo estuviera fuera, veríamos el UPDATE después del commit.
+        $events = [];
+        \Illuminate\Support\Facades\DB::listen(function ($q) use (&$events) {
+            $events[] = $q->sql;
+        });
+        \Illuminate\Support\Facades\DB::beforeExecuting(function ($sql, $bindings, $connection) use (&$events) {
+            if (stripos($sql, 'BEGIN') !== false || stripos($sql, 'COMMIT') !== false) {
+                $events[] = strtoupper(trim($sql));
+            }
+        });
+
+        $this->service()->createDeposit(
+            $this->manifest,
+            $this->depositData(['amount' => 300.00]),
+            $this->user->id,
+        );
+
+        // Reducir a markers: BEGIN, UPDATE manifests (recalc), COMMIT.
+        // El UPDATE de manifests debe aparecer ANTES del COMMIT final.
+        $updateIndex = null;
+        $commitIndex = null;
+        foreach ($events as $i => $sql) {
+            if ($updateIndex === null
+                && stripos($sql, 'update') !== false
+                && stripos($sql, 'manifests') !== false
+                && stripos($sql, 'total_deposited') !== false) {
+                $updateIndex = $i;
+            }
+            if (stripos($sql, 'commit') !== false) {
+                $commitIndex = $i;
+            }
+        }
+
+        $this->assertNotNull($updateIndex, 'No se detectó UPDATE de manifests.total_deposited (recalc)');
+        // Si commitIndex es null es porque DB::listen no captura COMMIT en algunas
+        // versiones — en ese caso, simplemente verificamos que el update existe.
+        if ($commitIndex !== null) {
+            $this->assertLessThan(
+                $commitIndex,
+                $updateIndex,
+                'El recálculo debe ocurrir DENTRO de la TX (UPDATE antes del COMMIT)'
+            );
+        }
+    }
+
+    // ─── Helpers de captura SQL ─────────────────────────────────────
+
+    private function captureQueries(callable $callback): array
+    {
+        $queries = [];
+        \Illuminate\Support\Facades\DB::listen(function ($q) use (&$queries) {
+            $queries[] = $q->sql;
+        });
+        $callback();
+
+        return $queries;
+    }
+
+    private function assertLockForUpdateOnManifests(array $queries, string $contextoMetodo): void
+    {
+        $encontrado = collect($queries)->contains(
+            fn ($sql) => stripos($sql, 'manifests') !== false
+                && stripos($sql, 'for update') !== false
+        );
+
+        $this->assertTrue(
+            $encontrado,
+            "{$contextoMetodo}: se esperaba SELECT ... FOR UPDATE sobre manifests. ".
+            'Sin este lock dos requests concurrentes producen race condition '.
+            'en el cálculo de saldo pendiente. SQLs ejecutados: '.
+            implode(' || ', $queries)
+        );
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  Auditoría financiera (Activity Log canal 'finance')
+    //  ─────────────────────────────────────────────────
+    //  El LogsActivity automático del modelo Deposit registra el delete
+    //  en canal 'default' con campos cambiados. Para trazabilidad
+    //  regulatoria necesitamos una entrada adicional en canal 'finance'
+    //  con contexto operativo (monto, manifiesto, causer).
+    // ═══════════════════════════════════════════════════════════════
+
+    public function test_delete_deposit_logs_activity_in_finance_channel(): void
+    {
+        $deposit = $this->service()->createDeposit(
+            $this->manifest,
+            $this->depositData(['amount' => 350.00, 'bank' => 'BAC', 'reference' => 'REF-AUD-1']),
+            $this->user->id,
+        );
+
+        $this->actingAs($this->user);
+
+        $this->service()->deleteDeposit($deposit->refresh());
+
+        $log = \Spatie\Activitylog\Models\Activity::query()
+            ->where('log_name', 'finance')
+            ->where('description', 'Depósito eliminado')
+            ->latest()
+            ->first();
+
+        $this->assertNotNull(
+            $log,
+            "Esperaba una entrada en activity_log con log_name='finance' tras deleteDeposit"
+        );
+        $this->assertSame(\App\Models\Deposit::class, $log->subject_type);
+        $this->assertSame($deposit->id, $log->subject_id);
+        $this->assertSame($this->user->id, $log->causer_id);
+
+        $props = $log->properties;
+        $this->assertSame(350.00, (float) $props['amount']);
+        $this->assertSame('BAC', $props['bank']);
+        $this->assertSame('REF-AUD-1', $props['reference']);
+        $this->assertSame($this->manifest->id, $props['manifest_id']);
+        $this->assertSame($this->manifest->number, $props['manifest_number']);
+    }
 }

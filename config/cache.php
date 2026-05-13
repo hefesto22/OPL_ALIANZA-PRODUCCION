@@ -15,7 +15,10 @@ return [
     |
     */
 
-    'default' => env('CACHE_STORE', 'database'),
+    // Default a 'redis' por contrato del proyecto. Cache en DB compite con
+    // queries de negocio y no escala con el volumen objetivo (10k/día).
+    // Si el .env falta este key, queremos caer a redis, no a database.
+    'default' => env('CACHE_STORE', 'redis'),
 
     /*
     |--------------------------------------------------------------------------
