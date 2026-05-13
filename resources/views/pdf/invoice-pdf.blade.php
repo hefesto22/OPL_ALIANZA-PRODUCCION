@@ -414,5 +414,51 @@ table.lines td {
 
 </div>{{-- fin #invoices-container --}}
 
+{{--
+    ══════════════════════════════════════════════════════════════════════
+    Callback de impresión real
+
+    Escucha window.afterprint y notifica al backend para que marque las
+    facturas como impresas (is_printed=true, printed_at=now). Sin esto,
+    el flag is_printed refleja "se sirvió la vista" en vez de "se imprimió
+    físicamente" — generando métrica falsa y bloqueando reimpresiones.
+
+    Si el callback falla (offline, navegador sin soporte, impresión a PDF),
+    las facturas quedan como no impresas. El admin puede marcarlas a mano
+    desde Filament si fue necesario. Es trade-off intencional: preferir
+    falsos negativos antes que falsos positivos en métrica fiscal.
+    ══════════════════════════════════════════════════════════════════════
+--}}
+<script>
+(function () {
+    var csrfToken = '{{ csrf_token() }}';
+    var invoiceIds = {!! json_encode($invoices->pluck('id')->all()) !!};
+    var confirmUrl = '{{ route('invoices.print.confirm') }}';
+    var confirmed = false;
+
+    function confirmPrint() {
+        if (confirmed) return;
+        confirmed = true;
+        fetch(confirmUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': csrfToken,
+                'Accept': 'application/json',
+            },
+            body: JSON.stringify({ invoice_ids: invoiceIds }),
+            credentials: 'same-origin',
+        }).catch(function (err) {
+            // Silencioso por diseño: si la confirmación falla, el admin
+            // puede marcar manualmente desde Filament. No interrumpimos
+            // al operador con un error en mitad del flujo de impresión.
+            console.warn('No se pudo confirmar la impresión:', err);
+        });
+    }
+
+    window.addEventListener('afterprint', confirmPrint);
+})();
+</script>
+
 </body>
 </html>

@@ -62,5 +62,17 @@ class AppServiceProvider extends ServiceProvider
                 config('api.rate_limit_devoluciones_per_minute', 10)
             )->by($request->ip());
         });
+
+        // ── Rate limiter dedicado para impresión de facturas ──────────────
+        // Endpoint interno (web). Genera HTML con barcodes PNG — pesado en
+        // CPU. El throttle es por usuario autenticado (no IP) porque varios
+        // operadores en una bodega pueden estar detrás del mismo NAT.
+        // Fallback a IP si no hay sesión (caso raro: el middleware auth
+        // debería bloquear antes, pero el limiter no asume).
+        RateLimiter::for('print-invoices', function (Request $request) {
+            return Limit::perMinute(
+                config('api.rate_limit_print_per_minute', 30)
+            )->by($request->user()?->id ?: $request->ip());
+        });
     }
 }

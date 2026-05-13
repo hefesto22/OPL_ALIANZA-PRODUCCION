@@ -23,9 +23,18 @@ Route::get('/depositos/{deposit}/comprobante', [DepositReceiptController::class,
     ->name('deposits.receipt');
 
 // ── Vista de impresión de facturas ────────────────────────────────────────
+// throttle:print-invoices limita a N requests/min por usuario (config/api.php).
+// El controller también valida count máximo de facturas por request.
 Route::get('/imprimir/facturas', [PrintInvoicesController::class, 'show'])
-    ->middleware(['web', 'auth'])
+    ->middleware(['web', 'auth', 'throttle:print-invoices'])
     ->name('invoices.print');
+
+// ── Confirmación de impresión (callback desde JS post-window.afterprint) ──
+// Marca las facturas como físicamente impresas. WarehouseScope aísla por
+// bodega del usuario autenticado.
+Route::post('/imprimir/facturas/confirmar', [PrintInvoicesController::class, 'confirm'])
+    ->middleware(['web', 'auth'])
+    ->name('invoices.print.confirm');
 
 // ── Reportes — todos protegidos por auth ──────────────────────────────────
 Route::prefix('imprimir/reportes')
