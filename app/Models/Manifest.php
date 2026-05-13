@@ -135,30 +135,6 @@ class Manifest extends Model
     }
 
     /**
-     * Cierra el manifiesto. Registra quién y cuándo.
-     */
-    public function close(int $userId): void
-    {
-        $this->update([
-            'status' => 'closed',
-            'closed_by' => $userId,
-            'closed_at' => now(),
-        ]);
-    }
-
-    /**
-     * Reabre un manifiesto cerrado. Solo super_admin.
-     */
-    public function reopen(): void
-    {
-        $this->update([
-            'status' => 'imported',
-            'closed_by' => null,
-            'closed_at' => null,
-        ]);
-    }
-
-    /**
      * Resumen de facturas agrupado por status.
      */
     public function getInvoicesSummary(?int $warehouseId = null): array

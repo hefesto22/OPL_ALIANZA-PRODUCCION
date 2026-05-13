@@ -345,7 +345,9 @@ class ManifestsTable
                         return $record->isReadyToClose() && $user->hasAnyRole(['super_admin', 'admin']);
                     })
                     ->action(function (Manifest $record): void {
-                        $record->close(Auth::id());
+                        app(\App\Services\ManifestService::class)
+                            ->closeManifest($record, Auth::id());
+
                         Notification::make()
                             ->title("Manifiesto #{$record->number} cerrado correctamente.")
                             ->success()
@@ -367,7 +369,9 @@ class ManifestsTable
                         return $record->isClosed() && $user->hasRole('super_admin');
                     })
                     ->action(function (Manifest $record): void {
-                        $record->reopen();
+                        app(\App\Services\ManifestService::class)
+                            ->reopenManifest($record);
+
                         Notification::make()
                             ->title("Manifiesto #{$record->number} reabierto.")
                             ->warning()

@@ -206,13 +206,22 @@ class ManifestResourceTest extends TestCase
 
     public function test_close_sets_status_and_timestamps(): void
     {
+        // Manifest ready-to-close: totales cuadran y hay algo que depositar.
+        // El ManifestService valida estas pre-condiciones server-side antes
+        // de cerrar — la factory anterior dejaba total_to_deposit=0 y la
+        // validación fallaba. Es comportamiento correcto del dominio.
         $manifest = Manifest::factory()->create([
             'status' => 'imported',
             'invoices_count' => 1,
             'total_invoices' => 1000,
+            'total_to_deposit' => 1000,
+            'total_deposited' => 1000,
+            'difference' => 0,
         ]);
 
-        $manifest->close($this->superAdmin->id);
+        app(\App\Services\ManifestService::class)
+            ->closeManifest($manifest, $this->superAdmin->id);
+
         $manifest->refresh();
 
         $this->assertSame('closed', $manifest->status);
@@ -228,7 +237,9 @@ class ManifestResourceTest extends TestCase
             'closed_by' => $this->superAdmin->id,
         ]);
 
-        $manifest->reopen();
+        app(\App\Services\ManifestService::class)
+            ->reopenManifest($manifest);
+
         $manifest->refresh();
 
         $this->assertSame('imported', $manifest->status);

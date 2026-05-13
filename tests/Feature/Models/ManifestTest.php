@@ -123,7 +123,8 @@ class ManifestTest extends TestCase
         $manifest = $this->balancedManifest();
         $user = User::factory()->create();
 
-        $manifest->close($user->id);
+        app(\App\Services\ManifestService::class)
+            ->closeManifest($manifest, $user->id);
 
         $manifest->refresh();
         $this->assertSame('closed', $manifest->status);
@@ -138,7 +139,8 @@ class ManifestTest extends TestCase
             'closed_by' => $user->id,
         ]);
 
-        $manifest->reopen();
+        app(\App\Services\ManifestService::class)
+            ->reopenManifest($manifest);
 
         $manifest->refresh();
         $this->assertSame('imported', $manifest->status);

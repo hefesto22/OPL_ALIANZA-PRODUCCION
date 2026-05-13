@@ -63,7 +63,8 @@ class ViewManifest extends ViewRecord
                     return $this->record->isReadyToClose() && $user->hasAnyRole(['super_admin', 'admin']);
                 })
                 ->action(function (): void {
-                    $this->record->close(Auth::id());
+                    app(\App\Services\ManifestService::class)
+                        ->closeManifest($this->record, Auth::id());
 
                     Notification::make()
                         ->title("Manifiesto #{$this->record->number} cerrado correctamente.")
@@ -91,7 +92,8 @@ class ViewManifest extends ViewRecord
                     return $this->record->isClosed() && $user->hasRole('super_admin');
                 })
                 ->action(function (): void {
-                    $this->record->reopen();
+                    app(\App\Services\ManifestService::class)
+                        ->reopenManifest($this->record);
 
                     Notification::make()
                         ->title("Manifiesto #{$this->record->number} reabierto.")
