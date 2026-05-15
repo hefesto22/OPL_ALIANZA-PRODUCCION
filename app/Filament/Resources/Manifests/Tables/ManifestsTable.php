@@ -26,6 +26,22 @@ class ManifestsTable
 {
     public static function configure(Table $table): Table
     {
+        // Decisión arquitectural: el listado NO muestra summary agregado al pie.
+        //
+        // Razones:
+        //  1. Sum::make() reutilizado vía array compartido replicaba el mismo
+        //     valor en todas las columnas (singleton trampa de Filament).
+        //     Arreglarlo requeriría 5 instancias separadas → 5 queries SUM
+        //     por page render, costoso a escala (3.6M filas).
+        //  2. Las columnas money usan state() custom que lee del slice
+        //     warehouseTotals — Sum() en SQL agrega la columna DB directa,
+        //     causando inconsistencia "fila slice vs summary global" para
+        //     warehouse users.
+        //  3. Los totales agregados son una "vista ejecutiva" — pertenecen
+        //     a un Widget de KPIs separado (con cache + visibilidad por rol),
+        //     no a la tabla operacional.
+        //
+        // Si surge demanda, agregar StatsOverview widget arriba del listado.
         return $table
             ->columns([
                 // ── Identificación ───────────────────────────────────────
@@ -37,16 +53,48 @@ class ManifestsTable
                     ->copyable()
                     ->copyMessage('Número copiado'),
 
-                TextColumn::make('warehouse.code')
-                    ->label('Bodega')
+                // Antes mostraba warehouse.code de la columna del manifest,
+                // pero por diseño esa columna es nullable (un manifest agrupa
+                // facturas de varias bodegas) — siempre se renderizaba "—".
+                //
+                // Ahora extrae los códigos únicos desde warehouseTotals
+                // (eager-loaded en getEloquentQuery), uno por bodega presente.
+                //
+                // Tope visual: máximo 3 badges + "+N" neutro si hay más.
+                // Tooltip muestra la lista completa al hover. Aguanta hasta
+                // 100 bodegas sin que la fila crezca verticalmente.
+                TextColumn::make('warehouses')
+                    ->label('Bodegas')
+                    ->state(function (Manifest $record): array {
+                        $codes = $record->warehouseTotals
+                            ->pluck('warehouse.code')
+                            ->filter()
+                            ->unique()
+                            ->sort()
+                            ->values();
+
+                        return $codes->count() > 3
+                            ? $codes->take(3)->push('+'.($codes->count() - 3))->all()
+                            : $codes->all();
+                    })
+                    ->tooltip(function (Manifest $record): ?string {
+                        $codes = $record->warehouseTotals
+                            ->pluck('warehouse.code')
+                            ->filter()
+                            ->unique()
+                            ->sort();
+
+                        // Tooltip solo cuando hay overflow — evita ruido
+                        // visual en el caso típico de 1–3 bodegas.
+                        return $codes->count() > 3 ? $codes->implode(', ') : null;
+                    })
                     ->badge()
-                    ->color(fn ($state) => match ($state) {
+                    ->color(fn (string $state): string => match ($state) {
                         'OAC' => 'info',
                         'OAO' => 'success',
                         'OAS' => 'warning',
-                        default => 'gray',
+                        default => 'gray',   // el "+N" cae acá
                     })
-                    ->sortable()
                     ->toggleable()
                     ->placeholder('—'),
 
@@ -114,11 +162,16 @@ class ManifestsTable
                         return (float) $record->total_invoices;
                     }),
 
+                // Devoluciones: color dinámico. 0 → neutro (operación limpia),
+                // >0 → danger (algo se devolvió, ojo). Antes era danger siempre
+                // y mostraba "0,00 HNL" en rojo aunque fuera operación perfecta.
+                // Toggleable hidden por default: la mayoría de manifests tiene
+                // 0 devoluciones, mostrarla siempre roba ancho a Diferencia.
                 TextColumn::make('total_returns')
                     ->label('Devoluciones')
                     ->money('HNL')
-                    ->color('danger')
-                    ->toggleable()
+                    ->color(fn (float $state): string => $state > 0 ? 'danger' : 'gray')
+                    ->toggleable(isToggledHiddenByDefault: true)
                     ->visible(fn (): bool => ! Auth::user()->hasRole('operador'))
                     ->state(function (Manifest $record): float {
                         /** @var User $user */
@@ -169,9 +222,14 @@ class ManifestsTable
                         return (float) $record->total_deposited;
                     }),
 
-                // ── Diferencia — icono + color: la columna más importante ─
-                // Usar ícono además de color para no depender solo del
-                // semáforo (accesibilidad y legibilidad en impresión).
+                // ── Diferencia — icono contextual ───────────────────────────
+                // Lógica refinada: el ícono ya no es solo "está cuadrado vs no",
+                // sino qué estado del ciclo lo causa.
+                //  - 0       → check verde: cuadrado, listo para cerrar.
+                //  - >0 y no hay depósitos aún → minus gris: estado esperado
+                //    (manifest recién importado, todavía no se cobra).
+                //  - >0 y ya hay depósitos parciales → exclamation rojo:
+                //    eso sí es señal genuina ("se cobró menos de lo esperado").
                 TextColumn::make('difference')
                     ->label('Diferencia')
                     ->money('HNL')
@@ -189,11 +247,24 @@ class ManifestsTable
 
                         return (float) $record->difference;
                     })
-                    ->color(fn (float $state): string => $state == 0 ? 'success' : 'danger')
-                    ->icon(fn (float $state): string => $state == 0
-                        ? 'heroicon-o-check-circle'
-                        : 'heroicon-o-exclamation-circle'
-                    ),
+                    ->color(function (float $state, Manifest $record): string {
+                        if ($state == 0) {
+                            return 'success';
+                        }
+
+                        return ((float) $record->total_deposited) > 0
+                            ? 'danger'    // diferencia con depósitos parciales: alerta real
+                            : 'gray';     // diferencia sin depósitos: estado esperado
+                    })
+                    ->icon(function (float $state, Manifest $record): string {
+                        if ($state == 0) {
+                            return 'heroicon-o-check-circle';
+                        }
+
+                        return ((float) $record->total_deposited) > 0
+                            ? 'heroicon-o-exclamation-circle'
+                            : 'heroicon-o-minus-circle';
+                    }),
 
                 // ── Estado — siempre visible, es lo primero que busca el ojo ─
                 TextColumn::make('status')

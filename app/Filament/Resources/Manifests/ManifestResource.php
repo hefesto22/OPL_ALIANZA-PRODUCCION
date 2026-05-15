@@ -94,7 +94,16 @@ class ManifestResource extends Resource
     {
         $query = parent::getEloquentQuery()
             ->withoutGlobalScopes([SoftDeletingScope::class])
-            ->with(['supplier', 'warehouse', 'warehouseTotals', 'closedBy:id,name']);
+            // warehouseTotals.warehouse se carga para que la columna "Bodegas"
+            // del listado pueda extraer los códigos sin N+1 — un manifest
+            // típicamente tiene 1–3 entries en warehouseTotals (una por bodega
+            // presente en sus facturas).
+            ->with([
+                'supplier',
+                'warehouse',
+                'warehouseTotals.warehouse:id,code',
+                'closedBy:id,name',
+            ]);
 
         /** @var \App\Models\User $user */
         $user = Auth::user();

@@ -2,7 +2,7 @@
 
 return [
 
-    'title' => 'Escritorio',
+    'title' => 'Inicio',
 
     'actions' => [
 

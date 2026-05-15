@@ -7,6 +7,7 @@ use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
+use Filament\Navigation\NavigationGroup;
 use Filament\Pages\Dashboard;
 use Filament\Panel;
 use Filament\PanelProvider;
@@ -64,6 +65,27 @@ class AdminPanelProvider extends PanelProvider
             ->databaseNotifications()
             ->databaseNotificationsPolling('30s')
             ->globalSearchKeyBindings(['command+k', 'ctrl+k'])
+            /*
+             * Registro explícito de NavigationGroups con icono y orden.
+             *
+             * Filament autodescubre los grupos desde el getNavigationGroup()
+             * de cada Resource, pero sin icono ni orden controlado. Aquí los
+             * declaramos para:
+             *   1. Asignar icono a cada header (mejora jerarquía visual).
+             *   2. Fijar el orden (Configuración → Administración → Permisos).
+             *   3. Renombrar "Filament Shield" → "Permisos" sin tocar el plugin
+             *      (NavigationGroup::make($name) matchea por nombre interno;
+             *      ->label() controla el display).
+             */
+            ->navigationGroups([
+                NavigationGroup::make('Configuración')
+                    ->icon('heroicon-o-cog-6-tooth'),
+                NavigationGroup::make('Administración')
+                    ->icon('heroicon-o-user-group'),
+                NavigationGroup::make('Filament Shield')
+                    ->label('Permisos')
+                    ->icon('heroicon-o-shield-check'),
+            ])
             ->sidebarCollapsibleOnDesktop();
 
     }
