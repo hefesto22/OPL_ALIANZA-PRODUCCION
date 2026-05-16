@@ -135,15 +135,29 @@ class DepositService
     }
 
     /**
-     * Eliminar un depósito y recalcular totales.
-     * También elimina el comprobante del disco si existe.
+     * Cancelar un depósito con auditoría (soft-cancel con razón).
+     *
+     * El depósito permanece en BD para trazabilidad. Lo marcamos como
+     * cancelled_at/cancelled_by/cancellation_reason; el manifest se
+     * recalcula excluyendo este monto.
+     *
+     * Idempotente: cancelar un depósito ya cancelado es no-op (lockForUpdate
+     * sobre el manifest sigue ocurriendo, pero no se duplican efectos).
      */
-    public function deleteDeposit(Deposit $deposit): void
+    public function cancelDeposit(Deposit $deposit, string $reason, int $userId): void
     {
-        // Capturamos el path antes de cualquier operación para usarlo en afterCommit.
+        // Quick-return barato si ya está cancelado (sin abrir TX).
+        if ($deposit->isCancelled()) {
+            return;
+        }
+
+        // Capturar path del comprobante ANTES de la TX para borrarlo en
+        // afterCommit. Una vez cancelado, la imagen ya no es operativa —
+        // liberamos el espacio en disco. La metadata del depósito se
+        // conserva (monto, razón, quién canceló) para auditoría.
         $receiptPath = $deposit->receipt_image;
 
-        DB::transaction(function () use ($deposit, $receiptPath) {
+        DB::transaction(function () use ($deposit, $reason, $userId) {
             $manifestLocked = Manifest::query()
                 ->whereKey($deposit->manifest_id)
                 ->lockForUpdate()
@@ -151,11 +165,27 @@ class DepositService
 
             $this->assertManifestOpen($manifestLocked);
 
-            // Auditoría financiera DENTRO de la TX: si rollback, se descarta.
-            // El trait LogsActivity del modelo Deposit genera un log automático
-            // de "deleted" sobre default. Esta entrada extra en canal 'finance'
-            // documenta el evento de negocio con contexto (monto, manifiesto)
-            // para responder "¿quién y por qué borró este depósito?".
+            // Re-fetch dentro del lock por si otro proceso lo canceló mientras
+            // tanto. Sin esto: race condition en cancel concurrente que duplica
+            // el activity log.
+            $deposit->refresh();
+            if ($deposit->isCancelled()) {
+                return;
+            }
+
+            $deposit->update([
+                'cancelled_at' => now(),
+                'cancelled_by' => $userId,
+                'cancellation_reason' => $reason,
+                'updated_by' => $userId,
+            ]);
+
+            $manifestLocked->recalculateTotals();
+
+            // Log explícito en canal finance — el trait LogsActivity del
+            // modelo registra los cambios de columna automáticamente, pero
+            // esta entrada documenta el evento de negocio con contexto rico
+            // para responder "¿quién y por qué canceló este depósito?".
             activity('finance')
                 ->performedOn($deposit)
                 ->causedBy(auth()->user())
@@ -166,13 +196,64 @@ class DepositService
                     'reference' => $deposit->reference,
                     'manifest_id' => $deposit->manifest_id,
                     'manifest_number' => $manifestLocked->number,
+                    'reason' => $reason,
                 ])
-                ->log('Depósito eliminado');
+                ->log('Depósito cancelado');
+        });
 
-            $deposit->delete();
+        // Borrar el archivo físico del comprobante solo tras commit exitoso.
+        // Si la TX hizo rollback, el archivo queda intacto y el campo
+        // receipt_image en BD sigue apuntándolo correctamente.
+        if ($receiptPath) {
+            DB::afterCommit(function () use ($deposit, $receiptPath) {
+                $deposit->receipt_image = $receiptPath;
+                $deposit->deleteReceiptImage();
+            });
+        }
+    }
+
+    /**
+     * Hard delete de un depósito — borrado permanente reservado para
+     * super_admin (la Policy ForceDelete:Deposit lo restringe).
+     *
+     * El flujo normal de "anular" es cancelDeposit() — eso preserva el
+     * registro. forceDelete se usa cuando se requiere eliminar por error
+     * de captura (test data, prueba accidental, etc.).
+     */
+    public function forceDeleteDeposit(Deposit $deposit, int $userId): void
+    {
+        $receiptPath = $deposit->receipt_image;
+
+        DB::transaction(function () use ($deposit, $receiptPath) {
+            $manifestLocked = Manifest::query()
+                ->whereKey($deposit->manifest_id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $this->assertManifestOpen($manifestLocked);
+
+            // Activity log ANTES del forceDelete: una vez borrado el modelo
+            // no se puede performedOn() porque el id desaparece. El log
+            // queda con causerId y propiedades del depósito al momento.
+            activity('finance')
+                ->performedOn($deposit)
+                ->causedBy(auth()->user())
+                ->withProperties([
+                    'amount' => (float) $deposit->amount,
+                    'deposit_date' => $deposit->deposit_date?->toDateString(),
+                    'bank' => $deposit->bank,
+                    'reference' => $deposit->reference,
+                    'manifest_id' => $deposit->manifest_id,
+                    'manifest_number' => $manifestLocked->number,
+                    'was_cancelled' => $deposit->isCancelled(),
+                ])
+                ->log('Depósito eliminado permanentemente');
+
+            $deposit->forceDelete();
 
             $manifestLocked->recalculateTotals();
 
+            // Borrar el archivo físico solo tras commit exitoso.
             if ($receiptPath) {
                 DB::afterCommit(function () use ($deposit, $receiptPath) {
                     $deposit->receipt_image = $receiptPath;
@@ -183,11 +264,11 @@ class DepositService
     }
 
     /**
-     * Total depositado para un manifiesto.
+     * Total depositado para un manifiesto — excluye cancelados.
      */
     public function getTotalDeposited(Manifest $manifest): float
     {
-        return (float) $manifest->deposits()->sum('amount');
+        return (float) $manifest->deposits()->active()->sum('amount');
     }
 
     /**

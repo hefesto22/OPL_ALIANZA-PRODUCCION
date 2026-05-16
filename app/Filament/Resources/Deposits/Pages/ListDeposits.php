@@ -12,12 +12,39 @@ use Filament\Actions\CreateAction;
 use Filament\Forms\Components\DatePicker;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ListRecords;
+use Filament\Schemas\Components\Tabs\Tab;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Crypt;
 
 class ListDeposits extends ListRecords
 {
     protected static string $resource = DepositResource::class;
+
+    /**
+     * Tabs Activos / Cancelados — no mezclar registros operativos con los
+     * anulados. Default 'activos' al entrar a la pantalla. La tab
+     * "Cancelados" sirve como vista de auditoría para revisar por qué se
+     * canceló cada depósito (razón + quién + cuándo).
+     */
+    public function getTabs(): array
+    {
+        $baseQuery = DepositResource::getEloquentQuery();
+
+        return [
+            'activos' => Tab::make('Activos')
+                ->icon('heroicon-o-check-circle')
+                ->badge((clone $baseQuery)->whereNull('cancelled_at')->count())
+                ->badgeColor('success')
+                ->modifyQueryUsing(fn (Builder $query) => $query->whereNull('cancelled_at')),
+
+            'cancelados' => Tab::make('Cancelados')
+                ->icon('heroicon-o-x-circle')
+                ->badge((clone $baseQuery)->whereNotNull('cancelled_at')->count())
+                ->badgeColor('danger')
+                ->modifyQueryUsing(fn (Builder $query) => $query->whereNotNull('cancelled_at')),
+        ];
+    }
 
     protected function getHeaderActions(): array
     {

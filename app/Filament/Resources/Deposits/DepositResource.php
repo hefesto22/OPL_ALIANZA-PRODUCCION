@@ -10,18 +10,18 @@ use App\Filament\Resources\Deposits\Schemas\DepositForm;
 use App\Models\Deposit;
 use App\Services\DepositService;
 use App\Support\WarehouseScope;
-use Filament\Actions\BulkAction;
-use Filament\Actions\BulkActionGroup;
-use Filament\Actions\DeleteAction;
+use Filament\Actions\Action;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
+use Filament\Forms\Components\Textarea;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
+use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Facades\Auth;
 
 class DepositResource extends Resource
 {
@@ -105,6 +105,18 @@ class DepositResource extends Resource
                     ->label('Registrado por')
                     ->placeholder('—'),
 
+                IconColumn::make('cancelled_at')
+                    ->label('Cancelado')
+                    ->boolean()
+                    ->trueIcon('heroicon-o-x-circle')
+                    ->falseIcon('heroicon-o-check-circle')
+                    ->trueColor('danger')
+                    ->falseColor('success')
+                    ->tooltip(fn (Deposit $record): ?string => $record->isCancelled()
+                        ? 'Cancelado por '.($record->cancelledBy?->name ?? '—').': '.$record->cancellation_reason
+                        : null
+                    ),
+
                 TextColumn::make('created_at')
                     ->label('Registrado')
                     ->dateTime('d/m/Y H:i')
@@ -115,52 +127,66 @@ class DepositResource extends Resource
             ->recordActions([
                 ViewAction::make(),
 
+                // Editar: solo en activos y manifests abiertos. Un cancelado
+                // queda inmutable — su registro es histórico/auditable.
                 EditAction::make()
-                    ->hidden(fn (Deposit $record) => $record->manifest->isClosed()),
+                    ->hidden(fn (Deposit $record): bool => $record->isCancelled() || $record->manifest->isClosed()),
 
-                DeleteAction::make()
-                    ->hidden(fn (Deposit $record) => $record->manifest->isClosed())
-                    ->using(fn (Deposit $record) => app(DepositService::class)->deleteDeposit($record)),
-            ])
-            ->toolbarActions([
-                BulkActionGroup::make([
-                    BulkAction::make('delete')
-                        ->label('Eliminar seleccionados')
-                        ->icon('heroicon-o-trash')
-                        ->color('danger')
-                        ->requiresConfirmation()
-                        ->action(function (Collection $records) {
-                            $service = app(DepositService::class);
-                            $blocked = 0;
-                            $deleted = 0;
+                // Cancelar: soft-cancel con razón. Visible para todos los
+                // roles que tenían "Delete:Deposit" antes (admin, super_admin,
+                // finance). El depósito queda en BD pero no cuenta en totales.
+                Action::make('cancel')
+                    ->label('Cancelar')
+                    ->icon('heroicon-o-x-circle')
+                    ->color('warning')
+                    ->visible(fn (Deposit $record): bool => ! $record->isCancelled()
+                        && ! $record->manifest->isClosed()
+                        && Auth::user()->can('delete', $record)
+                    )
+                    ->modalHeading('Cancelar depósito')
+                    ->modalDescription('El depósito quedará anulado del total del manifiesto pero se conserva el registro para auditoría. Indicá el motivo.')
+                    ->modalSubmitActionLabel('Cancelar depósito')
+                    ->schema([
+                        Textarea::make('cancellation_reason')
+                            ->label('Motivo de la cancelación')
+                            ->required()
+                            ->minLength(10)
+                            ->maxLength(500)
+                            ->rows(3)
+                            ->placeholder('Ej. Depósito duplicado, monto incorrecto, error de captura...'),
+                    ])
+                    ->action(function (Deposit $record, array $data): void {
+                        app(DepositService::class)
+                            ->cancelDeposit($record, $data['cancellation_reason'], Auth::id());
 
-                            foreach ($records as $record) {
-                                if ($record->manifest->isClosed()) {
-                                    $blocked++;
+                        Notification::make()
+                            ->title('Depósito cancelado')
+                            ->body("Se anuló del total del manifiesto #{$record->manifest->number}.")
+                            ->warning()
+                            ->send();
+                    }),
 
-                                    continue;
-                                }
-                                $service->deleteDeposit($record);
-                                $deleted++;
-                            }
+                // Eliminar (hard delete): solo super_admin. Borra el registro
+                // permanentemente — la opción normal es Cancelar.
+                Action::make('forceDelete')
+                    ->label('Eliminar')
+                    ->icon('heroicon-o-trash')
+                    ->color('danger')
+                    ->visible(fn (Deposit $record): bool => Auth::user()->hasRole('super_admin')
+                        && ! $record->manifest->isClosed()
+                    )
+                    ->requiresConfirmation()
+                    ->modalHeading('Eliminar permanentemente')
+                    ->modalDescription('Esta acción elimina el depósito definitivamente, sin posibilidad de recuperarlo. Si solo querés anularlo, usá "Cancelar" — preserva el registro.')
+                    ->modalSubmitActionLabel('Eliminar definitivamente')
+                    ->action(function (Deposit $record): void {
+                        app(DepositService::class)->forceDeleteDeposit($record, Auth::id());
 
-                            if ($deleted > 0) {
-                                Notification::make()
-                                    ->title("{$deleted} depósito(s) eliminado(s).")
-                                    ->success()
-                                    ->send();
-                            }
-
-                            if ($blocked > 0) {
-                                Notification::make()
-                                    ->title("{$blocked} depósito(s) no eliminado(s)")
-                                    ->body('Pertenecen a manifiestos cerrados.')
-                                    ->warning()
-                                    ->send();
-                            }
-                        })
-                        ->deselectRecordsAfterCompletion(),
-                ]),
+                        Notification::make()
+                            ->title('Depósito eliminado permanentemente')
+                            ->danger()
+                            ->send();
+                    }),
             ]);
     }
 

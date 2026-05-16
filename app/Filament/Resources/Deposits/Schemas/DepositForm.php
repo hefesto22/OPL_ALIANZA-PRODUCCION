@@ -4,9 +4,11 @@ namespace App\Filament\Resources\Deposits\Schemas;
 
 use App\Models\Deposit;
 use App\Models\Manifest;
+use App\Services\ReceiptImageService;
 use App\Support\WarehouseScope;
 use Carbon\Carbon;
 use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -20,6 +22,32 @@ class DepositForm
 {
     public static function make(Schema $schema): Schema
     {
+        // Closure compartida: se invoca al cargar el form (afterStateHydrated)
+        // para que los totales aparezcan en edit mode, y al cambiar el Select
+        // (afterStateUpdated) para que se actualicen al elegir otro manifest.
+        // Antes solo se cargaba en la segunda — los totales aparecían en "—"
+        // al abrir la pantalla de Editar Depósito.
+        $loadTotals = function (mixed $state, Set $set): void {
+            if (! $state) {
+                $set('_manifest_total', null);
+                $set('_manifest_deposited', null);
+                $set('_manifest_pending', null);
+
+                return;
+            }
+
+            $manifest = Manifest::find($state);
+            if (! $manifest) {
+                return;
+            }
+
+            $pending = max(0, (float) $manifest->total_to_deposit - (float) $manifest->total_deposited);
+
+            $set('_manifest_total', 'HNL '.number_format($manifest->total_to_deposit, 2));
+            $set('_manifest_deposited', 'HNL '.number_format($manifest->total_deposited, 2));
+            $set('_manifest_pending', 'HNL '.number_format($pending, 2));
+        };
+
         return $schema->components([
 
             // ── Selección de manifiesto ────────────────────────────────
@@ -30,6 +58,13 @@ class DepositForm
                         ->label('Manifiesto')
                         ->required()
                         ->rules(['exists:manifests,id'])
+                        // En edición el manifest del depósito queda bloqueado:
+                        // cambiarlo descalabra el total_deposited de ambos
+                        // manifests (el original pierde el depósito, el nuevo
+                        // lo gana sin trazabilidad). Si el operador necesita
+                        // mover un depósito, debe cancelar el actual y crear
+                        // uno nuevo.
+                        ->disabled(fn (?Deposit $record): bool => $record !== null)
                         ->options(function (?Deposit $record) {
                             // Manifiestos con saldo pendiente, filtrados por bodega del usuario
                             $query = Manifest::query()
@@ -63,29 +98,14 @@ class DepositForm
                             ]);
                         })
                         ->live()
-                        ->afterStateUpdated(function ($state, Set $set) {
-                            if (! $state) {
-                                $set('_manifest_total', null);
-                                $set('_manifest_deposited', null);
-                                $set('_manifest_pending', null);
-
-                                return;
-                            }
-
-                            $manifest = Manifest::find($state);
-                            if (! $manifest) {
-                                return;
-                            }
-
-                            $pending = max(0, (float) $manifest->total_to_deposit - (float) $manifest->total_deposited);
-
-                            $set('_manifest_total', 'HNL '.number_format($manifest->total_to_deposit, 2));
-                            $set('_manifest_deposited', 'HNL '.number_format($manifest->total_deposited, 2));
-                            $set('_manifest_pending', 'HNL '.number_format($pending, 2));
-                        })
+                        ->afterStateHydrated(fn ($state, Set $set) => $loadTotals($state, $set))
+                        ->afterStateUpdated(fn ($state, Set $set) => $loadTotals($state, $set))
                         ->columnSpanFull(),
 
                     // ── Resumen informativo del manifiesto ────────────
+                    // El Grid se oculta en create mode cuando el operador
+                    // aún no eligió manifest; en edit mode siempre se ve
+                    // porque ya hay record con manifest asociado.
                     Grid::make(3)
                         ->schema([
                             TextInput::make('_manifest_total')
@@ -106,12 +126,14 @@ class DepositForm
                                 ->dehydrated(false)
                                 ->placeholder('—'),
                         ])
-                        ->hidden(fn (Get $get) => ! $get('manifest_id')),
+                        ->hidden(fn (Get $get, ?Deposit $record): bool => ! $get('manifest_id') && ! $record),
                 ]),
 
             // ── Datos del depósito ─────────────────────────────────────
+            // Misma lógica: oculto en create sin manifest, visible siempre
+            // en edit mode (donde el record garantiza manifest asociado).
             Section::make('Datos del Depósito')
-                ->hidden(fn (Get $get) => ! $get('manifest_id'))
+                ->hidden(fn (Get $get, ?Deposit $record): bool => ! $get('manifest_id') && ! $record)
                 ->schema([
                     Grid::make(2)->schema([
 
@@ -146,6 +168,30 @@ class DepositForm
                             ->columnSpan(2)
                             ->placeholder('Notas adicionales...'),
                     ]),
+
+                    // ── Comprobante de depósito ────────────────────────
+                    // Mismo patrón que DepositsRelationManager: conversión
+                    // automática a WebP optimizado vía ReceiptImageService.
+                    //
+                    // NOTA: este bloque está duplicado entre DepositForm
+                    // y DepositsRelationManager::getDepositFormSchema().
+                    // Refactorizar a componente compartido es deuda 🟡
+                    // — mientras tanto, mantener sincronizados a mano.
+                    FileUpload::make('receipt_image')
+                        ->label('Comprobante (foto/imagen)')
+                        ->helperText('Sube la foto del recibo o boleta bancaria. Cualquier formato (JPG, PNG, WEBP) se convierte automáticamente a WebP optimizado para ocupar menos espacio. Máx. 8 MB.')
+                        ->image()
+                        ->imageEditor()
+                        ->disk('local')
+                        ->directory('deposits/receipts')
+                        ->visibility('private')
+                        ->maxSize(8192)
+                        ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp'])
+                        ->saveUploadedFileUsing(
+                            fn ($file): string => app(ReceiptImageService::class)->convertToWebp($file)
+                        )
+                        ->nullable()
+                        ->columnSpanFull(),
                 ]),
         ]);
     }

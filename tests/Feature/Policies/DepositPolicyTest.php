@@ -159,4 +159,44 @@ class DepositPolicyTest extends TestCase
 
         $this->assertFalse($this->policy->viewAny($this->userSinPermisos));
     }
+
+    public function test_update_y_delete_bloqueados_en_deposito_cancelado(): void
+    {
+        // Un depósito cancelado queda inmutable: ni edit ni cancel adicional.
+        // La Policy es la última línea de defensa — bloquea aunque la UI
+        // muestre el botón (lo que no debería pasar) o el usuario entre
+        // por URL directa /deposits/{id}/edit.
+        $deposit = $this->depositFor($this->oac);
+        $deposit->update([
+            'cancelled_at' => now(),
+            'cancelled_by' => $this->globalUser->id,
+            'cancellation_reason' => 'Cancelación de prueba xxx',
+        ]);
+        $deposit->refresh();
+
+        $this->assertTrue($deposit->isCancelled(), 'Setup: el deposit debe estar cancelado');
+
+        // Update bloqueado tanto para usuario global como de bodega.
+        $this->assertFalse(
+            $this->policy->update($this->globalUser, $deposit),
+            'Update sobre cancelado: bloqueado aunque el user tenga permisos globales'
+        );
+        $this->assertFalse(
+            $this->policy->update($this->oacUser, $deposit),
+            'Update sobre cancelado: bloqueado para user de bodega'
+        );
+
+        // Delete (= cancelar otra vez): bloqueado.
+        $this->assertFalse(
+            $this->policy->delete($this->globalUser, $deposit),
+            'Delete sobre cancelado: el cancelado no se puede re-cancelar'
+        );
+
+        // ForceDelete sigue disponible — super_admin puede hard-deletear
+        // un cancelado para depurar datos (caso excepcional).
+        $this->assertTrue(
+            $this->policy->forceDelete($this->globalUser, $deposit),
+            'ForceDelete sobre cancelado: sigue permitido (super_admin override)'
+        );
+    }
 }

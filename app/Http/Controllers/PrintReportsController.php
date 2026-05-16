@@ -336,7 +336,11 @@ class PrintReportsController extends Controller
     {
         $data = $this->decryptPayload($request);
 
+        // active() excluye cancelados — un reporte de depósitos por banco
+        // no debe sumar montos que ya no son operativos. Los cancelados
+        // se auditan desde el tab "Cancelados" del listado.
         $query = Deposit::query()
+            ->active()
             ->with(['manifest', 'createdBy'])
             ->orderBy('deposit_date', 'desc');
 

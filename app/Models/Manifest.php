@@ -204,7 +204,9 @@ class Manifest extends Model
             ->first();
 
         // Deposits: una sola SUM (tabla independiente, no se puede fusionar).
-        $totalDeposited = (float) $this->deposits()->sum('amount');
+        // Filtro active() excluye depósitos cancelados — un cancelado existe
+        // en BD para auditoría pero NO cuenta como dinero ingresado.
+        $totalDeposited = (float) $this->deposits()->active()->sum('amount');
 
         // ── Asignar resultados al modelo ──────────────────────────────────
         $this->total_invoices = (float) ($invoiceStats->total_invoices ?? 0);

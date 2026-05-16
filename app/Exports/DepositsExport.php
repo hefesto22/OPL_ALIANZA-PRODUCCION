@@ -51,7 +51,11 @@ class DepositsExport implements FromQuery, ShouldAutoSize, ShouldQueue, WithChun
     {
         // Columnas específicas en relations — evita hidratar filas completas
         // cuando solo necesitamos 1-2 campos del modelo relacionado.
+        // active() excluye cancelados — el export operacional muestra solo
+        // movimientos financieros vigentes. Los cancelados se ven desde el
+        // tab "Cancelados" del listado de Filament (auditoría).
         $query = Deposit::query()
+            ->active()
             ->with([
                 'manifest:id,number,status',
                 'createdBy:id,name',

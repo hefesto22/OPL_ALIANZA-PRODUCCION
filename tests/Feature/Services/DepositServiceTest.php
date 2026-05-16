@@ -227,10 +227,10 @@ class DepositServiceTest extends TestCase
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  deleteDeposit
+    //  cancelDeposit (soft-cancel con auditoría)
     // ═══════════════════════════════════════════════════════════════
 
-    public function test_delete_deposit_soft_deletes_and_recalculates(): void
+    public function test_cancel_deposit_marks_cancelled_and_recalculates(): void
     {
         $deposit = $this->service()->createDeposit(
             $this->manifest,
@@ -238,16 +238,71 @@ class DepositServiceTest extends TestCase
             $this->user->id,
         );
 
-        $this->service()->deleteDeposit($deposit->refresh());
+        $this->service()->cancelDeposit(
+            $deposit->refresh(),
+            'Depósito duplicado por error de captura',
+            $this->user->id,
+        );
 
-        $this->assertSoftDeleted('deposits', ['id' => $deposit->id]);
+        $deposit->refresh();
+        $this->assertNotNull($deposit->cancelled_at);
+        $this->assertSame($this->user->id, $deposit->cancelled_by);
+        $this->assertSame('Depósito duplicado por error de captura', $deposit->cancellation_reason);
 
+        // El manifest recalcula excluyendo cancelados — total_deposited
+        // debe volver a 0 aunque el row del depósito siga existiendo en BD.
         $this->manifest->refresh();
         $this->assertEquals(0.00, (float) $this->manifest->total_deposited);
         $this->assertEquals(1000.00, (float) $this->manifest->difference);
     }
 
-    public function test_delete_deposit_on_closed_manifest_throws(): void
+    public function test_cancel_deposit_preserves_row_for_audit(): void
+    {
+        $deposit = $this->service()->createDeposit(
+            $this->manifest,
+            $this->depositData(['amount' => 500.00]),
+            $this->user->id,
+        );
+
+        $this->service()->cancelDeposit($deposit->refresh(), 'Motivo de prueba xxx', $this->user->id);
+
+        // El registro NO está soft-deleted ni hard-deleted — sigue
+        // visible para auditoría/reporting con cancelled_at != null.
+        $this->assertDatabaseHas('deposits', [
+            'id' => $deposit->id,
+            'deleted_at' => null,
+        ]);
+        $this->assertNotNull(Deposit::find($deposit->id)?->cancelled_at);
+    }
+
+    public function test_cancel_deposit_is_idempotent(): void
+    {
+        // Cancelar dos veces el mismo depósito no debería duplicar efectos
+        // ni lanzar excepción. El segundo intento es no-op.
+        $deposit = $this->service()->createDeposit(
+            $this->manifest,
+            $this->depositData(['amount' => 400.00]),
+            $this->user->id,
+        );
+
+        $this->actingAs($this->user);
+
+        $this->service()->cancelDeposit($deposit->refresh(), 'Primer cancel xxx', $this->user->id);
+        $this->service()->cancelDeposit($deposit->refresh(), 'Segundo cancel xxx', $this->user->id);
+
+        // El reason del primer cancel se conserva — el segundo intento NO sobreescribe.
+        $this->assertSame('Primer cancel xxx', $deposit->refresh()->cancellation_reason);
+
+        // Solo UN log de "Depósito cancelado" en activity_log finance.
+        $logCount = \Spatie\Activitylog\Models\Activity::query()
+            ->where('log_name', 'finance')
+            ->where('description', 'Depósito cancelado')
+            ->where('subject_id', $deposit->id)
+            ->count();
+        $this->assertSame(1, $logCount);
+    }
+
+    public function test_cancel_deposit_on_closed_manifest_throws(): void
     {
         $deposit = $this->service()->createDeposit(
             $this->manifest,
@@ -259,7 +314,61 @@ class DepositServiceTest extends TestCase
 
         $this->expectException(ValidationException::class);
 
-        $this->service()->deleteDeposit($deposit->refresh());
+        $this->service()->cancelDeposit($deposit->refresh(), 'No debería pasar nunca', $this->user->id);
+    }
+
+    public function test_cancel_deposit_deletes_receipt_image_from_disk(): void
+    {
+        // Pre-condición: depósito con receipt_image apuntando a un archivo
+        // real en el disco fake.
+        \Illuminate\Support\Facades\Storage::fake('local');
+
+        $path = 'deposits/receipts/test-receipt.webp';
+        \Illuminate\Support\Facades\Storage::disk('local')->put($path, 'fake-webp-bytes');
+
+        $deposit = $this->service()->createDeposit(
+            $this->manifest,
+            $this->depositData([
+                'amount' => 500.00,
+                'receipt_image' => $path,
+            ]),
+            $this->user->id,
+        );
+
+        \Illuminate\Support\Facades\Storage::disk('local')->assertExists($path);
+
+        // Acción: cancelar el depósito.
+        $this->service()->cancelDeposit($deposit->refresh(), 'Motivo de prueba xxx', $this->user->id);
+
+        // Post-condición: el archivo físico se eliminó del disco, y el campo
+        // receipt_image en BD quedó en null para evitar referencias rotas.
+        \Illuminate\Support\Facades\Storage::disk('local')->assertMissing($path);
+        $this->assertNull($deposit->fresh()->receipt_image);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  forceDeleteDeposit (hard delete — solo super_admin desde Filament)
+    // ═══════════════════════════════════════════════════════════════
+
+    public function test_force_delete_deposit_hard_deletes_and_recalculates(): void
+    {
+        $deposit = $this->service()->createDeposit(
+            $this->manifest,
+            $this->depositData(['amount' => 600.00]),
+            $this->user->id,
+        );
+
+        $depositId = $deposit->id;
+
+        $this->actingAs($this->user);
+
+        $this->service()->forceDeleteDeposit($deposit->refresh(), $this->user->id);
+
+        // Hard delete: NO existe ni con withTrashed().
+        $this->assertNull(Deposit::withTrashed()->find($depositId));
+
+        $this->manifest->refresh();
+        $this->assertEquals(0.00, (float) $this->manifest->total_deposited);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -352,7 +461,7 @@ class DepositServiceTest extends TestCase
         $this->assertLockForUpdateOnManifests($queries, 'updateDeposit');
     }
 
-    public function test_delete_deposit_emits_for_update_lock_on_manifest(): void
+    public function test_cancel_deposit_emits_for_update_lock_on_manifest(): void
     {
         $deposit = $this->service()->createDeposit(
             $this->manifest,
@@ -361,10 +470,10 @@ class DepositServiceTest extends TestCase
         );
 
         $queries = $this->captureQueries(function () use ($deposit) {
-            $this->service()->deleteDeposit($deposit->refresh());
+            $this->service()->cancelDeposit($deposit->refresh(), 'Lock test xxxxx', $this->user->id);
         });
 
-        $this->assertLockForUpdateOnManifests($queries, 'deleteDeposit');
+        $this->assertLockForUpdateOnManifests($queries, 'cancelDeposit');
     }
 
     public function test_create_deposit_recalculates_totals_inside_transaction(): void
@@ -454,7 +563,7 @@ class DepositServiceTest extends TestCase
     //  con contexto operativo (monto, manifiesto, causer).
     // ═══════════════════════════════════════════════════════════════
 
-    public function test_delete_deposit_logs_activity_in_finance_channel(): void
+    public function test_cancel_deposit_logs_activity_in_finance_channel(): void
     {
         $deposit = $this->service()->createDeposit(
             $this->manifest,
@@ -464,17 +573,17 @@ class DepositServiceTest extends TestCase
 
         $this->actingAs($this->user);
 
-        $this->service()->deleteDeposit($deposit->refresh());
+        $this->service()->cancelDeposit($deposit->refresh(), 'Motivo de auditoría xxx', $this->user->id);
 
         $log = \Spatie\Activitylog\Models\Activity::query()
             ->where('log_name', 'finance')
-            ->where('description', 'Depósito eliminado')
+            ->where('description', 'Depósito cancelado')
             ->latest()
             ->first();
 
         $this->assertNotNull(
             $log,
-            "Esperaba una entrada en activity_log con log_name='finance' tras deleteDeposit"
+            "Esperaba una entrada en activity_log con log_name='finance' tras cancelDeposit"
         );
         $this->assertSame(\App\Models\Deposit::class, $log->subject_type);
         $this->assertSame($deposit->id, $log->subject_id);
@@ -486,5 +595,6 @@ class DepositServiceTest extends TestCase
         $this->assertSame('REF-AUD-1', $props['reference']);
         $this->assertSame($this->manifest->id, $props['manifest_id']);
         $this->assertSame($this->manifest->number, $props['manifest_number']);
+        $this->assertSame('Motivo de auditoría xxx', $props['reason']);
     }
 }

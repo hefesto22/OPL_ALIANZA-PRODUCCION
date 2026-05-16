@@ -87,6 +87,34 @@ class ExportFiltersTest extends TestCase
         $this->assertEquals(100.00, $janOnly->first()->amount);
     }
 
+    public function test_deposits_export_excludes_cancelled(): void
+    {
+        // Los depósitos cancelados no son movimientos financieros vigentes —
+        // un Excel "operacional" no debe sumarlos en los totales del lector.
+        // Para auditar los cancelados existe el tab "Cancelados" en Filament.
+        $manifest = Manifest::factory()->create();
+
+        Deposit::create([
+            'manifest_id' => $manifest->id,
+            'amount' => 100.00,
+            'deposit_date' => '2026-01-10',
+            'bank' => 'BANPAIS',
+        ]);
+        Deposit::create([
+            'manifest_id' => $manifest->id,
+            'amount' => 200.00,
+            'deposit_date' => '2026-01-15',
+            'bank' => 'BANPAIS',
+            'cancelled_at' => now(),
+            'cancellation_reason' => 'Cancelado para test xxx',
+        ]);
+
+        $rows = (new DepositsExport)->query()->get();
+
+        $this->assertCount(1, $rows);
+        $this->assertEquals(100.00, (float) $rows->first()->amount);
+    }
+
     public function test_deposits_export_map_reads_observations_not_notes(): void
     {
         // Regression test: DepositsExport antes leía $deposit->notes (campo

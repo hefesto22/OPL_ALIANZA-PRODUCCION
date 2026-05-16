@@ -32,13 +32,22 @@ class DepositPolicy
 
     public function update(AuthUser $authUser, Deposit $deposit): bool
     {
+        // Un depósito cancelado queda inmutable: su registro es histórico
+        // y auditable. Si hay que reabrirlo, se cancela el nuevo y se crea
+        // otro — pero NO se edita encima. La Policy es la última línea de
+        // defensa (la UI ya oculta el botón, pero esto protege la URL directa).
         return $authUser->can('Update:Deposit')
+            && ! $deposit->isCancelled()
             && $this->userOwnsRecordViaRelation($authUser, $deposit, 'manifest');
     }
 
     public function delete(AuthUser $authUser, Deposit $deposit): bool
     {
+        // Cancelar un depósito ya cancelado no tiene sentido — el método
+        // del Service es idempotente y no-op, pero la Policy bloquea el
+        // intento aguas arriba para que la UI no muestre el botón.
         return $authUser->can('Delete:Deposit')
+            && ! $deposit->isCancelled()
             && $this->userOwnsRecordViaRelation($authUser, $deposit, 'manifest');
     }
 

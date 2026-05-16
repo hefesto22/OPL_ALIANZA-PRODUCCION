@@ -83,6 +83,22 @@ class DepositsRelationManager extends RelationManager
                     ->label('Registrado por')
                     ->placeholder('—')
                     ->toggleable(isToggledHiddenByDefault: true),
+
+                // Marca visual de cancelado. Si el row está cancelado, el
+                // tooltip muestra quién y por qué — el supervisor abriendo
+                // el manifest puede distinguir y entender la causa sin
+                // navegar al detalle del depósito.
+                IconColumn::make('cancelled_at')
+                    ->label('Cancelado')
+                    ->boolean()
+                    ->trueIcon('heroicon-o-x-circle')
+                    ->falseIcon('heroicon-o-check-circle')
+                    ->trueColor('danger')
+                    ->falseColor('success')
+                    ->tooltip(fn (Deposit $record): ?string => $record->isCancelled()
+                        ? 'Cancelado por '.($record->cancelledBy?->name ?? '—').': '.$record->cancellation_reason
+                        : null
+                    ),
             ])
 
             ->defaultSort('deposit_date', 'desc')
@@ -114,7 +130,9 @@ class DepositsRelationManager extends RelationManager
                     ->label('Editar')
                     ->icon('heroicon-o-pencil-square')
                     ->color('warning')
-                    ->hidden(fn (): bool => $this->getOwnerRecord()->isClosed())
+                    ->visible(fn (Deposit $record): bool => ! $record->isCancelled()
+                        && ! $this->getOwnerRecord()->isClosed()
+                    )
                     ->modalHeading('Editar Depósito')
                     ->modalSubmitActionLabel('Guardar Cambios')
                     ->fillForm(fn (Deposit $record): array => [
@@ -130,18 +148,52 @@ class DepositsRelationManager extends RelationManager
                         app(DepositService::class)->updateDeposit($record, $data, Auth::id());
                     }),
 
-                // ── Eliminar depósito ──────────────────────────────────
-                Action::make('delete_deposit')
+                // ── Cancelar depósito ──────────────────────────────────
+                // Reemplaza al "Eliminar" anterior. El depósito queda en BD
+                // (auditoría) pero no cuenta en los totales del manifiesto.
+                // Requiere razón documentada — eso permite reconstruir
+                // después qué pasó y por qué.
+                Action::make('cancel_deposit')
+                    ->label('Cancelar')
+                    ->icon('heroicon-o-x-circle')
+                    ->color('warning')
+                    ->visible(fn (Deposit $record): bool => ! $record->isCancelled()
+                        && ! $this->getOwnerRecord()->isClosed()
+                        && Auth::user()->can('delete', $record)
+                    )
+                    ->modalHeading('Cancelar depósito')
+                    ->modalDescription('El depósito quedará anulado del total del manifiesto pero se conserva el registro para auditoría. Indicá el motivo.')
+                    ->modalSubmitActionLabel('Cancelar depósito')
+                    ->schema([
+                        \Filament\Forms\Components\Textarea::make('cancellation_reason')
+                            ->label('Motivo de la cancelación')
+                            ->required()
+                            ->minLength(10)
+                            ->maxLength(500)
+                            ->rows(3)
+                            ->placeholder('Ej. Depósito duplicado, monto incorrecto, error de captura...'),
+                    ])
+                    ->action(function (Deposit $record, array $data): void {
+                        app(DepositService::class)
+                            ->cancelDeposit($record, $data['cancellation_reason'], Auth::id());
+                    }),
+
+                // ── Eliminar permanentemente (solo super_admin) ────────
+                // Hard delete: borra el registro y el archivo del comprobante.
+                // La opción normal para anular es Cancelar.
+                Action::make('force_delete_deposit')
                     ->label('Eliminar')
                     ->icon('heroicon-o-trash')
                     ->color('danger')
-                    ->hidden(fn (): bool => $this->getOwnerRecord()->isClosed())
+                    ->visible(fn (Deposit $record): bool => Auth::user()->hasRole('super_admin')
+                        && ! $this->getOwnerRecord()->isClosed()
+                    )
                     ->requiresConfirmation()
-                    ->modalHeading('¿Eliminar este depósito?')
-                    ->modalDescription('Esta acción no se puede deshacer. El comprobante adjunto también se eliminará.')
-                    ->modalSubmitActionLabel('Sí, eliminar')
+                    ->modalHeading('Eliminar permanentemente')
+                    ->modalDescription('Esta acción elimina el depósito definitivamente, sin posibilidad de recuperarlo. Si solo querés anularlo, usá "Cancelar" — preserva el registro.')
+                    ->modalSubmitActionLabel('Eliminar definitivamente')
                     ->action(function (Deposit $record): void {
-                        app(DepositService::class)->deleteDeposit($record);
+                        app(DepositService::class)->forceDeleteDeposit($record, Auth::id());
                     }),
             ]);
     }
@@ -198,19 +250,31 @@ class DepositsRelationManager extends RelationManager
                 ->placeholder('Notas adicionales sobre el depósito...'),
 
             // ── Comprobante de depósito ────────────────────────────────
+            // Conversión a WebP automática vía ReceiptImageService:
+            // resize a 1400×1400 max + WebP calidad 85, sin importar el
+            // formato de entrada. A escala (~100 depósitos/día con foto)
+            // ahorra ~60% de disco vs guardar el JPG original.
+            //
+            // El imageEditor sigue funcionando: el usuario puede recortar/
+            // rotar en el browser ANTES de que el upload llegue al server;
+            // el resultado final del editor entra al pipeline de conversión.
+            //
+            // saveUploadedFileUsing reemplaza los automaticallyResize* —
+            // el Service hace tanto el resize como la conversión.
             FileUpload::make('receipt_image')
                 ->label('Comprobante (foto/imagen)')
-                ->helperText('Sube la foto del recibo o boleta bancaria. Formatos: JPG, PNG, WEBP. Máx. 8 MB. El archivo se guarda de forma privada y se elimina automáticamente después de 2 meses.')
+                ->helperText('Sube la foto del recibo o boleta bancaria. Cualquier formato (JPG, PNG, WEBP) se convierte automáticamente a WebP optimizado para ocupar menos espacio. Máx. 8 MB.')
                 ->image()
-                ->imageEditor()          // permite recortar/rotar antes de guardar
-                ->automaticallyResizeImagesMode('contain')
-                ->automaticallyResizeImagesToWidth('1400')   // máx 1400px — calidad suficiente, peso reducido
-                ->automaticallyResizeImagesToHeight('1400')
-                ->disk('local')          // disco PRIVADO — no accesible vía URL directa
+                ->imageEditor()
+                ->disk('local')
                 ->directory('deposits/receipts')
                 ->visibility('private')
-                ->maxSize(8192)          // 8 MB para fotos de celular sin comprimir
+                ->maxSize(8192)
                 ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp'])
+                ->saveUploadedFileUsing(
+                    fn ($file): string => app(\App\Services\ReceiptImageService::class)
+                        ->convertToWebp($file)
+                )
                 ->nullable()
                 ->columnSpanFull(),
         ];

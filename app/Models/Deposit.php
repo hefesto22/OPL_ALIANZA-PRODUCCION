@@ -19,6 +19,7 @@ class Deposit extends Model
         'manifest_id', 'amount', 'deposit_date',
         'bank', 'reference', 'observations',
         'receipt_image', 'receipt_image_uploaded_at',
+        'cancelled_at', 'cancelled_by', 'cancellation_reason',
         'created_by', 'updated_by',
     ];
 
@@ -28,7 +29,30 @@ class Deposit extends Model
             'deposit_date' => 'date',
             'amount' => 'decimal:2',
             'receipt_image_uploaded_at' => 'datetime',
+            'cancelled_at' => 'datetime',
         ];
+    }
+
+    // ─── Scopes ───────────────────────────────────────────────
+    //
+    // Un depósito cancelado existe en BD (para auditoría y trazabilidad)
+    // pero no cuenta como dinero ingresado al manifiesto. Toda query que
+    // sume montos para reportes financieros debe usar active() — el global
+    // scope de SoftDeletes ya excluye los soft-deleted pero NO los cancelados.
+
+    public function scopeActive($query)
+    {
+        return $query->whereNull('cancelled_at');
+    }
+
+    public function scopeCancelled($query)
+    {
+        return $query->whereNotNull('cancelled_at');
+    }
+
+    public function isCancelled(): bool
+    {
+        return $this->cancelled_at !== null;
     }
 
     public function getActivitylogOptions(): LogOptions
@@ -89,5 +113,10 @@ class Deposit extends Model
     public function createdBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function cancelledBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'cancelled_by');
     }
 }
