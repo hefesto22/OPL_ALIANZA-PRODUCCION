@@ -161,11 +161,15 @@ table.lines td {
 @foreach($invoices as $invoice)
 <div class="invoice-page">
 
-    {{-- ══ ENCABEZADO ═══════════════════════════════════════════ --}}
-    <table style="border-bottom:1px solid #000; margin-bottom:2px;">
+    {{-- ══ ENCABEZADO ═══════════════════════════════════════════
+         Formato fijo del emisor Jaremar — texto literal del papel que
+         ellos imprimen. Mantener idéntico para que el PDF coincida 1:1
+         con la factura original. Ver memory project_invoice_pdf_jaremar_format.
+    ──────────────────────────────────────────────────────────── --}}
+    <table style="margin-bottom:2px;">
         <tr>
             <td style="width:54%; font-size:6.5pt;">
-                <b>RTN: {{ $supplier->rtn ?? '08019017952895' }}</b>
+                <b>RTN: 08019017952895</b>
             </td>
             <td style="width:46%; text-align:right; font-size:6.5pt;">
                 <span style="font-size:9pt; font-weight:bold; letter-spacing:2px;">FACTURA</span>
@@ -175,8 +179,7 @@ table.lines td {
         </tr>
         <tr>
             <td style="font-size:6.5pt;">
-                BO:{{ $supplier->neighborhood ?? 'LA GUADALUPE' }}
-                CL:{{ $supplier->address ?? 'LAS ACACIAS APTO:13 EDIF: ITALIA M.D.C. F.M. HONDURAS' }}
+                BO:LA GUADALUPE CL:LAS ACACIAS APTO:13 EDIF: ITALIA M.D.C. F.M. HONDURAS
             </td>
             <td rowspan="5" style="text-align:right; vertical-align:top; font-size:6.5pt;">
                 @if(!empty($invoice->barcode_base64))
@@ -190,18 +193,16 @@ table.lines td {
             </td>
         </tr>
         <tr>
-            <td style="font-size:6.5pt;">TEL: {{ $supplier->phone ?? '2238-2484  2561-7410' }} &nbsp; MATRIZ</td>
+            <td style="font-size:6.5pt;">TEL: 2238-2484  2561-7410 &nbsp;&nbsp; MATRIZ</td>
         </tr>
         <tr>
-            <td style="font-size:6.5pt; font-weight:bold;">
-                {{ $invoice->matriz_address ?? 'KM 15 CARRETERA A BUFALO   VILLANUEVA CORTES HONDURAS' }}
-            </td>
+            <td style="font-size:6.5pt;">KM 15 CARRETERA A BUFALO &nbsp;&nbsp; VILLANUEVA CORTES HONDURAS</td>
         </tr>
         <tr>
-            <td style="font-size:6.5pt;">TEL: {{ $supplier->phone2 ?? '2561-7410  2561-7411' }} &nbsp; SUCURSAL</td>
+            <td style="font-size:6.5pt;">TEL: TEL: 2561-7410 2561-7411 &nbsp;&nbsp; SUCURSAL</td>
         </tr>
         <tr>
-            <td style="font-size:6.5pt;">{{ $supplier->email ?? 'finanzas@jaremar.com' }}</td>
+            <td style="font-size:6.5pt;">finanzas@jaremar.com</td>
         </tr>
     </table>
 
@@ -225,9 +226,19 @@ table.lines td {
             <td style="width:48%; vertical-align:top;">
                 <b>Facturado</b> {{ $invoice->client_name }}<br>
                 <b>RTN</b> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; {{ $invoice->client_rtn }}<br>
+                @php
+                    // Formato Jaremar de la línea 2 de Direccion:
+                    //   "{MUNICIPALITY} DEPARTAMENTO DE {DEPARTMENT} HONDURAS"
+                    // Si municipality o department vienen vacíos, se omiten
+                    // para evitar imprimir "DEPARTAMENTO DE  HONDURAS" suelto.
+                    $municipality = strtoupper(trim($invoice->municipality ?? ''));
+                    $department = strtoupper(trim($invoice->department ?? ''));
+                    $locationLine = $municipality !== '' && $department !== ''
+                        ? "{$municipality} DEPARTAMENTO DE {$department} HONDURAS"
+                        : trim("{$municipality} {$department}");
+                @endphp
                 <b>Direccion</b> {{ $invoice->neighborhood ?? '' }}<br>
-                &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-                {{ trim(($invoice->municipality ?? '') . ' ' . ($invoice->department ?? '')) }}<br>
+                &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; {{ $locationLine }}<br>
                 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; {{ $invoice->address ?? '' }}<br>
                 <b>Moneda</b> &nbsp; LEMPIRAS &nbsp; <b>Vendedor</b> &nbsp;
                 {{ str_pad($invoice->seller_id ?? '', 6, '0', STR_PAD_LEFT) }}<br>
@@ -248,7 +259,29 @@ table.lines td {
         </tr>
     </table>
 
-    {{-- ══ TABLA PRODUCTOS ════════════════════════════════════════ --}}
+    {{-- ══ TABLA PRODUCTOS ════════════════════════════════════════
+         Formato AS400/COBOL idéntico al que imprime Jaremar.
+
+         ARTICULO No: imprimimos solo el `product_id` (corto, ej. 52480077).
+         Jaremar imprime además un código EAN-13 (ej. 7421001615056) que
+         NO viene en el JSON del API — está en su sistema interno. Hasta
+         que Jaremar añada `CodigoEAN` (u homólogo) al JSON, imprimimos
+         solo el ProductoId para evitar mostrar un código equivocado.
+
+         Líneas tipo "B" (bonus): el JSON manda Subtotal/Descuento/Impuesto/
+         Total = 0 y Jaremar calcula localmente al imprimir según tax_percent:
+           VALOR     = floor(precio × cantidad_decimal × 100) / 100
+           DESCUENTO = -VALOR (signo AS400 trailing)
+           Si tax_percent == 0  → ISV 15% = .00, TOTAL = .00
+           Si tax_percent  > 0  → ISV 15% = round(exact - VALOR, 2)
+                                  TOTAL    = ISV 15%
+         (El producto bonus sin ISV no genera remanente; el bonus gravado sí.)
+
+         Líneas tipo "A": usamos los valores del API tal cual ($line->subtotal,
+         $line->tax, $line->total) — Jaremar ya los manda redondeados.
+
+         Ver NumberHelper::as400() y memory project_invoice_pdf_jaremar_format.
+    ──────────────────────────────────────────────────────────── --}}
     <table class="lines">
         <thead>
             <tr>
@@ -260,57 +293,63 @@ table.lines td {
                 <th style="width:9mm;">CANT</th>
                 <th style="width:17mm;">PRECIO UNIT</th>
                 <th style="width:14mm;">VALOR</th>
-                <th style="width:15mm; font-size:4.8pt; white-space:normal; line-height:1.1;">DESCUENTOS<br>Y REBAJAS</th>
-                <th style="width:10mm;">18% ISV</th>
-                <th style="width:12mm;">15% ISV</th>
+                <th style="width:15mm; font-size:4.8pt; white-space:normal; line-height:1.1;">DESCUENTOS<br>Y REBAJAS<br>OTORGADOS</th>
+                <th style="width:10mm; font-size:5pt; line-height:1.1;">18%<br>ISV</th>
+                <th style="width:12mm; font-size:5pt; line-height:1.1;">15%<br>ISV</th>
                 <th style="width:18mm;">VALOR TOTAL</th>
             </tr>
         </thead>
         <tbody>
             @foreach($invoice->lines as $line)
+            @php
+                $isBonus = strtoupper($line->product_type ?? '') === 'B';
+
+                if ($isBonus) {
+                    // Replica el cálculo de Jaremar al imprimir bonus.
+                    // Si el producto no tiene ISV (tax_percent=0), todo el
+                    // descuento es exento → ISV15 y TOTAL salen en cero.
+                    // Si sí tiene ISV (tax_percent>0), Jaremar suma el
+                    // remanente del truncado al ISV15.
+                    $exact = (float) $line->price * (float) $line->quantity_decimal;
+                    $valor = floor($exact * 100) / 100;            // 31.95
+                    $descuento = -$valor;                           // -31.95 → "31.95-"
+                    $hasTax = ((float) ($line->tax_percent ?? 0)) > 0;
+                    $isv15 = $hasTax ? round($exact - $valor, 2) : 0.0;
+                    $isv18 = 0.0;
+                    $total = $isv15;
+                } else {
+                    // Línea normal: confiar en los valores del API.
+                    $valor = (float) $line->subtotal;
+                    $descuento = -abs((float) ($line->discount ?? 0));
+                    $isv15 = (float) ($line->tax ?? 0);
+                    $isv18 = (float) ($line->tax18 ?? 0);
+                    $total = (float) $line->total;
+                }
+            @endphp
             <tr>
-                <td>{{ $line->product_id }} {{ $line->jaremar_line_id }}</td>
+                <td>{{ $line->product_id }}</td>
                 <td>{{ $line->product_description }}</td>
                 <td class="c">{{ $line->unit_sale }}</td>
                 <td class="c">{{ strtoupper($line->unit_sale) === 'CJ' ? number_format($line->quantity_box, 0) : '' }}</td>
                 <td class="c">{{ strtoupper($line->unit_sale) !== 'CJ' ? number_format($line->quantity_fractions, 0) : '' }}</td>
-                <td class="r">{{ number_format($line->quantity_decimal, 3) }}</td>
-                <td class="r">{{ number_format($line->price, 3) }}</td>
-                @php
-                    $isBonus = strtoupper($line->product_type ?? '') === 'B';
-                    $displayValor = $isBonus
-                        ? round($line->price * $line->quantity_decimal, 2)
-                        : $line->subtotal;
-                    $displayDiscount = $isBonus
-                        ? -(floor($line->price * $line->quantity_decimal * 100) / 100)
-                        : ($line->discount ?? 0);
-                @endphp
-                <td class="r">{{ number_format($displayValor, 2) }}</td>
-                <td class="r">{{ number_format($displayDiscount, 2) }}</td>
-                <td class="r">.00</td>
-                <td class="r">{{ number_format($line->tax ?? 0, 2) }}</td>
-                <td class="r">{{ number_format($line->total, 2) }}</td>
+                <td class="r">{{ \App\Helpers\NumberHelper::as400($line->quantity_decimal, 3) }}</td>
+                <td class="r">{{ \App\Helpers\NumberHelper::as400($line->price, 3) }}</td>
+                <td class="r">{{ \App\Helpers\NumberHelper::as400($valor, 2) }}</td>
+                <td class="r">{{ \App\Helpers\NumberHelper::as400($descuento, 2) }}</td>
+                <td class="r">{{ \App\Helpers\NumberHelper::as400($isv18, 2) }}</td>
+                <td class="r">{{ \App\Helpers\NumberHelper::as400($isv15, 2) }}</td>
+                <td class="r">{{ \App\Helpers\NumberHelper::as400($total, 2) }}</td>
             </tr>
             @endforeach
-            <tr>
-                <td colspan="7" class="r"
-                    style="border-top:1px solid #000; font-weight:bold; font-size:5.8pt;">
-                    TOTAL A PAGAR L
-                </td>
-                <td class="r" style="border-top:1px solid #000; font-weight:bold; font-size:5.8pt;">
-                    {{ number_format(($invoice->importe_excento ?? 0) + ($invoice->importe_exonerado ?? 0) + ($invoice->importe_gravado ?? 0), 2) }}
-                </td>
-                <td style="border-top:1px solid #000;"></td>
-                <td style="border-top:1px solid #000;"></td>
-                <td style="border-top:1px solid #000;"></td>
-                <td class="r" style="border-top:1px solid #000; font-weight:bold; font-size:5.8pt;">
-                    {{ number_format($invoice->total, 2) }}
-                </td>
-            </tr>
         </tbody>
     </table>
 
-    {{-- ══ PIE: FIRMAS + IMPORTES ═════════════════════════════════ --}}
+    {{-- ══ PIE: FIRMAS + IMPORTES ═════════════════════════════════
+         Replica exacta del pie fiscal Jaremar (factura completa).
+         Todos los números usan NumberHelper::as400() para mantener el
+         formato COBOL/AS400: .00 sin cero entero, signo "-" trailing en
+         descuentos. Ver memory project_invoice_pdf_jaremar_format.
+    ──────────────────────────────────────────────────────────── --}}
     <table style="margin-top:10mm; font-size:6.5pt;">
         <tr>
             <td style="width:42%; vertical-align:bottom;">
@@ -339,38 +378,127 @@ table.lines td {
                 </table>
             </td>
             <td style="width:58%; vertical-align:top;">
+                @php
+                    // ── Helpers AS400 ────────────────────────────────────
+                    $asNum = fn ($v) => \App\Helpers\NumberHelper::as400((float) $v, 2);
+                    $asDiscount = fn ($v) => \App\Helpers\NumberHelper::as400(-abs((float) $v), 2);
+
+                    // ── Calcular descuento de líneas bonus ───────────────
+                    // Jaremar reparte el descuento bonus así:
+                    //   - bonus con tax_percent = 0  → suma al "exento"
+                    //   - bonus con tax_percent > 0  → suma al "gravado"
+                    // Esta lógica replica los valores impresos en factura física
+                    // y NO los campos *_Desc del JSON (que vienen redondeados
+                    // distinto y no siempre se imprimen).
+                    $bonusDescExento = 0.0;
+                    $bonusDescGravado = 0.0;
+                    foreach ($invoice->lines as $bLine) {
+                        if (strtoupper($bLine->product_type ?? '') !== 'B') {
+                            continue;
+                        }
+                        $bExact = (float) $bLine->price * (float) $bLine->quantity_decimal;
+                        $bValor = floor($bExact * 100) / 100;
+                        if (((float) ($bLine->tax_percent ?? 0)) > 0) {
+                            $bonusDescGravado += $bValor;
+                        } else {
+                            $bonusDescExento += $bValor;
+                        }
+                    }
+                    $descuentoTotal = $bonusDescExento + $bonusDescGravado;
+
+                    // ── Algoritmo de Jaremar para filas de Importes ─────
+                    // Regla 1 "fila cero": si el VALOR BASE de la fila es 0 →
+                    //   TODA la fila imprime ".00" (ignora campos *_Desc del JSON).
+                    // Regla 2: la columna DESCUENTO de Exento y Exonerado SIEMPRE
+                    //   imprime ".00" (Jaremar no muestra el descuento bonus aquí,
+                    //   solo en TOTAL A PAGAR).
+                    // Regla 3: el TOTAL de Exento se calcula restando el descuento
+                    //   bonus exento (el JSON *_Total puede no reflejarlo).
+                    $renderImportRow = function ($label, $base, $isv18, $isv15, $bonusDesc) use ($asNum) {
+                        $base = (float) $base;
+                        $isv18 = (float) $isv18;
+                        $isv15 = (float) $isv15;
+                        $bonusDesc = (float) $bonusDesc;
+
+                        if ($base == 0.0) {
+                            // Regla "fila cero"
+                            return [
+                                'label' => $label,
+                                'cells' => [$asNum(0), $asNum(0), $asNum(0), $asNum(0), $asNum(0)],
+                            ];
+                        }
+
+                        // TOTAL = base - descuento bonus + ISVs
+                        $total = $base - $bonusDesc + $isv18 + $isv15;
+
+                        return [
+                            'label' => $label,
+                            'cells' => [
+                                $asNum($base),
+                                $asNum(0),       // DESCUENTO siempre .00 en Exento/Exonerado
+                                $asNum($isv18),
+                                $asNum($isv15),
+                                $asNum($total),
+                            ],
+                        ];
+                    };
+
+                    $rowExento = $renderImportRow(
+                        'Importe Exento &nbsp; L',
+                        $invoice->importe_excento ?? 0,
+                        $invoice->importe_exento_isv18 ?? 0,
+                        $invoice->importe_exento_isv15 ?? 0,
+                        $bonusDescExento,
+                    );
+                    $rowExonerado = $renderImportRow(
+                        'Importe Exonerado L',
+                        $invoice->importe_exonerado ?? 0,
+                        $invoice->importe_exonerado_isv18 ?? 0,
+                        $invoice->importe_exonerado_isv15 ?? 0,
+                        0.0,  // En la práctica no hay bonus exonerado; queda en cero
+                    );
+
+                    // Fila Gravado — la DESCUENTO viene de ImporteGravado_Desc
+                    // (que sí refleja el descuento del bonus gravado en el JSON,
+                    // a diferencia de Exento_Desc que no coincide con lo impreso).
+                    $gravadoBase = (float) ($invoice->importe_gravado ?? 0);
+                    $gravadoDesc = (float) ($invoice->importe_gravado_desc ?? 0);
+                    $gravadoIsv18 = (float) ($invoice->importe_gravado_isv18 ?? 0);
+                    $gravadoIsv15 = (float) ($invoice->importe_gravado_isv15 ?? 0);
+                    $gravadoTotal = (float) ($invoice->importe_gravado_total ?? 0);
+                @endphp
                 <table style="width:100%; font-size:6.5pt;">
                     <tr>
-                        <td style="width:30%;">Importe Exento &nbsp; L</td>
-                        <td style="width:14%; text-align:right;">{{ number_format($invoice->importe_excento ?? 0, 2) }}</td>
-                        <td style="width:9%; text-align:right;">{{ number_format($invoice->importe_exento_desc ?? 0, 2) }}</td>
-                        <td style="width:7%; text-align:right;">.00</td>
-                        <td style="width:9%; text-align:right;">{{ number_format($invoice->importe_exento_isv15 ?? 0, 2) }}</td>
-                        <td style="width:15%; text-align:right; font-weight:bold;">{{ number_format($invoice->importe_exento_total ?? 0, 2) }}</td>
+                        <td style="width:30%;">{!! $rowExento['label'] !!}</td>
+                        <td style="width:14%; text-align:right;">{{ $rowExento['cells'][0] }}</td>
+                        <td style="width:9%; text-align:right;">{{ $rowExento['cells'][1] }}</td>
+                        <td style="width:7%; text-align:right;">{{ $rowExento['cells'][2] }}</td>
+                        <td style="width:9%; text-align:right;">{{ $rowExento['cells'][3] }}</td>
+                        <td style="width:15%; text-align:right; font-weight:bold;">{{ $rowExento['cells'][4] }}</td>
                     </tr>
                     <tr>
-                        <td>Importe Rxonerado L</td>
-                        <td style="text-align:right;">{{ number_format($invoice->importe_exonerado ?? 0, 2) }}</td>
-                        <td style="text-align:right;">{{ number_format($invoice->importe_exonerado_desc ?? 0, 2) }}</td>
-                        <td style="text-align:right;">.00</td>
-                        <td style="text-align:right;">{{ number_format($invoice->importe_exonerado_isv15 ?? 0, 2) }}</td>
-                        <td style="text-align:right; font-weight:bold;">{{ number_format($invoice->importe_exonerado_total ?? 0, 2) }}</td>
+                        <td>{!! $rowExonerado['label'] !!}</td>
+                        <td style="text-align:right;">{{ $rowExonerado['cells'][0] }}</td>
+                        <td style="text-align:right;">{{ $rowExonerado['cells'][1] }}</td>
+                        <td style="text-align:right;">{{ $rowExonerado['cells'][2] }}</td>
+                        <td style="text-align:right;">{{ $rowExonerado['cells'][3] }}</td>
+                        <td style="text-align:right; font-weight:bold;">{{ $rowExonerado['cells'][4] }}</td>
                     </tr>
                     <tr>
                         <td>Importe Gravado &nbsp; L</td>
-                        <td style="text-align:right;">{{ number_format($invoice->importe_gravado ?? 0, 2) }}</td>
-                        <td style="text-align:right;">{{ number_format($invoice->importe_gravado_desc ?? 0, 2) }}</td>
-                        <td style="text-align:right;">.00</td>
-                        <td style="text-align:right;">{{ number_format($invoice->importe_gravado_isv15 ?? 0, 2) }}</td>
-                        <td style="text-align:right; font-weight:bold;">{{ number_format($invoice->importe_gravado_total ?? 0, 2) }}</td>
+                        <td style="text-align:right;">{{ $asNum($gravadoBase) }}</td>
+                        <td style="text-align:right;">{{ $gravadoBase == 0.0 ? $asNum(0) : ($gravadoDesc == 0.0 ? $asNum(0) : $asDiscount($gravadoDesc)) }}</td>
+                        <td style="text-align:right;">{{ $asNum($gravadoBase == 0.0 ? 0 : $gravadoIsv18) }}</td>
+                        <td style="text-align:right;">{{ $asNum($gravadoBase == 0.0 ? 0 : $gravadoIsv15) }}</td>
+                        <td style="text-align:right; font-weight:bold;">{{ $asNum($gravadoBase == 0.0 ? 0 : $gravadoTotal) }}</td>
                     </tr>
                     <tr style="border-top:1px solid #000; font-weight:bold;">
                         <td>TOTAL A PAGAR &nbsp; L</td>
-                        <td style="text-align:right;">{{ number_format(($invoice->importe_excento ?? 0) + ($invoice->importe_exonerado ?? 0) + ($invoice->importe_gravado ?? 0), 2) }}</td>
-                        <td style="text-align:right;">{{ number_format(($invoice->importe_exento_desc ?? 0) + ($invoice->importe_exonerado_desc ?? 0) + ($invoice->importe_gravado_desc ?? 0), 2) }}</td>
-                        <td style="text-align:right;">.00</td>
-                        <td style="text-align:right;">{{ number_format($invoice->isv15 ?? 0, 2) }}</td>
-                        <td style="text-align:right; font-weight:bold;">{{ number_format($invoice->total, 2) }}</td>
+                        <td style="text-align:right;">{{ $asNum(($invoice->importe_excento ?? 0) + ($invoice->importe_exonerado ?? 0) + ($invoice->importe_gravado ?? 0)) }}</td>
+                        <td style="text-align:right;">{{ $asDiscount($descuentoTotal) }}</td>
+                        <td style="text-align:right;">{{ $asNum($invoice->isv18 ?? 0) }}</td>
+                        <td style="text-align:right;">{{ $asNum($invoice->isv15 ?? 0) }}</td>
+                        <td style="text-align:right; font-weight:bold;">{{ $asNum($invoice->total) }}</td>
                     </tr>
                 </table>
             </td>
@@ -385,7 +513,7 @@ table.lines td {
         </tr>
     </table>
 
-    {{-- RANGO --}}
+    {{-- RANGO + COPIA + JAMERARI --}}
     <table style="margin-top:1px; font-size:6pt;">
         <tr>
             <td style="width:48%;">
@@ -401,7 +529,7 @@ table.lines td {
         {{ \Carbon\Carbon::parse($invoice->invoice_date)->format('H:i:s') }}
     </div>
 
-    {{-- NOTAS --}}
+    {{-- CLÁUSULAS LEGALES JAREMAR --}}
     <div class="notas">
         <p>1.- LAS FACTURAS Y NOTAS DE DEBITO PAGADAS CON CHEQUE SE CONSIDERAN CANCELADAS EN EL MOMENTO QUE EL BANCO ACEPTA EL CHEQUE. SI EL CHEQUE ES RECHAZADO POR EL BANCO, LA FACTURA ENTRARA INMEDIATAMENTE EN MORA Y EL CLIENTE SUFRAGARA TODOS LOS GASTOS CORRESPONDIENTE</p>
         <p>2.- LAS FACTURAS Y NOTAS DE DEBITO QUE NO SEAN CANCELADAS EN EL PLAZO PACTADO TENDRAN UN RECARGO SOBRESALDO EN MORA EQUIVALENTE A LA TASA DE INTERES PREVALECIENTE EN ELMERCADO BANCARIO.</p>

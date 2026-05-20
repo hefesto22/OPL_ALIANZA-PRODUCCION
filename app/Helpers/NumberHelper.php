@@ -20,6 +20,42 @@ class NumberHelper
         'SEISCIENTOS', 'SETECIENTOS', 'OCHOCIENTOS', 'NOVECIENTOS',
     ];
 
+    /**
+     * Formato numérico AS400/COBOL — el que usa Jaremar en sus facturas.
+     *
+     * Reglas observadas en facturas físicas de Jaremar:
+     *   - 0           → ".00"      (sin cero entero, solo decimales)
+     *   - 0.25        → ".250"     (sin cero entero cuando |valor| < 1)
+     *   - 1.5         → "1.500"    (formato estándar cuando |valor| >= 1)
+     *   - 1000        → "1,000.00" (separador de miles con coma)
+     *   - -15.97      → "15.97-"   (signo "-" trailing, no leading)
+     *
+     * Este helper existe para que el PDF de facturas se imprima
+     * idéntico al formato de Jaremar — ellos asumen la responsabilidad
+     * fiscal, nosotros respetamos el formato visual.
+     *
+     * @param  float  $value  Valor a formatear
+     * @param  int  $decimals  Decimales a mostrar (default 2)
+     */
+    public static function as400(float $value, int $decimals = 2): string
+    {
+        $rounded = round($value, $decimals);
+
+        if ($rounded == 0.0) {
+            return '.'.str_repeat('0', $decimals);
+        }
+
+        $isNegative = $rounded < 0;
+        $formatted = number_format(abs($rounded), $decimals);
+
+        // |valor| < 1: quitar el "0" entero → "0.250" se convierte en ".250"
+        if (abs($rounded) < 1) {
+            $formatted = ltrim($formatted, '0');
+        }
+
+        return $isNegative ? $formatted.'-' : $formatted;
+    }
+
     public static function toWords(float $amount): string
     {
         $entero = (int) floor($amount);
