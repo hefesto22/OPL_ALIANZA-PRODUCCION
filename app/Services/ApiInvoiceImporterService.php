@@ -246,8 +246,8 @@ class ApiInvoiceImporterService
         if (! $manifest) {
             $operationDate = $this->dateValidator->resolveManifestDate($invoices)
                 ?? now()->toDateString(); // fallback defensivo si el grupo
-                                          // viniera sin fechas parseables
-                                          // (no debería ocurrir en producción).
+            // viniera sin fechas parseables
+            // (no debería ocurrir en producción).
 
             $manifest = $this->createManifest($manifestNumber, $operationDate);
         }
@@ -747,12 +747,12 @@ class ApiInvoiceImporterService
      * Crea un Manifest nuevo cuando Jaremar manda un NumeroManifiesto
      * que aún no existe en BD.
      *
-     * @param  string       $manifestNumber  Identificador único de Jaremar
-     * @param  string|null  $operationDate   YYYY-MM-DD — fecha operativa real
-     *                                       derivada de FechaFactura. Si es
-     *                                       null, fallback a hoy (solo para
-     *                                       retrocompatibilidad con tests
-     *                                       legacy que no la proveen).
+     * @param  string  $manifestNumber  Identificador único de Jaremar
+     * @param  string|null  $operationDate  YYYY-MM-DD — fecha operativa real
+     *                                      derivada de FechaFactura. Si es
+     *                                      null, fallback a hoy (solo para
+     *                                      retrocompatibilidad con tests
+     *                                      legacy que no la proveen).
      */
     protected function createManifest(string $manifestNumber, ?string $operationDate = null): Manifest
     {

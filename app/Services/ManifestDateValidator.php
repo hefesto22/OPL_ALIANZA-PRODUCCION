@@ -181,7 +181,7 @@ class ManifestDateValidator
      * iguales (manifiesto homogéneo).
      *
      * @param  array  $manifestInvoices  Facturas de un único NumeroManifiesto
-     * @return array<string, array<int, string>>  ['YYYY-MM-DD' => ['Nfactura1', ...]]
+     * @return array<string, array<int, string>> ['YYYY-MM-DD' => ['Nfactura1', ...]]
      */
     public function findMixedDates(array $manifestInvoices): array
     {

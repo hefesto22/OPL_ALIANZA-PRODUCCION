@@ -136,7 +136,7 @@ class BackfillManifestOperationDates extends Command
 
         if ($isDryRun && $stats['updated'] > 0) {
             $this->newLine();
-            $this->warn("⚠️  Para aplicar los cambios, corre de nuevo SIN --dry-run.");
+            $this->warn('⚠️  Para aplicar los cambios, corre de nuevo SIN --dry-run.');
         }
 
         return self::SUCCESS;

@@ -5,7 +5,6 @@ namespace App\Filament\Resources\Manifests\Schemas;
 use App\Jobs\ProcessManifestImport;
 use Filament\Forms\Components\FileUpload;
 use Filament\Notifications\Notification;
-use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Illuminate\Support\Facades\Storage;
 
