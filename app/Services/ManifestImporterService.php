@@ -7,6 +7,21 @@ use App\Models\Supplier;
 use App\Models\Warehouse;
 use Illuminate\Support\Facades\DB;
 
+/**
+ * @deprecated A partir de 2026-05-20, todos los manifiestos llegan vía
+ *             API de Jaremar. Este service procesaba el upload manual
+ *             JSON desde Filament, ya inactivo.
+ *
+ *             Para imports vía API ver ApiInvoiceImporterService que es
+ *             el flujo único activo y aplica todas las validaciones del
+ *             ManifestDateValidator (homogeneidad de fecha, no futura,
+ *             no demasiado antigua, derivación de manifests.date).
+ *
+ *             Si este service se reactivara para upload manual, las
+ *             validaciones del ManifestDateValidator deben replicarse
+ *             en createManifest() y en JsonValidatorService::validate()
+ *             para no abrir un agujero más permisivo que el API.
+ */
 class ManifestImporterService
 {
     protected array $warnings = [];

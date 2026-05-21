@@ -2,7 +2,6 @@
 
 namespace App\Filament\Resources\Manifests;
 
-use App\Filament\Resources\Manifests\Pages\CreateManifest;
 use App\Filament\Resources\Manifests\Pages\EditManifest;
 use App\Filament\Resources\Manifests\Pages\ListManifests;
 use App\Filament\Resources\Manifests\Pages\ViewManifest;
@@ -56,6 +55,20 @@ class ManifestResource extends Resource
         return 'warning';
     }
 
+    /**
+     * Los manifiestos NO se crean manualmente desde el panel — llegan
+     * automáticamente vía API de Jaremar (POST /api/v1/facturas/insertar).
+     *
+     * Deshabilitar el create remueve el botón "+ Nuevo" del listado y
+     * bloquea el acceso por URL a /admin/manifests/create. Esto cierra
+     * la "puerta lateral" que permitía subir JSON manualmente saltándose
+     * la validación de fechas del API.
+     */
+    public static function canCreate(): bool
+    {
+        return false;
+    }
+
     public static function form(Schema $schema): Schema
     {
         return ManifestForm::configure($schema);
@@ -82,9 +95,12 @@ class ManifestResource extends Resource
 
     public static function getPages(): array
     {
+        // 'create' removido: el manifiesto NO se crea manualmente — solo
+        // entra vía API de Jaremar. Ver canCreate() arriba. La página
+        // CreateManifest queda en el repo (deprecated) para revertir
+        // rápido si hace falta puerta de emergencia.
         return [
             'index' => ListManifests::route('/'),
-            'create' => CreateManifest::route('/create'),
             'view' => ViewManifest::route('/{record}'),
             'edit' => EditManifest::route('/{record}/edit'),
         ];

@@ -15,6 +15,19 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
+/**
+ * @deprecated A partir de 2026-05-20. Este Job procesaba el upload manual
+ *             JSON desde Filament (ManifestForm::processUpload), flujo ya
+ *             inactivo. Los imports llegan exclusivamente vía API
+ *             (ManifestApiController + ApiInvoiceImporterService) que
+ *             corre síncrono dentro del request — no hay job para esa vía.
+ *
+ *             Queda en el repo para restauración si se reactiva el upload
+ *             manual. Si se reactiva, importante: agregar invocación al
+ *             ManifestDateValidator dentro del handle() ANTES de llamar
+ *             al ManifestImporterService, para que el flujo manual aplique
+ *             las mismas reglas de fecha que el API.
+ */
 class ProcessManifestImport implements ShouldBeUnique, ShouldQueue
 {
     use InteractsWithQueue, Queueable, SerializesModels;

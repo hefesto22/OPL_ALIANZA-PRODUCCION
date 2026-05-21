@@ -8,6 +8,7 @@ use App\Models\Manifest;
 use App\Models\User;
 use App\Services\ApiInvoiceImporterService;
 use App\Services\ApiInvoiceValidatorService;
+use App\Services\ManifestDateValidator;
 use Filament\Notifications\Notification;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -19,6 +20,7 @@ class ManifestApiController extends Controller
     public function __construct(
         private readonly ApiInvoiceValidatorService $validator,
         private readonly ApiInvoiceImporterService $importer,
+        private readonly ManifestDateValidator $dateValidator,
     ) {}
 
     /**
@@ -28,13 +30,17 @@ class ManifestApiController extends Controller
      *
      *   1. Parsear body JSON
      *   2. Validar estructura del payload (campos requeridos)
-     *   3. Validar fechas de manifiestos ← ANTES del hash detector
+     *   3. Validar fechas del batch (ManifestDateValidator) ← FILTRO TEMPRANO
+     *      - V1: homogeneidad de FechaFactura por NumeroManifiesto
+     *      - V2: FechaFactura no puede ser futura
+     *      - V3: FechaFactura no puede superar max_backdate_days
+     *      - Si hay errores → rechaza TODO el batch con 422 + notifica admins
+     *   4. Validar fechas de manifiestos existentes (regla "no agregar a viejo")
      *      - Separa manifiestos inválidos (día anterior) de válidos (hoy/nuevo)
      *      - Si hay inválidos → rechaza TODO el batch
-     *      - Jaremar recibe qué rechazar Y qué reenviar por separado
-     *   4. Detectar batch duplicado (hash) — solo aplica para batches del día
-     *   5. Persistir payload crudo
-     *   6. Procesar batch (validación de almacenes + inserción)
+     *   5. Detectar batch duplicado (hash) — solo aplica para batches del día
+     *   6. Persistir payload crudo
+     *   7. Procesar batch (validación de almacenes + inserción)
      */
     public function insertar(Request $request): JsonResponse
     {
@@ -70,8 +76,58 @@ class ManifestApiController extends Controller
             ], 422);
         }
 
-        // ── 3. Validar fechas de manifiestos ───────────────────────────
-        // CRÍTICO: Va ANTES del detector de duplicados.
+        // ── 3. Validar fechas del batch (V1/V2/V3) ─────────────────────
+        // Filtro temprano: si Jaremar manda data con fechas inválidas en
+        // origen (mezcladas, futuras o demasiado antiguas), rechazamos
+        // ANTES de tocar BD, antes del hash detector, antes de la lógica
+        // de manifiestos existentes. Es la línea de defensa más temprana
+        // contra data corrupta.
+        //
+        // Reglas (configurables en config/manifests.php):
+        //   V1 — FECHAS_MEZCLADAS:           todas las facturas del mismo
+        //                                    NumeroManifiesto deben tener
+        //                                    la misma FechaFactura.
+        //   V2 — FECHA_FACTURA_FUTURA:       FechaFactura <= hoy en TZ Honduras.
+        //   V3 — FECHA_FACTURA_DEMASIADO_   FechaFactura no puede tener más
+        //        ANTIGUA                     de N días de antigüedad (default 30).
+        $batchDateValidation = $this->dateValidator->validateBatch($invoices);
+
+        if ($batchDateValidation['has_errors']) {
+            $this->notifyAdminsForDateValidation($batchDateValidation['invalid_manifests']);
+
+            Log::warning('API Jaremar: batch rechazado por validación de fechas (V1/V2/V3).', [
+                'ip' => $request->ip(),
+                'key_hint' => $keyHint,
+                'invalid_manifests' => array_map(
+                    fn ($m) => ['manifiesto' => $m['manifiesto'], 'motivo' => $m['motivo']],
+                    $batchDateValidation['invalid_manifests']
+                ),
+            ]);
+
+            $totalInvalid = array_sum(array_column($batchDateValidation['invalid_manifests'], 'total_facturas'));
+            $totalValid = array_sum(array_column($batchDateValidation['valid_manifests'], 'total_facturas'));
+
+            return new JsonResponse([
+                'success' => false,
+                'message' => 'Batch rechazado por errores de fecha en uno o más manifiestos.',
+                'motivo' => 'FECHAS_INVALIDAS',
+                'accion_requerida' => 'Revise los manifiestos rechazados. Cada manifiesto debe contener facturas de una única FechaFactura, no futura, y dentro del rango configurado de antigüedad.',
+                'resumen' => [
+                    'total_recibidas' => count($invoices),
+                    'total_rechazadas' => $totalInvalid,
+                    'total_validas' => $totalValid,
+                    'insertadas' => 0,
+                ],
+                'manifiestos_rechazados' => $batchDateValidation['invalid_manifests'],
+                'manifiestos_validos' => $batchDateValidation['valid_manifests'],
+            ], 422);
+        }
+
+        // ── 4. Validar fechas de manifiestos existentes ────────────────
+        // Regla complementaria a V1/V2/V3: si Jaremar intenta agregar
+        // facturas a un manifiesto que YA EXISTE en BD y fue creado
+        // antes de hoy, rechazamos. Esto previene que un manifiesto
+        // crezca día tras día con nuevas facturas.
         //
         // El resultado separa el batch en dos grupos:
         //   - manifiestos_invalidos: creados antes de hoy → causan rechazo total
@@ -138,7 +194,7 @@ class ManifestApiController extends Controller
             return new JsonResponse($response, 422);
         }
 
-        // ── 4. Detectar batch duplicado (hash) ─────────────────────────
+        // ── 5. Detectar batch duplicado (hash) ─────────────────────────
         // Solo llegamos aquí si todas las fechas son válidas.
         // Aplica únicamente para batches procesados hoy.
         $payloadHash = hash('sha256', $request->getContent());
@@ -163,7 +219,7 @@ class ManifestApiController extends Controller
             ], 200);
         }
 
-        // ── 5. Persistir el payload crudo ──────────────────────────────
+        // ── 6. Persistir el payload crudo ──────────────────────────────
         $importRecord = ApiInvoiceImport::create([
             'batch_uuid' => Str::uuid()->toString(),
             'api_key_hint' => $keyHint,
@@ -174,7 +230,7 @@ class ManifestApiController extends Controller
             'status' => 'received',
         ]);
 
-        // ── 6. Procesar el batch ───────────────────────────────────────
+        // ── 7. Procesar el batch ───────────────────────────────────────
         try {
             $summary = $this->importer->processBatch($invoices, $importRecord);
             $importRecord->markAsProcessed($summary);
@@ -193,7 +249,7 @@ class ManifestApiController extends Controller
                 );
             }
 
-            // ── 7. Construir respuesta para Jaremar ────────────────────
+            // ── 8. Construir respuesta para Jaremar ────────────────────
             $manifiestos = collect($invoices)
                 ->pluck('NumeroManifiesto')
                 ->unique()
@@ -292,6 +348,69 @@ class ManifestApiController extends Controller
                 'fecha_ingreso' => $manifest->created_at->toDateTimeString(),
             ],
         ], 200);
+    }
+
+    /**
+     * Notifica admins y super_admins cuando el batch falla la validación
+     * de fechas en V1/V2/V3 (ManifestDateValidator).
+     *
+     * Esta notificación es diferente de notifyAdmins() porque la estructura
+     * del payload de error es distinta: trae 'motivo' (FECHAS_MEZCLADAS,
+     * FECHA_FACTURA_FUTURA, FECHA_FACTURA_DEMASIADO_ANTIGUA) y 'detalle'
+     * con metadata específica de la regla violada.
+     */
+    private function notifyAdminsForDateValidation(array $invalidManifests): void
+    {
+        $admins = User::role(['super_admin', 'admin'])->get();
+
+        if ($admins->isEmpty()) {
+            return;
+        }
+
+        foreach ($invalidManifests as $invalid) {
+            $manifiesto = $invalid['manifiesto'];
+            $motivo = $invalid['motivo'];
+            $total = $invalid['total_facturas'];
+
+            $titulo = match ($motivo) {
+                'FECHAS_MEZCLADAS' => "Manifiesto #{$manifiesto} rechazado — fechas mezcladas",
+                'FECHA_FACTURA_FUTURA' => "Manifiesto #{$manifiesto} rechazado — fecha futura",
+                'FECHA_FACTURA_DEMASIADO_ANTIGUA' => "Manifiesto #{$manifiesto} rechazado — fecha demasiado antigua",
+                'FECHA_FACTURA_INVALIDA' => "Manifiesto #{$manifiesto} rechazado — fecha no parseable",
+                default => "Manifiesto #{$manifiesto} rechazado",
+            };
+
+            $cuerpo = match ($motivo) {
+                'FECHAS_MEZCLADAS' => "Jaremar intentó enviar el manifiesto #{$manifiesto} ".
+                    'con facturas de fechas distintas: '.
+                    implode(', ', $invalid['detalle']['fechas_encontradas'] ?? []).
+                    ". Total {$total} factura(s) afectada(s).",
+                'FECHA_FACTURA_FUTURA' => "El manifiesto #{$manifiesto} tiene FechaFactura ".
+                    "{$invalid['detalle']['fecha_factura']} (posterior a hoy ".
+                    "{$invalid['detalle']['hoy_servidor']}). {$total} factura(s).",
+                'FECHA_FACTURA_DEMASIADO_ANTIGUA' => "El manifiesto #{$manifiesto} tiene ".
+                    "{$invalid['detalle']['dias_antiguedad']} días de antigüedad ".
+                    "(límite: {$invalid['detalle']['limite_dias']}). ".
+                    "Requiere carga manual desde el panel. {$total} factura(s).",
+                default => "El manifiesto #{$manifiesto} fue rechazado por validación de fecha. {$total} factura(s).",
+            };
+
+            foreach ($admins as $admin) {
+                Notification::make()
+                    ->title($titulo)
+                    ->body($cuerpo)
+                    ->danger()
+                    ->sendToDatabase($admin);
+            }
+        }
+
+        Log::info('API Jaremar: notificación enviada a admins por validación de fechas.', [
+            'manifiestos' => array_map(
+                fn ($m) => ['manifiesto' => $m['manifiesto'], 'motivo' => $m['motivo']],
+                $invalidManifests
+            ),
+            'admins_notificados' => $admins->pluck('name')->toArray(),
+        ]);
     }
 
     /**

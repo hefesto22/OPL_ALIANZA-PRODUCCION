@@ -2,6 +2,18 @@
 
 namespace App\Services;
 
+/**
+ * @deprecated A partir de 2026-05-20, todos los manifiestos llegan vía
+ *             API de Jaremar (POST /api/v1/facturas/insertar). Este
+ *             servicio validaba el upload manual JSON desde Filament,
+ *             ya inactivo (ManifestForm vacío + Resource::canCreate=false).
+ *
+ *             Para validaciones del flujo API ver ApiInvoiceValidatorService
+ *             y ManifestDateValidator. NO usar este servicio en código nuevo.
+ *
+ *             Queda en el repo para restauración si se reactiva el upload
+ *             manual como puerta de emergencia.
+ */
 class JsonValidatorService
 {
     protected array $errors = [];

@@ -34,9 +34,17 @@ class ApiInvoiceImporterService
         'route_number', 'warehouse_id',
     ];
 
-    public function __construct()
+    protected ManifestDateValidator $dateValidator;
+
+    public function __construct(?ManifestDateValidator $dateValidator = null)
     {
         $this->warehouseMap = Warehouse::pluck('id', 'code')->toArray();
+
+        // Argumento opcional con default-construido para mantener compatibilidad
+        // con cualquier resolve() existente que instancie el service sin args.
+        // Laravel inyecta el servicio cuando se resuelve del container — en
+        // tests se puede pasar uno mockeado vía constructor explícito.
+        $this->dateValidator = $dateValidator ?? new ManifestDateValidator;
     }
 
     /**
@@ -225,8 +233,23 @@ class ApiInvoiceImporterService
         }
 
         // ── 3. Manifiesto no existe → crearlo ─────────────────────────
+        //
+        // La fecha operativa del manifiesto (manifests.date) se DERIVA de
+        // la FechaFactura del grupo, no de now(). Esto resuelve el desfase
+        // histórico donde un manifiesto subido tarde quedaba marcado con
+        // la fecha de captura en vez de la fecha real de operación.
+        //
+        // Para cuando llegamos acá, las facturas YA pasaron por
+        // ManifestDateValidator en el controller — V1/V2/V3 garantizan
+        // que el grupo es homogéneo, no futuro y dentro de rango. Por eso
+        // resolveManifestDate() acá es siempre seguro.
         if (! $manifest) {
-            $manifest = $this->createManifest($manifestNumber);
+            $operationDate = $this->dateValidator->resolveManifestDate($invoices)
+                ?? now()->toDateString(); // fallback defensivo si el grupo
+                                          // viniera sin fechas parseables
+                                          // (no debería ocurrir en producción).
+
+            $manifest = $this->createManifest($manifestNumber, $operationDate);
         }
 
         // ── 4. Clasificar facturas: nuevas, sin cambios, o con conflicto
@@ -720,7 +743,18 @@ class ApiInvoiceImporterService
         ];
     }
 
-    protected function createManifest(string $manifestNumber): Manifest
+    /**
+     * Crea un Manifest nuevo cuando Jaremar manda un NumeroManifiesto
+     * que aún no existe en BD.
+     *
+     * @param  string       $manifestNumber  Identificador único de Jaremar
+     * @param  string|null  $operationDate   YYYY-MM-DD — fecha operativa real
+     *                                       derivada de FechaFactura. Si es
+     *                                       null, fallback a hoy (solo para
+     *                                       retrocompatibilidad con tests
+     *                                       legacy que no la proveen).
+     */
+    protected function createManifest(string $manifestNumber, ?string $operationDate = null): Manifest
     {
         $supplier = Supplier::where('is_active', true)->first()
             ?? throw new \RuntimeException(
@@ -728,20 +762,36 @@ class ApiInvoiceImporterService
                 'Configure al menos un proveedor activo antes de importar facturas vía API.'
             );
 
+        $resolvedDate = $operationDate ?? now()->toDateString();
+        $today = now()->toDateString();
+        $isRetroactive = $resolvedDate < $today;
+
         $manifest = Manifest::create([
             'supplier_id' => $supplier->id,
             'warehouse_id' => null,
             'number' => $manifestNumber,
-            'date' => now()->toDateString(),
+            'date' => $resolvedDate,
             'status' => 'imported',
             'created_by' => null,
             'updated_by' => null,
         ]);
 
+        // Activity Log enriquecido: cuando la fecha operativa es retroactiva
+        // (Jaremar atrasó el envío), lo dejamos visible en propiedades para
+        // que admins puedan filtrar manifiestos retroactivos en reportería.
+        $properties = ['source' => 'jaremar_api', 'operation_date' => $resolvedDate];
+        $description = "Manifiesto #{$manifestNumber} creado via API de Jaremar.";
+
+        if ($isRetroactive) {
+            $properties['retroactive_days'] = (int) (\Carbon\Carbon::parse($resolvedDate)
+                ->diffInDays(\Carbon\Carbon::parse($today)));
+            $description .= " (retroactivo, fecha operativa: {$resolvedDate}).";
+        }
+
         activity('api')
             ->performedOn($manifest)
-            ->withProperties(['source' => 'jaremar_api'])
-            ->log("Manifiesto #{$manifestNumber} creado via API de Jaremar.");
+            ->withProperties($properties)
+            ->log($description);
 
         return $manifest;
     }

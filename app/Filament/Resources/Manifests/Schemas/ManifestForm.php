@@ -9,26 +9,41 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Illuminate\Support\Facades\Storage;
 
+/**
+ * @deprecated A partir de 2026-05-20, todos los manifiestos llegan vía API
+ *             de Jaremar (POST /api/v1/facturas/insertar). El upload manual
+ *             desde Filament queda inactivo — el FileUpload se removió del
+ *             schema y el botón "Crear Manifiesto" del listado fue
+ *             deshabilitado en ManifestResource::canCreate().
+ *
+ *             El código queda en git para restauración rápida si alguna vez
+ *             se necesita una "puerta de emergencia" (Jaremar caído por
+ *             días, lote especial, etc.). Para reactivar:
+ *               1. Restaurar el FileUpload en configure()
+ *               2. Quitar canCreate() del Resource
+ *               3. Agregar las validaciones del ManifestDateValidator
+ *                  ANTES de dispatch() del Job (sino el flujo manual
+ *                  sería MÁS permisivo que el flujo API).
+ *
+ *             Servicios relacionados también marcados @deprecated:
+ *               - App\Services\JsonValidatorService
+ *               - App\Services\ManifestImporterService
+ *               - App\Jobs\ProcessManifestImport
+ */
 class ManifestForm
 {
     public static function configure(Schema $schema): Schema
     {
-        return $schema
-            ->components([
-                Section::make('Importar Manifiesto')
-                    ->description('Arrastra el archivo JSON del manifiesto de Jaremar o haz clic para seleccionarlo.')
-                    ->icon('heroicon-o-arrow-up-tray')
-                    ->schema([
-                        FileUpload::make('json_file')
-                            ->label('Archivo JSON del Manifiesto')
-                            ->acceptedFileTypes(['application/json', 'text/plain'])
-                            ->maxSize(102400)
-                            ->required()
-                            ->helperText('Solo archivos .json — máximo 100MB. Solo se procesarán facturas de bodegas OAC, OAO y OAS.'),
-                    ]),
-            ]);
+        // Schema vacío: no hay campos que el usuario pueda editar/crear
+        // manualmente. Los manifiestos son inmutables desde el panel —
+        // se crean automáticamente desde el API de Jaremar y se cierran
+        // mediante acciones dedicadas (CloseManifestAction).
+        return $schema->components([]);
     }
 
+    /**
+     * @deprecated Ver docblock de la clase. No invocar desde código nuevo.
+     */
     public static function processUpload(
         string $filePath,
         int $userId,
