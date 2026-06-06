@@ -1,0 +1,236 @@
+<?php
+
+namespace Tests\Feature\Seeders;
+
+use Database\Seeders\RolePermissionSeeder;
+use Database\Seeders\RoleSeeder;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
+use Spatie\Permission\PermissionRegistrar;
+use Tests\TestCase;
+
+/**
+ * Tests del RolePermissionSeeder.
+ *
+ * Cubrimos:
+ *  - Matriz de permisos por rol: cada rol recibe exactamente lo que le toca.
+ *  - Graceful skip: sin permisos en BD no rompe, solo advierte.
+ *  - super_admin no recibe permisos (gateado vía intercept_gate).
+ *  - Idempotencia: correr 2 veces deja el mismo estado.
+ *  - syncPermissions sobrescribe permisos manuales (la matriz es ley).
+ *
+ * No corremos shield:generate aquí — creamos los permisos manualmente
+ * para que los tests sean rápidos y deterministas. El end-to-end con
+ * shield:generate real lo cubre SystemFreshBootstrapTest.
+ */
+class RolePermissionSeederTest extends TestCase
+{
+    use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // Crea los 5 roles vacíos (super_admin, admin, encargado, operador, finance).
+        $this->seed(RoleSeeder::class);
+    }
+
+    /**
+     * Crea los permisos en formato Shield (PascalCase con ':') que la
+     * matriz espera encontrar. Espejo de los modelos que tiene el sistema.
+     */
+    private function seedShieldPermissions(): void
+    {
+        $models = [
+            'Activity', 'Deposit', 'Invoice', 'InvoiceReturn', 'Manifest',
+            'ReturnReason', 'Role', 'User', 'Warehouse',
+        ];
+
+        $actions = [
+            'ViewAny', 'View', 'Create', 'Update', 'Delete',
+            'Restore', 'ForceDelete', 'ForceDeleteAny', 'RestoreAny',
+            'Replicate', 'Reorder',
+        ];
+
+        foreach ($models as $model) {
+            foreach ($actions as $action) {
+                Permission::firstOrCreate(
+                    ['name' => "{$action}:{$model}", 'guard_name' => 'web']
+                );
+            }
+        }
+
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+    }
+
+    public function test_graceful_skip_when_no_permissions_exist(): void
+    {
+        // Sin permisos en BD → no rompe, solo advierte y vuelve.
+        $this->seed(RolePermissionSeeder::class);
+
+        foreach (['admin', 'encargado', 'operador', 'finance'] as $role) {
+            $this->assertSame(
+                0,
+                Role::query()->where('name', $role)->first()->permissions()->count(),
+                "El rol {$role} no debería tener permisos si Shield no corrió."
+            );
+        }
+    }
+
+    public function test_admin_receives_full_crud_except_role_management(): void
+    {
+        $this->seedShieldPermissions();
+        $this->seed(RolePermissionSeeder::class);
+
+        $admin = Role::query()->where('name', 'admin')->first();
+        $permissions = $admin->permissions->pluck('name')->all();
+
+        // Tiene CRUD sobre los modelos de negocio
+        $this->assertContains('ViewAny:Manifest', $permissions);
+        $this->assertContains('Update:Manifest', $permissions);
+        $this->assertContains('Delete:Manifest', $permissions);
+        $this->assertContains('Create:Deposit', $permissions);
+        $this->assertContains('Create:ReturnReason', $permissions);
+        $this->assertContains('Create:User', $permissions);
+
+        // NO debe poder gestionar roles/permisos
+        $this->assertNotContains('ViewAny:Role', $permissions);
+        $this->assertNotContains('Create:Role', $permissions);
+        $this->assertNotContains('Delete:Role', $permissions);
+    }
+
+    public function test_encargado_can_edit_warehouse_data_but_not_destroy(): void
+    {
+        $this->seedShieldPermissions();
+        $this->seed(RolePermissionSeeder::class);
+
+        $encargado = Role::query()->where('name', 'encargado')->first();
+        $permissions = $encargado->permissions->pluck('name')->all();
+
+        // Puede ver y editar
+        $this->assertContains('ViewAny:Invoice', $permissions);
+        $this->assertContains('Update:Invoice', $permissions);
+        $this->assertContains('Update:Manifest', $permissions);
+        $this->assertContains('Create:InvoiceReturn', $permissions);
+        $this->assertContains('Create:Deposit', $permissions);
+
+        // No puede borrar nada (corrige, no destruye)
+        $this->assertNotContains('Delete:Invoice', $permissions);
+        $this->assertNotContains('Delete:Manifest', $permissions);
+        $this->assertNotContains('Delete:Deposit', $permissions);
+
+        // No gestiona usuarios ni roles
+        $this->assertNotContains('ViewAny:User', $permissions);
+        $this->assertNotContains('ViewAny:Role', $permissions);
+    }
+
+    public function test_operador_is_read_only_except_creating_returns(): void
+    {
+        $this->seedShieldPermissions();
+        $this->seed(RolePermissionSeeder::class);
+
+        $operador = Role::query()->where('name', 'operador')->first();
+        $permissions = $operador->permissions->pluck('name')->all();
+
+        // Solo lectura sobre facturas y manifiestos
+        $this->assertContains('ViewAny:Invoice', $permissions);
+        $this->assertContains('View:Invoice', $permissions);
+        $this->assertContains('ViewAny:Manifest', $permissions);
+
+        // Excepción: puede CREAR devoluciones (captura del operador)
+        $this->assertContains('Create:InvoiceReturn', $permissions);
+
+        // No puede editar nada
+        $this->assertNotContains('Update:Invoice', $permissions);
+        $this->assertNotContains('Update:Manifest', $permissions);
+        $this->assertNotContains('Update:InvoiceReturn', $permissions);
+
+        // No toca depósitos
+        $this->assertNotContains('ViewAny:Deposit', $permissions);
+    }
+
+    public function test_finance_owns_deposits_and_reads_invoices(): void
+    {
+        $this->seedShieldPermissions();
+        $this->seed(RolePermissionSeeder::class);
+
+        $finance = Role::query()->where('name', 'finance')->first();
+        $permissions = $finance->permissions->pluck('name')->all();
+
+        // Depósitos: CRUD parcial
+        $this->assertContains('ViewAny:Deposit', $permissions);
+        $this->assertContains('Create:Deposit', $permissions);
+        $this->assertContains('Update:Deposit', $permissions);
+
+        // Lectura de facturas y manifiestos (para conciliar)
+        $this->assertContains('ViewAny:Invoice', $permissions);
+        $this->assertContains('ViewAny:Manifest', $permissions);
+
+        // No edita facturas
+        $this->assertNotContains('Update:Invoice', $permissions);
+        $this->assertNotContains('Delete:Invoice', $permissions);
+    }
+
+    public function test_super_admin_receives_no_explicit_permissions(): void
+    {
+        $this->seedShieldPermissions();
+        $this->seed(RolePermissionSeeder::class);
+
+        $superAdmin = Role::query()->where('name', 'super_admin')->first();
+
+        // super_admin queda VACÍO de permisos explícitos.
+        // El acceso total se lo da Gate::before configurado por Shield
+        // (config/filament-shield.php: super_admin.intercept_gate='before').
+        $this->assertSame(0, $superAdmin->permissions()->count());
+    }
+
+    public function test_seeder_is_idempotent(): void
+    {
+        $this->seedShieldPermissions();
+
+        $this->seed(RolePermissionSeeder::class);
+        $firstRunCounts = $this->roleCounts();
+
+        $this->seed(RolePermissionSeeder::class);
+        $secondRunCounts = $this->roleCounts();
+
+        $this->assertSame(
+            $firstRunCounts,
+            $secondRunCounts,
+            'El seeder no debe agregar ni quitar permisos al re-ejecutar.'
+        );
+    }
+
+    public function test_sync_overrides_manual_permissions_added_from_panel(): void
+    {
+        $this->seedShieldPermissions();
+        $this->seed(RolePermissionSeeder::class);
+
+        // Simulamos que alguien agregó manualmente Delete:Manifest a un operador.
+        $operador = Role::query()->where('name', 'operador')->first();
+        $operador->givePermissionTo('Delete:Manifest');
+        $this->assertTrue($operador->hasPermissionTo('Delete:Manifest'));
+
+        // Al re-correr el seeder, la matriz es ley → el permiso manual se va.
+        $this->seed(RolePermissionSeeder::class);
+
+        $this->assertFalse(
+            $operador->fresh()->hasPermissionTo('Delete:Manifest'),
+            'syncPermissions debe quitar permisos manuales no declarados en la matriz.'
+        );
+    }
+
+    /**
+     * @return array<string, int>
+     */
+    private function roleCounts(): array
+    {
+        $counts = [];
+        foreach (['super_admin', 'admin', 'encargado', 'operador', 'finance'] as $role) {
+            $counts[$role] = Role::query()->where('name', $role)->first()->permissions()->count();
+        }
+
+        return $counts;
+    }
+}

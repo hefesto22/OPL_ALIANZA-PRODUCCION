@@ -7,15 +7,32 @@ use BezhanSalleh\FilamentShield\Support\Utils;
 use Illuminate\Database\Seeder;
 
 /**
- * Crea el usuario administrador principal del sistema.
+ * @deprecated A partir de 2026-05-23, el super_admin se crea exclusivamente vía:
+ *     - `php artisan system:fresh-bootstrap` (recomendado, integral)
+ *     - `php artisan shield:super-admin` (manual, patrón nativo Shield)
  *
- * Las credenciales se leen desde el .env:
- *   ADMIN_NAME=...
- *   ADMIN_EMAIL=...
- *   ADMIN_PASSWORD=...
+ *  Esta clase queda en el repo por compatibilidad (algún despliegue
+ *  legacy podría seguir invocándola), pero NO está incluida en
+ *  DatabaseSeeder ni se debe usar en código nuevo. Razones:
  *
- * Si las variables no están definidas se usan los valores por defecto
- * (solo para entorno local/desarrollo).
+ *  1. Usaba defaults inseguros (admin@gmail.com / password) si las
+ *     vars ADMIN_EMAIL / ADMIN_PASSWORD no estaban en .env — fuga de
+ *     credenciales esperando ocurrir.
+ *  2. Hacía bcrypt() manual + cast 'hashed' del modelo = doble
+ *     hashing (Hash::needsRehash lo salva, pero es confuso).
+ *  3. No respetaba el patrón canónico shield:super-admin que asigna
+ *     el rol con los permisos correctamente.
+ *
+ *  Para reactivar (solo si REALMENTE necesitas el flujo legacy):
+ *   1. Define ADMIN_EMAIL y ADMIN_PASSWORD en .env (NO uses defaults).
+ *   2. `php artisan db:seed --class=AdminUserSeeder`
+ *   3. Luego asegúrate de correr `shield:super-admin --user=<id>`
+ *      para que el rol tenga los permisos correctos.
+ *
+ *  Las credenciales se leen desde el .env:
+ *    ADMIN_NAME=...
+ *    ADMIN_EMAIL=...
+ *    ADMIN_PASSWORD=...
  */
 class AdminUserSeeder extends Seeder
 {
