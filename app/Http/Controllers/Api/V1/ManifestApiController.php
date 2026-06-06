@@ -271,25 +271,40 @@ class ManifestApiController extends Controller
                 ],
             ];
 
-            // Detalle de manifiestos rechazados por almacén desconocido
+            // Detalle de manifiestos rechazados (3 motivos posibles):
+            //   - ALMACENES_DESCONOCIDOS              (paso 1 del service)
+            //   - MANIFIESTO_CERRADO                  (paso 2 del service)
+            //   - FACTURAS_DUPLICADAS_EN_OTRO_MANIFIESTO  (paso 2.5 del service)
+            //
+            // Si todos los rechazos comparten el MISMO motivo, devolvemos
+            // un response.motivo único y un message específico para Jaremar.
+            // Si hay motivos mezclados, motivo='MOTIVOS_MIXTOS' y Jaremar
+            // debe leer cada entry de manifiestos_rechazados[] que ya trae
+            // su propio motivo discriminador.
             if (! empty($summary['manifiestos_rechazados'])) {
                 $response['success'] = false;
-                $response['message'] = 'Uno o más manifiestos fueron rechazados por contener almacenes no registrados en el sistema.';
-                $response['motivo'] = 'ALMACENES_DESCONOCIDOS';
+
+                $motivosUnicos = collect($summary['manifiestos_rechazados'])
+                    ->pluck('motivo')
+                    ->unique()
+                    ->values()
+                    ->all();
+
+                if (count($motivosUnicos) === 1) {
+                    $response['motivo'] = $motivosUnicos[0];
+                    $response['message'] = match ($motivosUnicos[0]) {
+                        'ALMACENES_DESCONOCIDOS' => 'Uno o más manifiestos fueron rechazados por contener almacenes no registrados en el sistema.',
+                        'MANIFIESTO_CERRADO' => 'Uno o más manifiestos fueron rechazados porque ya están cerrados y no aceptan modificaciones.',
+                        'FACTURAS_DUPLICADAS_EN_OTRO_MANIFIESTO' => 'Uno o más manifiestos fueron rechazados por contener facturas que ya existen en otros manifiestos.',
+                        default => 'Uno o más manifiestos fueron rechazados.',
+                    };
+                } else {
+                    $response['motivo'] = 'MOTIVOS_MIXTOS';
+                    $response['message'] = 'Uno o más manifiestos fueron rechazados por distintos motivos. Revisar manifiestos_rechazados[].';
+                }
+
                 $response['manifiestos_rechazados'] = array_map(
-                    fn ($r) => [
-                        'manifiesto' => $r['manifiesto'],
-                        'total_facturas' => $r['total_facturas'],
-                        'almacenes_desconocidos' => array_map(
-                            fn ($codigo, $facturas) => [
-                                'almacen' => $codigo,
-                                'facturas' => $facturas,
-                                'cantidad' => count($facturas),
-                            ],
-                            array_keys($r['almacenes_desconocidos']),
-                            array_values($r['almacenes_desconocidos'])
-                        ),
-                    ],
+                    fn ($r) => $this->shapeRejectedManifestEntry($r),
                     $summary['manifiestos_rechazados']
                 );
             }
@@ -359,6 +374,49 @@ class ManifestApiController extends Controller
      * FECHA_FACTURA_FUTURA, FECHA_FACTURA_DEMASIADO_ANTIGUA) y 'detalle'
      * con metadata específica de la regla violada.
      */
+
+    /**
+     * Da forma al payload de una entry de manifiestos_rechazados[] según
+     * su motivo. Cada motivo tiene campos propios — esto evita un response
+     * heterogéneo y mantiene el contrato con Jaremar limpio.
+     *
+     * @param  array  $rejected  Entry tal como la guardó el service.
+     * @return array<string, mixed>
+     */
+    private function shapeRejectedManifestEntry(array $rejected): array
+    {
+        $base = [
+            'manifiesto' => $rejected['manifiesto'],
+            'total_facturas' => $rejected['total_facturas'],
+            'motivo' => $rejected['motivo'],
+        ];
+
+        return match ($rejected['motivo']) {
+            'ALMACENES_DESCONOCIDOS' => array_merge($base, [
+                'almacenes_desconocidos' => array_map(
+                    fn ($codigo, $facturas) => [
+                        'almacen' => $codigo,
+                        'facturas' => $facturas,
+                        'cantidad' => count($facturas),
+                    ],
+                    array_keys($rejected['almacenes_desconocidos']),
+                    array_values($rejected['almacenes_desconocidos'])
+                ),
+            ]),
+
+            'MANIFIESTO_CERRADO' => array_merge($base, [
+                'mensaje' => $rejected['mensaje'],
+            ]),
+
+            'FACTURAS_DUPLICADAS_EN_OTRO_MANIFIESTO' => array_merge($base, [
+                'mensaje' => $rejected['mensaje'],
+                'facturas_duplicadas' => $rejected['facturas_duplicadas'],
+            ]),
+
+            default => $base,
+        };
+    }
+
     private function notifyAdminsForDateValidation(array $invalidManifests): void
     {
         $admins = User::role(['super_admin', 'admin'])->get();

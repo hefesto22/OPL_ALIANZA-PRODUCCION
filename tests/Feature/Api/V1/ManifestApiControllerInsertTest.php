@@ -379,7 +379,8 @@ class ManifestApiControllerInsertTest extends TestCase
     public function test_insert_rejects_invoices_for_closed_manifest(): void
     {
         // Pre-crear un manifiesto cerrado con número conocido. Las
-        // facturas del batch apuntan a ese número → todas rechazadas.
+        // facturas del batch apuntan a ese número → manifiesto entero
+        // rechazado (formato agrupado, consistente con almacén desconocido).
         $closed = Manifest::factory()->closed()->create([
             'number' => 'MANCLOSED',
         ]);
@@ -392,20 +393,75 @@ class ManifestApiControllerInsertTest extends TestCase
 
         $response = $this->postInsertar($payload);
 
-        // El controller aún devuelve 200 porque el problema es a nivel
-        // factura individual, no del batch completo. Pero el resumen
-        // refleja 0 insertadas + 1 rechazada, con detalle en errors.
-        $response->assertStatus(200);
+        // 422 + motivo MANIFIESTO_CERRADO + manifiestos_rechazados[]
+        $response->assertStatus(422);
         $response->assertJson([
+            'success' => false,
+            'motivo' => 'MANIFIESTO_CERRADO',
             'resumen' => [
                 'insertadas' => 0,
                 'rechazadas' => 1,
             ],
         ]);
-        $this->assertNotEmpty($response->json('rechazadas_detalle'));
+        $response->assertJsonPath('manifiestos_rechazados.0.manifiesto', 'MANCLOSED');
+        $response->assertJsonPath('manifiestos_rechazados.0.motivo', 'MANIFIESTO_CERRADO');
+        $response->assertJsonPath('manifiestos_rechazados.0.total_facturas', 1);
 
         // El manifiesto cerrado NO recibió la factura
         $this->assertSame(0, Invoice::where('manifest_id', $closed->id)->count());
+    }
+
+    public function test_insert_rejects_entire_manifest_when_any_invoice_duplicated_in_other_manifest(): void
+    {
+        // Pre-existir un manifiesto previo con factura FDUP-API que viene
+        // a colisionar. Cualquier intento de meter esa factura en otro
+        // manifiesto debe rechazar el manifiesto NUEVO entero (no solo
+        // esa factura). Forzamos a Jaremar a reenviar el manifiesto limpio.
+        $supplier = Supplier::factory()->create();
+        $oac = Warehouse::query()->where('code', 'OAC')->first();
+        $manifestPrev = Manifest::factory()->create([
+            'number' => 'MAN-PREV-API',
+            'supplier_id' => $supplier->id,
+        ]);
+        Invoice::factory()->create([
+            'manifest_id' => $manifestPrev->id,
+            'warehouse_id' => $oac->id,
+            'invoice_number' => 'FDUP-API',
+        ]);
+
+        // Batch nuevo: 1 factura limpia + 1 duplicada, ambas para MAN-NEW.
+        $payload = [
+            $this->invoicePayload([
+                'Nfactura' => 'FDUP-API',
+                'NumeroManifiesto' => 'MAN-NEW',
+            ]),
+            $this->invoicePayload([
+                'Nfactura' => 'F-CLEAN-NEW',
+                'NumeroManifiesto' => 'MAN-NEW',
+            ]),
+        ];
+
+        $response = $this->postInsertar($payload);
+
+        $response->assertStatus(422);
+        $response->assertJson([
+            'success' => false,
+            'motivo' => 'FACTURAS_DUPLICADAS_EN_OTRO_MANIFIESTO',
+            'resumen' => [
+                'insertadas' => 0,
+                'rechazadas' => 2,
+            ],
+        ]);
+        $response->assertJsonPath('manifiestos_rechazados.0.manifiesto', 'MAN-NEW');
+        $response->assertJsonPath('manifiestos_rechazados.0.motivo', 'FACTURAS_DUPLICADAS_EN_OTRO_MANIFIESTO');
+        $response->assertJsonPath('manifiestos_rechazados.0.total_facturas', 2);
+        $response->assertJsonPath('manifiestos_rechazados.0.facturas_duplicadas.0.factura', 'FDUP-API');
+        $response->assertJsonPath('manifiestos_rechazados.0.facturas_duplicadas.0.manifiesto_existente', 'MAN-PREV-API');
+
+        // Ninguna factura del manifiesto nuevo entró (rechazo atómico).
+        $this->assertSame(0, Invoice::where('invoice_number', 'F-CLEAN-NEW')->count());
+        // La duplicada original sigue intacta en el manifiesto previo.
+        $this->assertSame(1, Invoice::where('invoice_number', 'FDUP-API')->where('manifest_id', $manifestPrev->id)->count());
     }
 
     public function test_insert_rejects_entire_batch_when_manifest_is_from_past_day(): void

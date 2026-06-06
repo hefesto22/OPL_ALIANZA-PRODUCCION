@@ -254,8 +254,15 @@ class ApiInvoiceImporterServiceTest extends TestCase
 
         $this->assertSame(1, $summary['invoices_rejected']);
         $this->assertSame(0, $summary['invoices_inserted']);
-        $this->assertNotEmpty($summary['errors']);
-        $this->assertStringContainsString('cerrado', $summary['errors'][0]['motivo']);
+
+        // Formato agrupado: el manifiesto entero queda rechazado, no se
+        // reportan errores individuales por factura (consistente con
+        // ALMACENES_DESCONOCIDOS).
+        $this->assertCount(1, $summary['manifiestos_rechazados']);
+        $this->assertSame('MAN-CLOSED', $summary['manifiestos_rechazados'][0]['manifiesto']);
+        $this->assertSame('MANIFIESTO_CERRADO', $summary['manifiestos_rechazados'][0]['motivo']);
+        $this->assertSame(1, $summary['manifiestos_rechazados'][0]['total_facturas']);
+        $this->assertEmpty($summary['errors']);
     }
 
     public function test_nonexistent_manifest_is_created_automatically(): void
@@ -276,7 +283,7 @@ class ApiInvoiceImporterServiceTest extends TestCase
     //  4. INVOICE CONFLICTS
     // ═══════════════════════════════════════════════════════════════
 
-    public function test_duplicate_invoice_in_different_manifest_is_rejected(): void
+    public function test_duplicate_invoice_in_different_manifest_rejects_entire_manifest(): void
     {
         // Crear manifiesto A con factura F-DUP
         $manifestA = Manifest::factory()->create([
@@ -289,16 +296,79 @@ class ApiInvoiceImporterServiceTest extends TestCase
             'invoice_number' => 'F-DUP',
         ]);
 
-        // Enviar F-DUP en manifiesto B
-        $inv = $this->invoicePayload([
+        // Enviar F-DUP en manifiesto B (junto con OTRA factura limpia
+        // del mismo manifiesto, para validar que el manifiesto ENTERO
+        // se rechaza, no solo la duplicada).
+        $inv1 = $this->invoicePayload([
             'Nfactura' => 'F-DUP',
             'NumeroManifiesto' => 'MAN-B-DUP',
         ]);
+        $inv2 = $this->invoicePayload([
+            'Nfactura' => 'F-CLEAN-002',
+            'NumeroManifiesto' => 'MAN-B-DUP',
+        ]);
 
-        $summary = $this->service()->processBatch([$inv], $this->importRecord());
+        $summary = $this->service()->processBatch([$inv1, $inv2], $this->importRecord());
 
+        // El manifiesto B entero queda rechazado (2 facturas, no solo la
+        // duplicada). Jaremar debe reenviar limpio.
+        $this->assertSame(2, $summary['invoices_rejected']);
+        $this->assertSame(0, $summary['invoices_inserted']);
+        $this->assertCount(1, $summary['manifiestos_rechazados']);
+
+        $rechazado = $summary['manifiestos_rechazados'][0];
+        $this->assertSame('MAN-B-DUP', $rechazado['manifiesto']);
+        $this->assertSame('FACTURAS_DUPLICADAS_EN_OTRO_MANIFIESTO', $rechazado['motivo']);
+        $this->assertSame(2, $rechazado['total_facturas']);
+        $this->assertCount(1, $rechazado['facturas_duplicadas']);
+        $this->assertSame('F-DUP', $rechazado['facturas_duplicadas'][0]['factura']);
+        $this->assertSame('MAN-A-DUP', $rechazado['facturas_duplicadas'][0]['manifiesto_existente']);
+
+        // La factura limpia F-CLEAN-002 tampoco entró (rechazo atómico).
+        $this->assertSame(0, Invoice::where('invoice_number', 'F-CLEAN-002')->count());
+    }
+
+    public function test_duplicate_in_one_manifest_does_not_block_other_manifests_in_batch(): void
+    {
+        // Manifiesto A previo con factura F-DUP-B
+        $manifestA = Manifest::factory()->create([
+            'number' => 'MAN-PRE',
+            'supplier_id' => $this->supplier->id,
+        ]);
+        Invoice::factory()->create([
+            'manifest_id' => $manifestA->id,
+            'warehouse_id' => $this->oac->id,
+            'invoice_number' => 'F-DUP-B',
+        ]);
+
+        // Batch con 2 manifiestos: MAN-BAD (duplicada) y MAN-OK (limpio).
+        $invBad = $this->invoicePayload([
+            'Nfactura' => 'F-DUP-B',
+            'NumeroManifiesto' => 'MAN-BAD',
+        ]);
+        $invOk1 = $this->invoicePayload([
+            'Nfactura' => 'F-OK-001',
+            'NumeroManifiesto' => 'MAN-OK',
+        ]);
+        $invOk2 = $this->invoicePayload([
+            'Nfactura' => 'F-OK-002',
+            'NumeroManifiesto' => 'MAN-OK',
+        ]);
+
+        $summary = $this->service()->processBatch(
+            [$invBad, $invOk1, $invOk2],
+            $this->importRecord(),
+        );
+
+        // MAN-BAD rechazado, MAN-OK procesado normal.
         $this->assertSame(1, $summary['invoices_rejected']);
-        $this->assertStringContainsString('ya existe', $summary['errors'][0]['motivo']);
+        $this->assertSame(2, $summary['invoices_inserted']);
+        $this->assertCount(1, $summary['manifiestos_rechazados']);
+        $this->assertSame('MAN-BAD', $summary['manifiestos_rechazados'][0]['manifiesto']);
+
+        // Las 2 facturas del manifiesto limpio sí entraron.
+        $this->assertSame(1, Invoice::where('invoice_number', 'F-OK-001')->count());
+        $this->assertSame(1, Invoice::where('invoice_number', 'F-OK-002')->count());
     }
 
     public function test_unchanged_invoice_increments_unchanged_counter(): void

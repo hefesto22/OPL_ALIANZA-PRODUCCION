@@ -205,6 +205,7 @@ class ApiInvoiceImporterService
             $summary['manifiestos_rechazados'][] = [
                 'manifiesto' => $manifestNumber,
                 'total_facturas' => $totalFacturas,
+                'motivo' => 'ALMACENES_DESCONOCIDOS',
                 'almacenes_desconocidos' => $warehouseErrors,
             ];
 
@@ -216,18 +217,63 @@ class ApiInvoiceImporterService
             return;
         }
 
-        // ── 2. Manifiesto cerrado → rechazar todas sus facturas ────────
+        // ── 2. Manifiesto cerrado → rechazar el manifiesto entero ──────
+        //
+        // Regla de negocio (consistente con almacén desconocido en paso 1):
+        // un manifiesto YA cerrado no acepta ninguna factura adicional.
+        // Reportamos como manifiestos_rechazados[] agrupado (no errors[]
+        // individuales) para que Jaremar lea UNA sola lista de manifiestos
+        // que debe reenviar limpios.
         $manifest = Manifest::where('number', $manifestNumber)->first();
 
         if ($manifest && $manifest->isClosed()) {
-            foreach ($invoices as $invoice) {
-                $summary['invoices_rejected']++;
-                $summary['errors'][] = [
-                    'factura' => $invoice['Nfactura'],
-                    'manifiesto' => $manifestNumber,
-                    'motivo' => "El manifiesto #{$manifestNumber} está cerrado y no acepta modificaciones.",
-                ];
-            }
+            $totalFacturas = count($invoices);
+            $summary['invoices_rejected'] += $totalFacturas;
+            $summary['manifiestos_rechazados'][] = [
+                'manifiesto' => $manifestNumber,
+                'total_facturas' => $totalFacturas,
+                'motivo' => 'MANIFIESTO_CERRADO',
+                'mensaje' => "El manifiesto #{$manifestNumber} está cerrado y no acepta modificaciones.",
+            ];
+
+            Log::warning("API Jaremar: manifiesto #{$manifestNumber} rechazado porque ya está cerrado.", [
+                'total_facturas' => $totalFacturas,
+            ]);
+
+            return;
+        }
+
+        // ── 2.5 Pre-check: facturas duplicadas en otro manifiesto ──────
+        //
+        // Si alguna factura del batch para este manifiesto ya existe en
+        // BD bajo otro NumeroManifiesto, rechazamos el manifiesto entero
+        // (los demás del batch siguen procesándose). Forzamos a Jaremar
+        // a reenviar el manifiesto limpio — más seguro que aceptar un
+        // subconjunto ambiguo.
+        //
+        // El check usa $existingInvoices (Collection precargada en
+        // processBatch con 1 sola query) → O(N) en memoria, sin tocar BD.
+        $facturasDuplicadas = $this->detectInvoicesDuplicatedInOtherManifest(
+            $invoices,
+            $existingInvoices,
+            $manifest?->id,
+        );
+
+        if (! empty($facturasDuplicadas)) {
+            $totalFacturas = count($invoices);
+            $summary['invoices_rejected'] += $totalFacturas;
+            $summary['manifiestos_rechazados'][] = [
+                'manifiesto' => $manifestNumber,
+                'total_facturas' => $totalFacturas,
+                'motivo' => 'FACTURAS_DUPLICADAS_EN_OTRO_MANIFIESTO',
+                'facturas_duplicadas' => $facturasDuplicadas,
+                'mensaje' => "El manifiesto #{$manifestNumber} contiene facturas que ya existen en otros manifiestos. Reenvíelo limpio.",
+            ];
+
+            Log::warning("API Jaremar: manifiesto #{$manifestNumber} rechazado por facturas duplicadas en otros manifiestos.", [
+                'total_facturas' => $totalFacturas,
+                'facturas_duplicadas' => array_column($facturasDuplicadas, 'factura'),
+            ]);
 
             return;
         }
@@ -288,10 +334,66 @@ class ApiInvoiceImporterService
     }
 
     /**
+     * Detecta facturas del batch que YA EXISTEN en BD bajo un manifiesto
+     * distinto al que se está procesando. Esto cubre dos sub-casos:
+     *
+     *   a) El manifiesto del batch es nuevo (todavía no existe en BD):
+     *      $currentManifestId es null. Cualquier factura existente apunta
+     *      por definición a otro manifiesto → todas son duplicadas.
+     *
+     *   b) El manifiesto del batch ya existe: cualquier factura cuyo
+     *      manifest_id NO coincida es duplicada en otro manifiesto.
+     *
+     * Devuelve detalle por factura para que Jaremar sepa exactamente qué
+     * número de factura está colisionando y con qué manifiesto previo.
+     *
+     * @param  array  $invoices  Facturas del batch para este manifiesto.
+     * @param  \Illuminate\Support\Collection  $existingInvoices  Preload keyBy('invoice_number').
+     * @param  int|null  $currentManifestId  Id del manifiesto procesado (null si es nuevo).
+     * @return array<int, array{factura: string, manifiesto_existente: string}>
+     */
+    protected function detectInvoicesDuplicatedInOtherManifest(
+        array $invoices,
+        \Illuminate\Support\Collection $existingInvoices,
+        ?int $currentManifestId,
+    ): array {
+        $duplicadas = [];
+
+        foreach ($invoices as $invoice) {
+            $invoiceNumber = $invoice['Nfactura'] ?? null;
+
+            if (! $invoiceNumber) {
+                continue;
+            }
+
+            $existing = $existingInvoices->get($invoiceNumber);
+
+            if (! $existing) {
+                continue; // factura nueva, no es duplicada
+            }
+
+            if ($existing->manifest_id === $currentManifestId) {
+                continue; // misma factura en el mismo manifiesto = update válido
+            }
+
+            $duplicadas[] = [
+                'factura' => $invoiceNumber,
+                'manifiesto_existente' => (string) $existing->manifest->number,
+            ];
+        }
+
+        return $duplicadas;
+    }
+
+    /**
      * Clasifica las facturas del batch en 3 categorías:
      *   - new:       facturas que no existen → se insertarán en bulk
      *   - conflicts: facturas existentes con campos distintos → pendientes de revisión
-     *   - (unchanged e invoices en otro manifiesto se registran directo en $summary)
+     *   - unchanged: facturas idénticas (solo incrementan contador en $summary)
+     *
+     * Las facturas que existen en OTRO manifiesto ya fueron rechazadas
+     * antes de llegar acá por detectInvoicesDuplicatedInOtherManifest()
+     * en processManifestGroup. Si llegan, se loguea como invariante rota.
      *
      * @return array{new: array, conflicts: array}
      */
@@ -308,14 +410,17 @@ class ApiInvoiceImporterService
             $invoiceNumber = $invoiceData['Nfactura'];
             $existing = $existingInvoices->get($invoiceNumber);
 
-            // Factura existe en otro manifiesto → rechazar
+            // Defensa en profundidad: este caso YA se filtra en el paso
+            // 2.5 de processManifestGroup (detectInvoicesDuplicatedInOtherManifest).
+            // Si llegamos acá con una factura cruzada, es una invariante
+            // rota — registramos en log y saltamos para no contaminar.
             if ($existing && $existing->manifest_id !== $manifest->id) {
-                $summary['invoices_rejected']++;
-                $summary['errors'][] = [
-                    'factura' => $invoiceNumber,
-                    'manifiesto' => $manifest->number,
-                    'motivo' => "La factura {$invoiceNumber} ya existe en el manifiesto #{$existing->manifest->number} y no puede duplicarse.",
-                ];
+                Log::critical(
+                    "Invariante rota: factura {$invoiceNumber} llegó a classifyInvoices ".
+                    "estando en otro manifiesto (#{$existing->manifest->number}). ".
+                    'El pre-check de duplicados debió haberla bloqueado.',
+                    ['manifest_id_actual' => $manifest->id, 'manifest_id_otra' => $existing->manifest_id]
+                );
 
                 continue;
             }
