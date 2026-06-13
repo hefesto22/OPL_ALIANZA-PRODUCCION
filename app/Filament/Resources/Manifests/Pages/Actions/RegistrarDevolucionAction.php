@@ -413,8 +413,24 @@ class RegistrarDevolucionAction
                                     $isBonif = ($lineTotal == 0 && ($unitPrice == 0 && $pricePerBox == 0));
 
                                     if ($unitSale === 'CJ') {
-                                        $qtyBadge = number_format($boxes, 0).' caja'.($boxes != 1 ? 's' : '');
-                                        $priceStr = $isBonif ? '' : '× L.'.number_format($pricePerBox, 2).'/caja';
+                                        $parts = [];
+                                        if ($boxes > 0) {
+                                            $parts[] = number_format($boxes, 0).' caja'.($boxes != 1 ? 's' : '');
+                                        }
+                                        if ($units > 0) {
+                                            $parts[] = number_format($units, 0).' und.';
+                                        }
+                                        $qtyBadge = empty($parts) ? '0 cajas' : implode(' + ', $parts);
+
+                                        if ($isBonif) {
+                                            $priceStr = '';
+                                        } elseif ($boxes > 0 && $units > 0) {
+                                            $priceStr = '× L.'.number_format($pricePerBox, 2).'/caja + L.'.number_format($unitPrice, 2).'/und.';
+                                        } elseif ($boxes > 0) {
+                                            $priceStr = '× L.'.number_format($pricePerBox, 2).'/caja';
+                                        } else {
+                                            $priceStr = '× L.'.number_format($unitPrice, 2).'/und.';
+                                        }
                                     } else {
                                         $qtyBadge = number_format($units, 0).' und.';
                                         $priceStr = $isBonif ? '' : '× L.'.number_format($unitPrice, 2).'/und.';

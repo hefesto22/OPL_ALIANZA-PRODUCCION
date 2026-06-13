@@ -113,7 +113,6 @@ class ReturnsTable
                 SelectFilter::make('status')
                     ->label('Estado')
                     ->options([
-                        'pending' => 'Pendiente',
                         'approved' => 'Aprobada',
                         'rejected' => 'Rechazada',
                         'cancelled' => 'Cancelada',

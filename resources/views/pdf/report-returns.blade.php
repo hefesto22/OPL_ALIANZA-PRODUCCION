@@ -379,7 +379,8 @@ table.lines tbody td.r { text-align: right; }
                         <th style="width:40px">#</th>
                         <th style="width:90px">Cód. Producto</th>
                         <th>Descripción del Producto</th>
-                        <th class="r" style="width:70px">Cant. Devuelta</th>
+                        <th class="r" style="width:55px">Cajas</th>
+                        <th class="r" style="width:60px">Unidades</th>
                         <th class="r" style="width:90px">Subtotal (HNL)</th>
                     </tr>
                 </thead>
@@ -389,13 +390,15 @@ table.lines tbody td.r { text-align: right; }
                         <td>{{ $loop->iteration }}</td>
                         <td><strong>{{ $line->product_id ?? '—' }}</strong></td>
                         <td>{{ $line->product_description ?? '—' }}</td>
+                        <td class="r">{{ number_format($line->quantity_box, 2) }}</td>
                         <td class="r">{{ number_format($line->quantity, 2) }}</td>
                         <td class="r">L {{ number_format($line->line_total, 2) }}</td>
                     </tr>
                     @endforeach
                     <tr class="lines-subtotal">
                         <td colspan="3">Total de la devolución</td>
-                        <td class="r">{{ number_format($return->lines->sum('quantity'), 2) }} uds.</td>
+                        <td class="r">{{ number_format($return->lines->sum('quantity_box'), 2) }}</td>
+                        <td class="r">{{ number_format($return->lines->sum('quantity'), 2) }}</td>
                         <td class="r">L {{ number_format($return->total, 2) }}</td>
                     </tr>
                 </tbody>

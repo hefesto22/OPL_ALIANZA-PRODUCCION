@@ -629,7 +629,7 @@ class PrintReportsController extends Controller
      */
     private function enforceRowLimit($query, string $reportName): void
     {
-        $limit = (int) env('REPORTS_MAX_ROWS', 5000);
+        $limit = (int) config('reports.max_rows');
         if ($limit <= 0) {
             return; // 0 o negativo = sin límite (útil en dev)
         }

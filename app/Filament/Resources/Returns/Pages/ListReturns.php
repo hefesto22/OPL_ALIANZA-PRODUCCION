@@ -95,7 +95,6 @@ class ListReturns extends ListRecords
                             ->label('Estado')
                             ->placeholder('Todos los estados')
                             ->options([
-                                'pending' => 'Pendiente',
                                 'approved' => 'Aprobada',
                                 'rejected' => 'Rechazada',
                                 'cancelled' => 'Cancelada',
@@ -143,7 +142,6 @@ class ListReturns extends ListRecords
                             ->label('Estado')
                             ->placeholder('Todos los estados')
                             ->options([
-                                'pending' => 'Pendiente',
                                 'approved' => 'Aprobada',
                                 'rejected' => 'Rechazada',
                                 'cancelled' => 'Cancelada',
@@ -212,7 +210,6 @@ class ListReturns extends ListRecords
                             ->label('Estado')
                             ->placeholder('Todos los estados')
                             ->options([
-                                'pending' => 'Pendiente',
                                 'approved' => 'Aprobada',
                                 'rejected' => 'Rechazada',
                                 'cancelled' => 'Cancelada',
