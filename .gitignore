@@ -22,3 +22,7 @@
 Homestead.json
 Homestead.yaml
 Thumbs.db
+
+# Docs (repo aparte) y fixtures de prueba
+documentacion-hozana/
+test_manifest_*.json
