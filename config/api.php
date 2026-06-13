@@ -59,4 +59,15 @@ return [
     //
     'print_max_invoices_per_request' => env('PRINT_MAX_INVOICES', 1000),
 
+    // ── Devoluciones: tope de rango de fechas ─────────────────────────────
+    //
+    // devoluciones_max_dias_rango
+    //   Máximo de días (inclusive) que GET v1/devoluciones/listar acepta entre
+    //   los headers Fecha y FechaHasta. Un rango mayor se rechaza con 422.
+    //   Protege query, caché y tamaño de respuesta ante peticiones tipo
+    //   "todo el año". 31 cubre cualquier mes calendario; subir a 92 para un
+    //   trimestre sin tocar código. 0 = sin tope (no recomendado en producción).
+    //
+    'devoluciones_max_dias_rango' => env('API_DEVOLUCIONES_MAX_DIAS_RANGO', 31),
+
 ];

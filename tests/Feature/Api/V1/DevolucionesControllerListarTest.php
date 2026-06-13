@@ -9,6 +9,7 @@ use App\Models\ReturnLine;
 use App\Models\ReturnReason;
 use App\Models\Warehouse;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Tests\TestCase;
 
 /**
@@ -48,8 +49,8 @@ class DevolucionesControllerListarTest extends TestCase
         ]);
     }
 
-    /** Helper: GET con header ApiKey + Fecha. */
-    private function getListar(?string $fecha, ?string $apiKey = self::API_KEY, array $query = [])
+    /** Helper: GET con header ApiKey + Fecha (+ FechaHasta opcional). */
+    private function getListar(?string $fecha, ?string $apiKey = self::API_KEY, array $query = [], ?string $fechaHasta = null)
     {
         $headers = [];
         if ($apiKey !== null) {
@@ -57,6 +58,9 @@ class DevolucionesControllerListarTest extends TestCase
         }
         if ($fecha !== null) {
             $headers['Fecha'] = $fecha;
+        }
+        if ($fechaHasta !== null) {
+            $headers['FechaHasta'] = $fechaHasta;
         }
 
         $url = route('api.v1.devoluciones.listar');
@@ -403,5 +407,170 @@ class DevolucionesControllerListarTest extends TestCase
         $response = $this->getListar('10/04/2026', query: ['pagina' => 2]);
         $response->assertStatus(200);
         $this->assertSame([], $response->json());
+    }
+
+    // ── Formato de decimales (contrato Jaremar: escala fija 6) ─────────
+
+    public function test_listar_emits_numeric_fields_with_fixed_six_decimals(): void
+    {
+        // Jaremar serializa sus decimal con escala 6 (255 → 255.000000).
+        // total, cantidad y lineTotal deben salir como NÚMEROS (sin comillas)
+        // con exactamente 6 decimales, rellenando ceros de cola.
+        $this->makeApprovedReturn('2026-04-10', 'OAC', [
+            'invoice_number' => 'F-DEC',
+            'total' => 255.00,
+        ], [
+            'quantity_box' => 0,
+            'quantity' => 5,
+            'line_total' => 75.00,
+        ]);
+
+        $response = $this->getListar('10/04/2026');
+        $response->assertStatus(200);
+
+        // Cuerpo CRUDO: números con 6 decimales y SIN comillas.
+        $raw = $response->getContent();
+        $this->assertStringContainsString('"total":255.000000', $raw);
+        $this->assertStringContainsString('"cantidad":5.000000', $raw);
+        $this->assertStringContainsString('"lineTotal":75.000000', $raw);
+
+        // No deben quedar como strings ni filtrarse el sentinela.
+        $this->assertStringNotContainsString('"total":"255', $raw);
+        $this->assertStringNotContainsString('@@N6@@', $raw);
+    }
+
+    public function test_listar_preserves_real_decimals_in_six_decimal_format(): void
+    {
+        // Un valor con decimales reales conserva su parte fraccionaria
+        // y se rellena a 6 posiciones (91.60 → 91.600000).
+        $this->makeApprovedReturn('2026-04-10', 'OAC', [
+            'invoice_number' => 'F-DEC2',
+            'total' => 91.60,
+        ], [
+            'quantity_box' => 0,
+            'quantity' => 10,
+            'line_total' => 91.60,
+        ]);
+
+        $response = $this->getListar('10/04/2026');
+        $response->assertStatus(200);
+
+        $raw = $response->getContent();
+        $this->assertStringContainsString('"total":91.600000', $raw);
+        $this->assertStringContainsString('"lineTotal":91.600000', $raw);
+        $this->assertStringContainsString('"cantidad":10.000000', $raw);
+    }
+
+    // ── Rango de fechas (Fecha + FechaHasta) ───────────────────────────
+
+    public function test_listar_with_fecha_hasta_returns_full_range_inclusive(): void
+    {
+        $this->makeApprovedReturn('2026-04-10', 'OAC', ['invoice_number' => 'F-D10']);
+        $this->makeApprovedReturn('2026-04-11', 'OAC', ['invoice_number' => 'F-D11']);
+        $this->makeApprovedReturn('2026-04-12', 'OAC', ['invoice_number' => 'F-D12']);
+
+        // Rango 10–12 inclusive debe traer los tres días.
+        $response = $this->getListar('10/04/2026', fechaHasta: '12/04/2026');
+
+        $response->assertStatus(200);
+        $facturas = array_column($response->json(), 'factura');
+        sort($facturas);
+        $this->assertSame(['F-D10', 'F-D11', 'F-D12'], $facturas);
+    }
+
+    public function test_listar_range_excludes_dates_outside_the_range(): void
+    {
+        $this->makeApprovedReturn('2026-04-09', 'OAC', ['invoice_number' => 'F-ANTES']);
+        $this->makeApprovedReturn('2026-04-10', 'OAC', ['invoice_number' => 'F-DENTRO-1']);
+        $this->makeApprovedReturn('2026-04-11', 'OAC', ['invoice_number' => 'F-DENTRO-2']);
+        $this->makeApprovedReturn('2026-04-12', 'OAC', ['invoice_number' => 'F-DESPUES']);
+
+        $response = $this->getListar('10/04/2026', fechaHasta: '11/04/2026');
+
+        $response->assertStatus(200);
+        $facturas = array_column($response->json(), 'factura');
+        sort($facturas);
+        $this->assertSame(['F-DENTRO-1', 'F-DENTRO-2'], $facturas);
+    }
+
+    public function test_listar_range_includes_only_approved(): void
+    {
+        $this->makeApprovedReturn('2026-04-10', 'OAC', ['invoice_number' => 'F-OK']);
+
+        // Pendiente dentro del rango → NO debe aparecer.
+        $warehouse = Warehouse::where('code', 'OAC')->first();
+        $manifestP = Manifest::factory()->create(['warehouse_id' => $warehouse->id]);
+        $invoiceP = Invoice::factory()->create([
+            'manifest_id' => $manifestP->id,
+            'warehouse_id' => $warehouse->id,
+            'invoice_number' => 'F-PEND',
+        ]);
+        InvoiceReturn::factory()->create([
+            'manifest_id' => $manifestP->id,
+            'invoice_id' => $invoiceP->id,
+            'warehouse_id' => $warehouse->id,
+            'return_reason_id' => ReturnReason::factory()->create()->id,
+            'status' => 'pending',
+            'processed_date' => '2026-04-11',
+        ]);
+
+        $response = $this->getListar('10/04/2026', fechaHasta: '12/04/2026');
+
+        $response->assertStatus(200);
+        $this->assertSame(['F-OK'], array_column($response->json(), 'factura'));
+    }
+
+    public function test_listar_rejects_invalid_fecha_hasta_format(): void
+    {
+        // FechaHasta en ISO en vez de dd/MM/yyyy → 422.
+        $response = $this->getListar('10/04/2026', fechaHasta: '2026-04-12');
+
+        $response->assertStatus(422);
+        $response->assertJsonPath('success', false);
+        $response->assertJsonPath('message', fn ($m) => str_contains($m, 'FechaHasta'));
+    }
+
+    public function test_listar_rejects_fecha_hasta_before_fecha(): void
+    {
+        $response = $this->getListar('12/04/2026', fechaHasta: '10/04/2026');
+
+        $response->assertStatus(422);
+        $response->assertJsonPath('message', fn ($m) => str_contains($m, 'anterior'));
+    }
+
+    public function test_listar_rejects_range_exceeding_max_days(): void
+    {
+        config(['api.devoluciones_max_dias_rango' => 7]);
+
+        // 01–10 abril = 10 días inclusive, supera el tope de 7.
+        $response = $this->getListar('01/04/2026', fechaHasta: '10/04/2026');
+
+        $response->assertStatus(422);
+        $response->assertJsonPath('message', fn ($m) => str_contains($m, 'supera'));
+    }
+
+    public function test_listar_range_cache_invalidates_when_a_day_version_changes(): void
+    {
+        // Versiones base de los 3 días del rango (estado determinístico).
+        Cache::put('devoluciones:version:2026-04-10', 1);
+        Cache::put('devoluciones:version:2026-04-11', 1);
+        Cache::put('devoluciones:version:2026-04-12', 1);
+
+        $this->makeApprovedReturn('2026-04-10', 'OAC', ['invoice_number' => 'F-INI']);
+
+        // Primera llamada → cachea el rango con 1 resultado.
+        $r1 = $this->getListar('10/04/2026', fechaHasta: '12/04/2026');
+        $r1->assertStatus(200);
+        $this->assertCount(1, $r1->json());
+
+        // Entra una devolución a un día intermedio. En producción ReturnService
+        // incrementa devoluciones:version:{día}; aquí lo simulamos (1 → 2).
+        $this->makeApprovedReturn('2026-04-11', 'OAC', ['invoice_number' => 'F-NUEVA']);
+        Cache::increment('devoluciones:version:2026-04-11');
+
+        // La versión compuesta cambió → caché del rango invalidada → 2 resultados.
+        $r2 = $this->getListar('10/04/2026', fechaHasta: '12/04/2026');
+        $r2->assertStatus(200);
+        $this->assertCount(2, $r2->json());
     }
 }
