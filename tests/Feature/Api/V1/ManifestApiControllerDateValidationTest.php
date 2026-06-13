@@ -57,11 +57,12 @@ class ManifestApiControllerDateValidationTest extends TestCase
             'api.jaremar_api_key' => self::API_KEY,
             'api.rate_limit_insertar_per_minute' => 100,
             'api.rate_limit_per_minute' => 100,
-            // Asegurar valores default del validator durante el test.
+            // Defaults de PRODUCCIÓN: mezcla permitida + fecha = día de carga.
             'manifests.dates.timezone' => 'America/Tegucigalpa',
             'manifests.dates.allow_future' => false,
             'manifests.dates.max_backdate_days' => 30,
-            'manifests.dates.reject_mixed_dates' => true,
+            'manifests.dates.reject_mixed_dates' => false,
+            'manifests.dates.manifest_date_source' => 'upload',
         ]);
 
         Role::create(['name' => 'super_admin', 'guard_name' => 'web']);
@@ -144,8 +145,10 @@ class ManifestApiControllerDateValidationTest extends TestCase
     //  V1 — FECHAS_MEZCLADAS
     // ═══════════════════════════════════════════════════════════════════
 
-    public function test_v1_rejects_batch_when_manifest_contains_mixed_dates(): void
+    public function test_v1_accepts_mixed_dates_by_default(): void
     {
+        // Requerimiento Jaremar: un manifiesto puede traer facturas de
+        // fechas distintas. Se acepta y se fecha al día de carga.
         $payload = [
             $this->invoicePayload([
                 'Nfactura' => 'FMIX0001',
@@ -155,26 +158,46 @@ class ManifestApiControllerDateValidationTest extends TestCase
             $this->invoicePayload([
                 'Nfactura' => 'FMIX0002',
                 'NumeroManifiesto' => 'MANMIX001',
-                'FechaFactura' => '2026-05-19T00:00:00.000Z', // distinta!
+                'FechaFactura' => '2026-05-19T00:00:00.000Z', // distinta — permitido
+            ]),
+        ];
+
+        $response = $this->postInsertar($payload);
+
+        $response->assertStatus(200);
+        $response->assertJson(['success' => true]);
+
+        $manifest = Manifest::where('number', 'MANMIX001')->first();
+        $this->assertNotNull($manifest);
+        // El manifiesto se fecha al día de carga (hoy), no a las facturas.
+        $this->assertSame('2026-05-20', $manifest->date->toDateString());
+        $this->assertSame(2, Invoice::whereIn('invoice_number', ['FMIX0001', 'FMIX0002'])->count());
+    }
+
+    public function test_v1_legacy_rejects_mixed_dates_when_flag_enabled(): void
+    {
+        // Modo estricto opcional (reversible por config).
+        config(['manifests.dates.reject_mixed_dates' => true]);
+
+        $payload = [
+            $this->invoicePayload([
+                'Nfactura' => 'FMIX0001',
+                'NumeroManifiesto' => 'MANMIX001',
+                'FechaFactura' => '2026-05-20T00:00:00.000Z',
+            ]),
+            $this->invoicePayload([
+                'Nfactura' => 'FMIX0002',
+                'NumeroManifiesto' => 'MANMIX001',
+                'FechaFactura' => '2026-05-19T00:00:00.000Z',
             ]),
         ];
 
         $response = $this->postInsertar($payload);
 
         $response->assertStatus(422);
-        $response->assertJson([
-            'success' => false,
-            'motivo' => 'FECHAS_INVALIDAS',
-            'resumen' => [
-                'total_recibidas' => 2,
-                'insertadas' => 0,
-            ],
-        ]);
-
         $response->assertJsonPath('manifiestos_rechazados.0.motivo', 'FECHAS_MEZCLADAS');
         $response->assertJsonPath('manifiestos_rechazados.0.manifiesto', 'MANMIX001');
 
-        // Nada se persistió en BD — ni manifest, ni invoice, ni import record.
         $this->assertSame(0, Manifest::count());
         $this->assertSame(0, Invoice::count());
         $this->assertSame(0, ApiInvoiceImport::count());
@@ -220,8 +243,8 @@ class ManifestApiControllerDateValidationTest extends TestCase
         $response->assertStatus(422);
         $response->assertJson(['motivo' => 'FECHAS_INVALIDAS']);
         $response->assertJsonPath('manifiestos_rechazados.0.motivo', 'FECHA_FACTURA_FUTURA');
-        $response->assertJsonPath('manifiestos_rechazados.0.detalle.fecha_factura', '2026-05-25');
         $response->assertJsonPath('manifiestos_rechazados.0.detalle.hoy_servidor', '2026-05-20');
+        $response->assertJsonPath('manifiestos_rechazados.0.detalle.facturas_futuras.FFUT0001', '2026-05-25');
 
         $this->assertSame(0, Manifest::count());
     }
@@ -244,8 +267,8 @@ class ManifestApiControllerDateValidationTest extends TestCase
         $response->assertStatus(422);
         $response->assertJson(['motivo' => 'FECHAS_INVALIDAS']);
         $response->assertJsonPath('manifiestos_rechazados.0.motivo', 'FECHA_FACTURA_DEMASIADO_ANTIGUA');
-        $response->assertJsonPath('manifiestos_rechazados.0.detalle.dias_antiguedad', 45);
         $response->assertJsonPath('manifiestos_rechazados.0.detalle.limite_dias', 30);
+        $response->assertJsonPath('manifiestos_rechazados.0.detalle.facturas_antiguas.FOLD0001.dias', 45);
 
         $this->assertSame(0, Manifest::count());
     }
@@ -266,36 +289,41 @@ class ManifestApiControllerDateValidationTest extends TestCase
 
         $manifest = Manifest::where('number', 'MANRETRO001')->first();
         $this->assertNotNull($manifest);
-        // V4: el manifest.date debe ser la fecha REAL de la factura,
-        // no la fecha en que se subió.
-        $this->assertSame('2026-05-10', $manifest->date->toDateString());
+        // Default 'upload': el manifiesto se fecha al DÍA DE CARGA (hoy),
+        // aunque la factura sea de 10 días atrás. La factura conserva su
+        // propia invoice_date.
+        $this->assertSame('2026-05-20', $manifest->date->toDateString());
+        $this->assertSame('2026-05-10', Invoice::where('invoice_number', 'FRETRO001')->first()->invoice_date->toDateString());
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    //  V4 — manifests.date derivada de FechaFactura (fix del bug raíz)
+    //  V4 — manifests.date = día de carga (default 'upload')
     // ═══════════════════════════════════════════════════════════════════
 
-    public function test_v4_derives_manifest_date_from_invoice_date_not_now(): void
+    public function test_manifest_is_dated_to_upload_day_even_for_prior_day_invoices(): void
     {
-        // Factura de hoy → manifest.date = hoy. Obvio, pero protege el
-        // happy path contra regresión.
+        // Facturas de 8 días atrás, subidas hoy → el manifiesto queda
+        // fechado HOY (día de carga). La factura conserva su fecha real.
         $payload = [$this->invoicePayload([
-            'Nfactura' => 'FTODAY001',
-            'NumeroManifiesto' => 'MANTODAY001',
-            'FechaFactura' => '2026-05-20T00:00:00.000Z',
+            'Nfactura' => 'FUP0001',
+            'NumeroManifiesto' => 'MANUP001',
+            'FechaFactura' => '2026-05-12T00:00:00.000Z',
         ])];
 
         $response = $this->postInsertar($payload);
 
         $response->assertStatus(200);
-        $manifest = Manifest::where('number', 'MANTODAY001')->first();
+        $manifest = Manifest::where('number', 'MANUP001')->first();
         $this->assertSame('2026-05-20', $manifest->date->toDateString());
     }
 
-    public function test_v4_retroactive_manifest_logs_activity_with_metadata(): void
+    public function test_legacy_invoice_date_source_logs_retroactive_metadata(): void
     {
-        // Cargar manifest retroactivo y verificar que el activity log
-        // captura los metadatos: operation_date y retroactive_days.
+        // Modo legacy (manifest_date_source='invoice'): el manifiesto se
+        // fecha por la FechaFactura y el activity log captura los metadatos
+        // retroactivos.
+        config(['manifests.dates.manifest_date_source' => 'invoice']);
+
         $payload = [$this->invoicePayload([
             'Nfactura' => 'FACTLOG001',
             'NumeroManifiesto' => 'MANACTLOG001',
@@ -306,6 +334,7 @@ class ManifestApiControllerDateValidationTest extends TestCase
 
         $manifest = Manifest::where('number', 'MANACTLOG001')->first();
         $this->assertNotNull($manifest);
+        $this->assertSame('2026-05-15', $manifest->date->toDateString());
 
         $activity = $manifest->activities()
             ->where('log_name', 'api')
@@ -323,8 +352,11 @@ class ManifestApiControllerDateValidationTest extends TestCase
     //  Notificaciones a admins
     // ═══════════════════════════════════════════════════════════════════
 
-    public function test_rejection_notifies_admins_via_database(): void
+    public function test_date_rejection_does_not_notify_admins_by_default(): void
     {
+        // Default: los rechazos por fecha NO generan notificación in-app
+        // (son problema de datos de Jaremar, no de Hosana). El log y la
+        // respuesta del API sí quedan.
         $admin = User::factory()->create();
         $admin->assignRole('admin');
 
@@ -336,16 +368,28 @@ class ManifestApiControllerDateValidationTest extends TestCase
 
         $this->postInsertar($payload)->assertStatus(422);
 
-        // Filament Notification con sendToDatabase escribe en notifications.
-        // La estructura exacta del JSON 'data' depende de la versión de
-        // Filament — para evitar acoplamiento al formato interno, validamos
-        // que existe AL MENOS 1 notificación y que el manifest number
-        // aparece en algún campo del payload serializado.
+        $this->assertSame(0, $admin->notifications()->count());
+    }
+
+    public function test_date_rejection_notifies_admins_when_flag_enabled(): void
+    {
+        // Con el flag activado, sí se notifica a los admins.
+        config(['manifests.dates.notify_admins_on_date_rejection' => true]);
+
+        $admin = User::factory()->create();
+        $admin->assignRole('admin');
+
+        $payload = [$this->invoicePayload([
+            'Nfactura' => 'FNOTIF001',
+            'NumeroManifiesto' => 'MANNOTIF001',
+            'FechaFactura' => '2026-05-25T00:00:00.000Z', // futuro
+        ])];
+
+        $this->postInsertar($payload)->assertStatus(422);
+
         $this->assertSame(1, $admin->notifications()->count());
 
-        $notification = $admin->notifications()->first();
-        $serialized = json_encode($notification->data);
-
+        $serialized = json_encode($admin->notifications()->first()->data);
         $this->assertStringContainsString('MANNOTIF001', $serialized);
         $this->assertStringContainsString('fecha futura', $serialized);
     }

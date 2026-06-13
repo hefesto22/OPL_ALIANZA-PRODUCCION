@@ -186,7 +186,7 @@ class ManifestDateValidatorTest extends TestCase
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    //  validateBatch — pipeline completo (V1 + V2 + V3)
+    //  validateBatch — pipeline completo (default: mezcla OK + fecha carga)
     // ═══════════════════════════════════════════════════════════════════
 
     public function test_validate_batch_accepts_valid_same_day_manifest(): void
@@ -202,14 +202,16 @@ class ManifestDateValidatorTest extends TestCase
         $this->assertEmpty($result['invalid_manifests']);
         $this->assertCount(1, $result['valid_manifests']);
         $this->assertSame('M001', $result['valid_manifests'][0]['manifiesto']);
+        // fecha_operativa = día de carga (hoy), default 'upload'.
         $this->assertSame('2026-05-20', $result['valid_manifests'][0]['fecha_operativa']);
         $this->assertSame(2, $result['valid_manifests'][0]['total_facturas']);
     }
 
-    public function test_validate_batch_accepts_retroactive_within_threshold(): void
+    public function test_validate_batch_dates_manifest_to_upload_day_not_invoice_day(): void
     {
-        // Hoy es 2026-05-20. Hace 7 días = 2026-05-13. Dentro del límite
-        // por default (30 días) → debe aceptarse.
+        // Facturas de un día anterior (2026-05-13) subidas hoy (2026-05-20).
+        // Por default la fecha del manifiesto es el DÍA DE CARGA, no la de
+        // la factura.
         $invoices = [
             $this->invoice('M001', '2026-05-13', 'F-001'),
         ];
@@ -217,14 +219,31 @@ class ManifestDateValidatorTest extends TestCase
         $result = $this->validator->validateBatch($invoices);
 
         $this->assertFalse($result['has_errors']);
+        $this->assertSame('2026-05-20', $result['valid_manifests'][0]['fecha_operativa']);
+    }
+
+    public function test_validate_batch_accepts_mixed_dates_by_default(): void
+    {
+        // Requerimiento Jaremar: un manifiesto puede mezclar fechas.
+        $invoices = [
+            $this->invoice('M001', '2026-05-20', 'F-001'),
+            $this->invoice('M001', '2026-05-13', 'F-002'),
+            $this->invoice('M001', '2026-05-19', 'F-003'),
+        ];
+
+        $result = $this->validator->validateBatch($invoices);
+
+        $this->assertFalse($result['has_errors']);
         $this->assertCount(1, $result['valid_manifests']);
-        $this->assertSame('2026-05-13', $result['valid_manifests'][0]['fecha_operativa']);
+        // Sigue siendo un solo manifiesto, fechado al día de carga.
+        $this->assertSame('2026-05-20', $result['valid_manifests'][0]['fecha_operativa']);
+        $this->assertSame(3, $result['valid_manifests'][0]['total_facturas']);
     }
 
     public function test_validate_batch_accepts_exactly_at_backdate_limit(): void
     {
         // Hoy = 2026-05-20. Hace exactamente 30 días = 2026-04-20.
-        // Debe aceptarse (>= no es >).
+        // Debe aceptarse (límite es >, no >=).
         $invoices = [
             $this->invoice('M001', '2026-04-20', 'F-001'),
         ];
@@ -234,65 +253,50 @@ class ManifestDateValidatorTest extends TestCase
         $this->assertFalse($result['has_errors']);
     }
 
-    public function test_validate_batch_rejects_mixed_dates_within_same_manifest(): void
+    public function test_validate_batch_rejects_when_any_invoice_is_future(): void
     {
+        // Una factura futura NO en primera posición debe rechazar el
+        // manifiesto completo (V2 por factura).
         $invoices = [
-            $this->invoice('M001', '2026-05-20', 'F-001'),
-            $this->invoice('M001', '2026-05-19', 'F-002'),
+            $this->invoice('M001', '2026-05-19', 'F-001'), // válida
+            $this->invoice('M001', '2026-05-21', 'F-002'), // futura
         ];
 
         $result = $this->validator->validateBatch($invoices);
 
         $this->assertTrue($result['has_errors']);
-        $this->assertCount(1, $result['invalid_manifests']);
-
         $invalid = $result['invalid_manifests'][0];
-        $this->assertSame('M001', $invalid['manifiesto']);
-        $this->assertSame('FECHAS_MEZCLADAS', $invalid['motivo']);
-        $this->assertContains('2026-05-20', $invalid['detalle']['fechas_encontradas']);
-        $this->assertContains('2026-05-19', $invalid['detalle']['fechas_encontradas']);
+        $this->assertSame('FECHA_FACTURA_FUTURA', $invalid['motivo']);
+        $this->assertSame('2026-05-20', $invalid['detalle']['hoy_servidor']);
+        $this->assertArrayHasKey('F-002', $invalid['detalle']['facturas_futuras']);
     }
 
-    public function test_validate_batch_rejects_future_dated_manifest(): void
+    public function test_validate_batch_rejects_whole_manifest_when_any_invoice_too_old(): void
     {
+        // Hoy = 2026-05-20. Una factura a 45 días (2026-04-05) rechaza el
+        // manifiesto COMPLETO aunque las demás sean válidas (atómico).
         $invoices = [
-            // Hoy = 2026-05-20. Mañana = 2026-05-21 → futuro.
-            $this->invoice('M001', '2026-05-21', 'F-001'),
+            $this->invoice('M001', '2026-05-20', 'F-001'), // válida
+            $this->invoice('M001', '2026-04-05', 'F-002'), // 45 días
         ];
 
         $result = $this->validator->validateBatch($invoices);
 
         $this->assertTrue($result['has_errors']);
-        $this->assertSame('FECHA_FACTURA_FUTURA', $result['invalid_manifests'][0]['motivo']);
-        $this->assertSame('2026-05-21', $result['invalid_manifests'][0]['detalle']['fecha_factura']);
-        $this->assertSame('2026-05-20', $result['invalid_manifests'][0]['detalle']['hoy_servidor']);
-    }
-
-    public function test_validate_batch_rejects_manifest_older_than_backdate_limit(): void
-    {
-        // Hoy = 2026-05-20. Hace 45 días = 2026-04-05. Supera 30 → rechazo.
-        $invoices = [
-            $this->invoice('M001', '2026-04-05', 'F-001'),
-        ];
-
-        $result = $this->validator->validateBatch($invoices);
-
-        $this->assertTrue($result['has_errors']);
-        $this->assertSame('FECHA_FACTURA_DEMASIADO_ANTIGUA', $result['invalid_manifests'][0]['motivo']);
-        $this->assertSame(45, $result['invalid_manifests'][0]['detalle']['dias_antiguedad']);
-        $this->assertSame(30, $result['invalid_manifests'][0]['detalle']['limite_dias']);
+        $this->assertEmpty($result['valid_manifests']);
+        $invalid = $result['invalid_manifests'][0];
+        $this->assertSame('FECHA_FACTURA_DEMASIADO_ANTIGUA', $invalid['motivo']);
+        $this->assertSame(30, $invalid['detalle']['limite_dias']);
+        $this->assertSame(45, $invalid['detalle']['facturas_antiguas']['F-002']['dias']);
     }
 
     public function test_validate_batch_reports_each_invalid_manifest_separately(): void
     {
-        // Batch mixto: M001 mezclado, M002 futuro, M003 válido.
+        // M001 futuro, M002 demasiado antiguo, M003 válido.
         $invoices = [
-            $this->invoice('M001', '2026-05-20', 'F-001'),
-            $this->invoice('M001', '2026-05-19', 'F-002'),
-
-            $this->invoice('M002', '2026-05-25', 'F-003'),
-
-            $this->invoice('M003', '2026-05-20', 'F-004'),
+            $this->invoice('M001', '2026-05-25', 'F-001'),  // futuro
+            $this->invoice('M002', '2026-04-05', 'F-002'),  // 45 días
+            $this->invoice('M003', '2026-05-20', 'F-003'),  // válido
         ];
 
         $result = $this->validator->validateBatch($invoices);
@@ -302,8 +306,8 @@ class ManifestDateValidatorTest extends TestCase
         $this->assertCount(1, $result['valid_manifests']);
 
         $motivos = array_column($result['invalid_manifests'], 'motivo');
-        $this->assertContains('FECHAS_MEZCLADAS', $motivos);
         $this->assertContains('FECHA_FACTURA_FUTURA', $motivos);
+        $this->assertContains('FECHA_FACTURA_DEMASIADO_ANTIGUA', $motivos);
         $this->assertSame('M003', $result['valid_manifests'][0]['manifiesto']);
     }
 
@@ -333,10 +337,12 @@ class ManifestDateValidatorTest extends TestCase
         $this->assertSame(7, $result['invalid_manifests'][0]['detalle']['limite_dias']);
     }
 
-    public function test_validate_batch_respects_reject_mixed_dates_disabled(): void
+    // ── Modo legacy detrás de flags (reversibilidad) ───────────────────
+
+    public function test_validate_batch_rejects_mixed_when_reject_mixed_dates_enabled(): void
     {
-        // Si desactivamos la regla de Isac, las mezclas se aceptan.
-        config(['manifests.dates.reject_mixed_dates' => false]);
+        // Modo estricto opcional: un manifiesto = un solo día.
+        config(['manifests.dates.reject_mixed_dates' => true]);
 
         $invoices = [
             $this->invoice('M001', '2026-05-20', 'F-001'),
@@ -345,9 +351,26 @@ class ManifestDateValidatorTest extends TestCase
 
         $result = $this->validator->validateBatch($invoices);
 
+        $this->assertTrue($result['has_errors']);
+        $invalid = $result['invalid_manifests'][0];
+        $this->assertSame('FECHAS_MEZCLADAS', $invalid['motivo']);
+        $this->assertContains('2026-05-20', $invalid['detalle']['fechas_encontradas']);
+        $this->assertContains('2026-05-19', $invalid['detalle']['fechas_encontradas']);
+    }
+
+    public function test_validate_batch_derives_invoice_date_when_source_is_invoice(): void
+    {
+        // Modo legacy V4: la fecha del manifiesto se deriva de la FechaFactura.
+        config(['manifests.dates.manifest_date_source' => 'invoice']);
+
+        $invoices = [
+            $this->invoice('M001', '2026-05-13', 'F-001'),
+        ];
+
+        $result = $this->validator->validateBatch($invoices);
+
         $this->assertFalse($result['has_errors']);
-        // Con mezcla aceptada, V4 usa MAX como fallback → fecha más reciente.
-        $this->assertSame('2026-05-20', $result['valid_manifests'][0]['fecha_operativa']);
+        $this->assertSame('2026-05-13', $result['valid_manifests'][0]['fecha_operativa']);
     }
 
     public function test_validate_batch_handles_empty_input_without_error(): void
@@ -362,14 +385,14 @@ class ManifestDateValidatorTest extends TestCase
     public function test_validate_batch_reports_unparseable_fecha_as_invalid(): void
     {
         $invoices = [
-            // FechaFactura no parseable + sin mezcla (una sola factura).
-            // No debe disparar V1 (mixed) pero sí caer en FECHA_FACTURA_INVALIDA.
             ['NumeroManifiesto' => 'M001', 'FechaFactura' => 'fecha basura', 'Nfactura' => 'F-001'],
         ];
 
         $result = $this->validator->validateBatch($invoices);
 
         $this->assertTrue($result['has_errors']);
-        $this->assertSame('FECHA_FACTURA_INVALIDA', $result['invalid_manifests'][0]['motivo']);
+        $invalid = $result['invalid_manifests'][0];
+        $this->assertSame('FECHA_FACTURA_INVALIDA', $invalid['motivo']);
+        $this->assertContains('F-001', $invalid['detalle']['facturas_afectadas']);
     }
 }

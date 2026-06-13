@@ -10,24 +10,30 @@ use Carbon\CarbonImmutable;
  *
  * Reglas (configurables vía config/manifests.php):
  *
- *   V1 — Homogeneidad: todas las facturas de un mismo NumeroManifiesto
- *        deben tener la misma FechaFactura (en TZ Honduras). Si Jaremar
- *        manda mezclado, eso indica un error de origen — el manifiesto
- *        debe representar un único día operativo.
+ *   V1 — Homogeneidad (OPCIONAL, default OFF): si reject_mixed_dates=true,
+ *        todas las facturas de un mismo NumeroManifiesto deben compartir
+ *        FechaFactura. Por requerimiento de Jaremar el default es permitir
+ *        fechas mezcladas: un manifiesto es un "lote de carga", no un único
+ *        día operativo.
  *
- *   V2 — No futura: la FechaFactura nunca puede ser posterior a "hoy"
- *        en TZ Honduras. Facturación al futuro no existe legítimamente.
+ *   V2 — No futura (POR FACTURA): ninguna FechaFactura puede ser posterior
+ *        a "hoy" en TZ Honduras. Facturación al futuro no existe.
  *
- *   V3 — No demasiado antigua: la FechaFactura no puede tener más de
- *        max_backdate_days (default 30) respecto a "hoy". Coincide con
- *        el ciclo de declaración mensual de ISV en Honduras — facturas
- *        más viejas requieren autorización manual de admin por riesgo
- *        regulatorio (periodos fiscales ya declarados al SAR).
+ *   V3 — No demasiado antigua (POR FACTURA): ninguna FechaFactura puede
+ *        tener más de max_backdate_days (default 30) respecto a "hoy".
+ *        Coincide con el ciclo de declaración mensual de ISV en Honduras.
+ *        Si UNA sola factura excede el límite, se rechaza el manifiesto
+ *        COMPLETO (atómico) para forzar la corrección en origen.
  *
- *   V4 — Derivación: el manifests.date se deriva de la FechaFactura del
- *        primer invoice del grupo (ya validado homogéneo). Reemplaza el
- *        antiguo now() que producía desfase entre fecha operativa real
- *        y fecha de captura.
+ *   V4 — Fecha del manifiesto (manifest_date_source): por default 'upload'
+ *        → manifests.date = día de carga (hoy). Con 'invoice' se deriva de
+ *        la FechaFactura del grupo (modo histórico, requiere homogeneidad).
+ *        En ambos modos, invoice.invoice_date conserva la fecha real de
+ *        cada factura — solo cambia la fecha de agrupación del manifiesto.
+ *
+ * Con fechas mezcladas permitidas, V2/V3 se evalúan factura por factura
+ * (no solo la primera), de modo que una factura inválida en cualquier
+ * posición rechaza el manifiesto.
  *
  * El servicio es sin estado. Recibe arrays, retorna arrays — no toca BD
  * ni dispara side effects. Esto lo hace 100% testeable como unit y
@@ -75,10 +81,10 @@ class ManifestDateValidator
                 $manifestInvoices
             );
 
-            // V1 — Homogeneidad: la regla más temprana de detectar.
-            // Si hay mezcla, ni siquiera tiene sentido evaluar V2/V3 porque
-            // no hay una "fecha del manifiesto" coherente que validar.
-            if (config('manifests.dates.reject_mixed_dates', true)) {
+            // V1 — Homogeneidad: OPCIONAL. Solo se exige si el negocio
+            // activa reject_mixed_dates. Por default Jaremar puede mezclar
+            // fechas en un mismo manifiesto, así que se omite.
+            if (config('manifests.dates.reject_mixed_dates', false)) {
                 $mixed = $this->findMixedDates($manifestInvoices);
 
                 if (! empty($mixed)) {
@@ -98,72 +104,25 @@ class ManifestDateValidator
                 }
             }
 
-            // Todas las fechas son iguales — tomamos la primera como referencia.
-            $referenceDate = $this->normalizeToDate(
-                $manifestInvoices[0]['FechaFactura'] ?? null
-            );
+            // V2/V3 — Validación POR FACTURA (formato, no futura, no muy
+            // antigua). Una sola factura inválida rechaza el manifiesto
+            // completo (atómico) para forzar corrección en origen.
+            $violation = $this->findDateViolation($manifestInvoices);
 
-            // Si la fecha no parsea, es error de schema (ya cubierto por
-            // ApiInvoiceValidatorService) pero protegemos por defensa.
-            if ($referenceDate === null) {
-                $invalid[] = [
-                    'manifiesto' => $manifestNumber,
-                    'motivo' => 'FECHA_FACTURA_INVALIDA',
-                    'detalle' => [
-                        'instruccion' => 'La FechaFactura no se pudo interpretar como una fecha válida.',
-                    ],
-                    'total_facturas' => count($facturas),
-                    'facturas' => $facturas,
-                ];
+            if ($violation !== null) {
+                $invalid[] = array_merge(
+                    ['manifiesto' => $manifestNumber],
+                    $violation,
+                    ['total_facturas' => count($facturas), 'facturas' => $facturas],
+                );
 
                 continue;
             }
 
-            // V2 — No futura.
-            if (! config('manifests.dates.allow_future', false)) {
-                if ($this->isFuture($referenceDate)) {
-                    $invalid[] = [
-                        'manifiesto' => $manifestNumber,
-                        'motivo' => 'FECHA_FACTURA_FUTURA',
-                        'detalle' => [
-                            'fecha_factura' => $referenceDate,
-                            'hoy_servidor' => $this->today(),
-                            'instruccion' => 'La FechaFactura no puede ser posterior a la fecha actual del servidor (Honduras).',
-                        ],
-                        'total_facturas' => count($facturas),
-                        'facturas' => $facturas,
-                    ];
-
-                    continue;
-                }
-            }
-
-            // V3 — No demasiado antigua.
-            $maxBackdate = (int) config('manifests.dates.max_backdate_days', 30);
-            $daysOld = $this->daysBackdated($referenceDate);
-
-            if ($daysOld > $maxBackdate) {
-                $invalid[] = [
-                    'manifiesto' => $manifestNumber,
-                    'motivo' => 'FECHA_FACTURA_DEMASIADO_ANTIGUA',
-                    'detalle' => [
-                        'fecha_factura' => $referenceDate,
-                        'hoy_servidor' => $this->today(),
-                        'dias_antiguedad' => $daysOld,
-                        'limite_dias' => $maxBackdate,
-                        'instruccion' => "La FechaFactura tiene {$daysOld} días de antigüedad y supera el límite de {$maxBackdate} días. Contacte a Hosana para cargar este lote desde el panel administrativo.",
-                    ],
-                    'total_facturas' => count($facturas),
-                    'facturas' => $facturas,
-                ];
-
-                continue;
-            }
-
-            // Pasó las 3 validaciones — manifiesto válido.
+            // V4 — Fecha del manifiesto según config (default: día de carga).
             $valid[] = [
                 'manifiesto' => $manifestNumber,
-                'fecha_operativa' => $referenceDate,
+                'fecha_operativa' => $this->resolveManifestOperationalDate($manifestInvoices),
                 'total_facturas' => count($facturas),
             ];
         }
@@ -173,6 +132,102 @@ class ManifestDateValidator
             'invalid_manifests' => $invalid,
             'valid_manifests' => $valid,
         ];
+    }
+
+    /**
+     * V2/V3 por factura. Revisa TODAS las facturas del grupo y devuelve la
+     * primera violación por prioridad (formato → futura → demasiado antigua),
+     * con la lista de facturas afectadas. Devuelve null si todas son válidas.
+     *
+     * El rechazo es a nivel manifiesto: basta una factura mala para invalidar
+     * el grupo completo.
+     *
+     * @return array{motivo: string, detalle: array}|null
+     */
+    public function findDateViolation(array $manifestInvoices): ?array
+    {
+        $allowFuture = (bool) config('manifests.dates.allow_future', false);
+        $maxBackdate = (int) config('manifests.dates.max_backdate_days', 30);
+
+        $invalidFormat = [];
+        $future = [];
+        $tooOld = [];
+
+        foreach ($manifestInvoices as $invoice) {
+            $factura = (string) ($invoice['Nfactura'] ?? '(sin Nfactura)');
+            $date = $this->normalizeToDate($invoice['FechaFactura'] ?? null);
+
+            if ($date === null) {
+                $invalidFormat[] = $factura;
+
+                continue;
+            }
+
+            if (! $allowFuture && $this->isFuture($date)) {
+                $future[$factura] = $date;
+
+                continue;
+            }
+
+            $daysOld = $this->daysBackdated($date);
+            if ($daysOld > $maxBackdate) {
+                $tooOld[$factura] = ['fecha' => $date, 'dias' => $daysOld];
+            }
+        }
+
+        if (! empty($invalidFormat)) {
+            return [
+                'motivo' => 'FECHA_FACTURA_INVALIDA',
+                'detalle' => [
+                    'facturas_afectadas' => array_values($invalidFormat),
+                    'instruccion' => 'Una o más FechaFactura no se pudieron interpretar como fecha válida.',
+                ],
+            ];
+        }
+
+        if (! empty($future)) {
+            return [
+                'motivo' => 'FECHA_FACTURA_FUTURA',
+                'detalle' => [
+                    'hoy_servidor' => $this->today(),
+                    'facturas_futuras' => $future,
+                    'instruccion' => 'Una o más facturas tienen FechaFactura posterior a hoy (Honduras). Corrija el origen.',
+                ],
+            ];
+        }
+
+        if (! empty($tooOld)) {
+            return [
+                'motivo' => 'FECHA_FACTURA_DEMASIADO_ANTIGUA',
+                'detalle' => [
+                    'hoy_servidor' => $this->today(),
+                    'limite_dias' => $maxBackdate,
+                    'facturas_antiguas' => $tooOld,
+                    'instruccion' => "Una o más facturas superan el límite de {$maxBackdate} días de antigüedad. El manifiesto se rechaza completo; corrija el origen o cargue desde el panel administrativo.",
+                ],
+            ];
+        }
+
+        return null;
+    }
+
+    /**
+     * V4 — Resuelve la fecha del manifiesto según config:
+     *   'upload'  (default) → hoy (día de carga, TZ Honduras).
+     *   'invoice'           → derivada de la FechaFactura del grupo (legacy).
+     *
+     * En modo 'upload' no importa la fecha de las facturas: el manifiesto es
+     * el lote del día en que se cargó. invoice.invoice_date no se altera.
+     */
+    public function resolveManifestOperationalDate(array $manifestInvoices): ?string
+    {
+        $source = (string) config('manifests.dates.manifest_date_source', 'upload');
+
+        if ($source === 'invoice') {
+            return $this->resolveManifestDate($manifestInvoices);
+        }
+
+        return $this->today();
     }
 
     /**

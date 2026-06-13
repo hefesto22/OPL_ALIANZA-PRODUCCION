@@ -84,16 +84,24 @@ class ManifestApiController extends Controller
         // contra data corrupta.
         //
         // Reglas (configurables en config/manifests.php):
-        //   V1 — FECHAS_MEZCLADAS:           todas las facturas del mismo
-        //                                    NumeroManifiesto deben tener
-        //                                    la misma FechaFactura.
-        //   V2 — FECHA_FACTURA_FUTURA:       FechaFactura <= hoy en TZ Honduras.
-        //   V3 — FECHA_FACTURA_DEMASIADO_   FechaFactura no puede tener más
-        //        ANTIGUA                     de N días de antigüedad (default 30).
+        //   V1 — FECHAS_MEZCLADAS:           OPCIONAL (default OFF). Un
+        //                                    manifiesto puede traer facturas
+        //                                    de varias fechas salvo que se
+        //                                    active reject_mixed_dates.
+        //   V2 — FECHA_FACTURA_FUTURA:       ninguna FechaFactura > hoy (TZ HN).
+        //   V3 — FECHA_FACTURA_DEMASIADO_   ninguna FechaFactura con más de
+        //        ANTIGUA                     N días de antigüedad (default 30).
+        //                                    V2/V3 se evalúan POR FACTURA; una
+        //                                    sola mala rechaza el manifiesto.
         $batchDateValidation = $this->dateValidator->validateBatch($invoices);
 
         if ($batchDateValidation['has_errors']) {
-            $this->notifyAdminsForDateValidation($batchDateValidation['invalid_manifests']);
+            // Los rechazos por fecha son errores de datos en ORIGEN (Jaremar),
+            // no acciones de Hosana. Por eso la notificación in-app es opcional
+            // (default OFF). El log y la respuesta del API siempre quedan.
+            if (config('manifests.dates.notify_admins_on_date_rejection', false)) {
+                $this->notifyAdminsForDateValidation($batchDateValidation['invalid_manifests']);
+            }
 
             Log::warning('API Jaremar: batch rechazado por validación de fechas (V1/V2/V3).', [
                 'ip' => $request->ip(),
@@ -111,7 +119,7 @@ class ManifestApiController extends Controller
                 'success' => false,
                 'message' => 'Batch rechazado por errores de fecha en uno o más manifiestos.',
                 'motivo' => 'FECHAS_INVALIDAS',
-                'accion_requerida' => 'Revise los manifiestos rechazados. Cada manifiesto debe contener facturas de una única FechaFactura, no futura, y dentro del rango configurado de antigüedad.',
+                'accion_requerida' => 'Revise los manifiestos rechazados. Ninguna FechaFactura puede ser futura ni superar el rango configurado de antigüedad; una sola factura inválida rechaza el manifiesto completo.',
                 'resumen' => [
                     'total_recibidas' => count($invoices),
                     'total_rechazadas' => $totalInvalid,
@@ -443,13 +451,14 @@ class ManifestApiController extends Controller
                     'con facturas de fechas distintas: '.
                     implode(', ', $invalid['detalle']['fechas_encontradas'] ?? []).
                     ". Total {$total} factura(s) afectada(s).",
-                'FECHA_FACTURA_FUTURA' => "El manifiesto #{$manifiesto} tiene FechaFactura ".
-                    "{$invalid['detalle']['fecha_factura']} (posterior a hoy ".
-                    "{$invalid['detalle']['hoy_servidor']}). {$total} factura(s).",
-                'FECHA_FACTURA_DEMASIADO_ANTIGUA' => "El manifiesto #{$manifiesto} tiene ".
-                    "{$invalid['detalle']['dias_antiguedad']} días de antigüedad ".
-                    "(límite: {$invalid['detalle']['limite_dias']}). ".
-                    "Requiere carga manual desde el panel. {$total} factura(s).",
+                'FECHA_FACTURA_FUTURA' => "El manifiesto #{$manifiesto} tiene factura(s) con ".
+                    "FechaFactura posterior a hoy ({$invalid['detalle']['hoy_servidor']}): ".
+                    implode(', ', array_keys($invalid['detalle']['facturas_futuras'] ?? [])).
+                    ". {$total} factura(s) en el manifiesto.",
+                'FECHA_FACTURA_DEMASIADO_ANTIGUA' => "El manifiesto #{$manifiesto} tiene factura(s) que ".
+                    "superan el límite de {$invalid['detalle']['limite_dias']} días de antigüedad: ".
+                    implode(', ', array_keys($invalid['detalle']['facturas_antiguas'] ?? [])).
+                    ". Requiere carga manual desde el panel. {$total} factura(s) en el manifiesto.",
                 default => "El manifiesto #{$manifiesto} fue rechazado por validación de fecha. {$total} factura(s).",
             };
 

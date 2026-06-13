@@ -280,20 +280,18 @@ class ApiInvoiceImporterService
 
         // ── 3. Manifiesto no existe → crearlo ─────────────────────────
         //
-        // La fecha operativa del manifiesto (manifests.date) se DERIVA de
-        // la FechaFactura del grupo, no de now(). Esto resuelve el desfase
-        // histórico donde un manifiesto subido tarde quedaba marcado con
-        // la fecha de captura en vez de la fecha real de operación.
+        // La fecha del manifiesto (manifests.date) la resuelve el validador
+        // según config('manifests.dates.manifest_date_source'):
+        //   - 'upload' (default) → día de carga (hoy). El manifiesto es el
+        //      lote del día; cada factura conserva su invoice_date real.
+        //   - 'invoice'          → derivada de la FechaFactura (modo legacy).
         //
         // Para cuando llegamos acá, las facturas YA pasaron por
-        // ManifestDateValidator en el controller — V1/V2/V3 garantizan
-        // que el grupo es homogéneo, no futuro y dentro de rango. Por eso
-        // resolveManifestDate() acá es siempre seguro.
+        // ManifestDateValidator en el controller (V2/V3 por factura: ninguna
+        // futura ni más antigua que el límite), así que la fecha es segura.
         if (! $manifest) {
-            $operationDate = $this->dateValidator->resolveManifestDate($invoices)
-                ?? now()->toDateString(); // fallback defensivo si el grupo
-            // viniera sin fechas parseables
-            // (no debería ocurrir en producción).
+            $operationDate = $this->dateValidator->resolveManifestOperationalDate($invoices)
+                ?? now()->toDateString(); // fallback defensivo
 
             $manifest = $this->createManifest($manifestNumber, $operationDate);
         }

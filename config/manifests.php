@@ -55,15 +55,45 @@ return [
 
         // ── reject_mixed_dates ──────────────────────────────────────────
         //
-        // Regla de negocio operacional: un manifiesto representa el trabajo
-        // de un único día de despacho. Si un mismo NumeroManifiesto trae
-        // facturas con FechaFactura de días distintos, eso indica un error
-        // en origen (Jaremar consolidó dos lotes en uno).
+        // Si está ACTIVO, un manifiesto debe contener facturas de una sola
+        // FechaFactura; mezclar dos días en un mismo NumeroManifiesto se
+        // rechaza con FECHAS_MEZCLADAS.
         //
-        // Cuando está activo (recomendado), el batch se rechaza completo y
-        // Jaremar debe separar el manifiesto en lotes por fecha.
+        // DEFAULT: false. Por requerimiento de Jaremar, un manifiesto puede
+        // traer facturas de varias fechas (lote de carga, no día operativo
+        // único). Cada factura conserva su propia invoice_date; lo que se
+        // valida por factura es V2 (no futura) y V3 (no demasiado antigua).
+        // Se deja como flag para poder volver al modo estricto sin deploy.
         //
-        'reject_mixed_dates' => filter_var(env('MANIFESTS_REJECT_MIXED_DATES', true), FILTER_VALIDATE_BOOLEAN),
+        'reject_mixed_dates' => filter_var(env('MANIFESTS_REJECT_MIXED_DATES', false), FILTER_VALIDATE_BOOLEAN),
+
+        // ── manifest_date_source ────────────────────────────────────────
+        //
+        // De dónde sale manifests.date:
+        //   'upload'  (DEFAULT) → el día en que se sube el manifiesto (hoy,
+        //              TZ Honduras). El manifiesto es el "lote de carga"; las
+        //              facturas conservan su FechaFactura real individual.
+        //   'invoice'          → se deriva de la FechaFactura del grupo
+        //              (modo histórico V4; requiere homogeneidad para ser
+        //              coherente, es decir reject_mixed_dates=true).
+        //
+        // Cambiar de fuente NO altera invoice.invoice_date — solo la fecha
+        // del manifiesto usada para agrupar/reportar.
+        //
+        'manifest_date_source' => env('MANIFESTS_DATE_SOURCE', 'upload'),
+
+        // ── notify_admins_on_date_rejection ─────────────────────────────
+        //
+        // Si los rechazos por fecha (V1/V2/V3) generan notificación in-app a
+        // los admins de Hosana.
+        //
+        // DEFAULT: false. Un rechazo por fecha es un error de datos en ORIGEN
+        // (Jaremar), no una acción que requiera a Hosana — notificar generaría
+        // ruido. El rechazo SIEMPRE queda registrado en el log y en la
+        // respuesta del API; solo se omite la notificación in-app. Poner true
+        // si se quiere visibilidad in-app de estos rechazos.
+        //
+        'notify_admins_on_date_rejection' => filter_var(env('MANIFESTS_NOTIFY_ADMINS_ON_DATE_REJECTION', false), FILTER_VALIDATE_BOOLEAN),
 
     ],
 
