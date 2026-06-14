@@ -101,8 +101,7 @@ class ReturnService
                 $total += round(($b * $cf + $u) * $up, 2);
             }
 
-            $pendingAmount = $this->getPendingAmount($invoice);
-            $type = (abs($total - $pendingAmount) < 0.01) ? 'total' : 'partial';
+            $type = $this->determineReturnType($invoice->lines, $returnedByLine, $linesData);
 
             $now = now();
 
@@ -316,15 +315,10 @@ class ReturnService
                 $newTotal += $lineTotal;
             }
 
-            // Al editar, el type puede cambiar: recalculamos a partir del
-            // nuevo total vs el pendiente (excluyendo esta devolución).
-            // pendingExcludingThis = total_factura - devoluciones_otras
-            $otherReturnsTotal = $invoice->returns()
-                ->where('id', '!=', $return->id)
-                ->whereIn('status', ['approved', 'pending'])
-                ->sum('total');
-            $pendingExcludingThis = max(0, (float) $invoice->total - (float) $otherReturnsTotal);
-            $newType = (abs($newTotal - $pendingExcludingThis) < 0.01) ? 'total' : 'partial';
+            // Al editar, el type puede cambiar: se recalcula por CANTIDAD.
+            // $returnedByLine ya excluye ESTA devolución (getReturnedQuantitiesForLinesExcluding),
+            // así que "disponible" = total de la factura menos las OTRAS devoluciones.
+            $newType = $this->determineReturnType($invoice->lines, $returnedByLine, $linesData);
 
             $return->update([
                 'total' => $newTotal,
@@ -439,6 +433,45 @@ class ReturnService
             ->sum('total');
 
         return max(0, (float) $invoice->total - (float) $totalReturned);
+    }
+
+    /**
+     * Determina si una devolución es 'total' o 'partial' por CANTIDAD.
+     *
+     * 'total' = la devolución consume TODA la cantidad disponible de la factura
+     * (no queda nada por devolver) — el mismo criterio con el que la factura pasa
+     * a estado 'returned' (ver hasAvailableLines/updateInvoiceStatus).
+     *
+     * Se compara en cantidad (fracciones), NO en importe: el total de la
+     * devolución se calcula con price_min_sale (SIN ISV) mientras invoice.total
+     * lo INCLUYE, así que comparar importes hacía que las facturas gravadas casi
+     * nunca se marcaran 'total'.
+     *
+     * @param  \Illuminate\Support\Collection<int, \App\Models\InvoiceLine>  $invoiceLines
+     * @param  array<int, float>  $returnedByLine  [invoice_line_id => fracciones ya devueltas por otras devoluciones]
+     * @param  array<int, array>  $linesData  Líneas solicitadas en esta devolución
+     */
+    private function determineReturnType($invoiceLines, array $returnedByLine, array $linesData): string
+    {
+        $available = 0.0;
+        foreach ($invoiceLines as $line) {
+            $available += max(0, (float) $line->quantity_fractions - (float) ($returnedByLine[$line->id] ?? 0));
+        }
+
+        $linesById = $invoiceLines->keyBy('id');
+        $requested = 0.0;
+        foreach ($linesData as $lineData) {
+            $lid = $lineData['invoice_line_id'] ?? null;
+            $boxes = (float) ($lineData['quantity_box'] ?? 0);
+            $units = (float) ($lineData['quantity'] ?? 0);
+            if (! $lid || ($boxes <= 0 && $units <= 0)) {
+                continue;
+            }
+            $convFactor = max(1, (float) ($linesById[$lid]?->conversion_factor ?? 1));
+            $requested += ($boxes * $convFactor) + $units;
+        }
+
+        return ($available > 0 && abs($requested - $available) < 0.001) ? 'total' : 'partial';
     }
 
     /**

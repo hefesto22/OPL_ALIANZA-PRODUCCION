@@ -139,6 +139,27 @@ class ReturnServiceTest extends TestCase
         $this->assertEqualsWithDelta(1200.0, (float) $return->total, 0.01);
     }
 
+    public function test_full_return_of_taxed_invoice_is_marked_total(): void
+    {
+        // Factura GRAVADA: invoice.total incluye ISV (1380 = 1200 gravado + 15%),
+        // pero price_min_sale de la línea es SIN impuesto (10). Devolver TODA la
+        // cantidad debe marcar 'total' aunque el importe devuelto (1200, sin ISV)
+        // NO iguale invoice.total (1380, con ISV).
+        //
+        // Regresión: con el criterio viejo (comparar importes) salía 'partial';
+        // con el nuevo (comparar cantidad disponible) sale 'total'.
+        $invoice = $this->makeInvoiceWithLines(boxesPerLine: 10, pricePerUnit: 10.0);
+        $invoice->update(['total' => 1380.00]);
+
+        $return = $this->service->createReturn($this->returnPayload($invoice, boxesToReturn: 10));
+
+        $this->assertSame('total', $return->type);
+
+        // Y la factura queda totalmente devuelta (mismo criterio de cantidad).
+        $invoice->refresh();
+        $this->assertSame('returned', $invoice->status);
+    }
+
     public function test_updates_invoice_status_to_partial_return(): void
     {
         $invoice = $this->makeInvoiceWithLines();
