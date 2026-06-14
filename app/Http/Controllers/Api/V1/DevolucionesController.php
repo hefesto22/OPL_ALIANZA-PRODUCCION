@@ -40,7 +40,7 @@ class DevolucionesController extends Controller
      * hace overflow a una fecha cualquiera. Para detectarlo re-formateamos el
      * parseo y lo comparamos con el string original — si no coincide, era basura.
      *
-     * @return string|null  Y-m-d si es válida; null si el formato es inválido.
+     * @return string|null Y-m-d si es válida; null si el formato es inválido.
      */
     private function parsearFecha(string $valor): ?string
     {
