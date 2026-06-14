@@ -150,7 +150,10 @@ jobs:
         run: npm ci
 
       - name: npm audit — JS dependency advisories
-        # --audit-level=high: ignora "low" y "moderate". Estos generan mucho
-        # ruido en dependencias dev (esbuild, vite) sin afectar producción.
-        # Cuando el equipo quiera endurecer, bajar a "moderate".
-        run: npm audit --audit-level=high
+        # --omit=dev: audita SOLO dependencias de producción, igual que el
+        # composer audit usa --no-dev. Las herramientas de build (vite, esbuild,
+        # tailwind, concurrently, ws) son dev-only — nunca corren en el servidor,
+        # que sirve assets ya compilados — así que sus advisories no deben
+        # bloquear el gate. --audit-level=high mantiene el umbral para lo que sí
+        # va a producción. Limpiar el dev tooling es mantenimiento aparte, no gate.
+        run: npm audit --omit=dev --audit-level=high
