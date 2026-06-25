@@ -58,7 +58,10 @@ class InvoicesRelationManager extends RelationManager
                     ->label('Num. Ruta')
                     ->searchable()
                     ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: false),
+                    // Oculta por defecto para que el botón de acción quepa sin
+                    // scroll horizontal. El usuario puede activarla con el
+                    // selector de columnas (⊞).
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 TextColumn::make('invoice_date')
                     ->label('Fecha Factura')
@@ -78,7 +81,8 @@ class InvoicesRelationManager extends RelationManager
                     ->label('Cód. Cliente')
                     ->searchable()
                     ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: false),
+                    // Oculta por defecto (vista compacta) — activable con ⊞.
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 TextColumn::make('client_name')
                     ->label('Cliente')
@@ -91,8 +95,8 @@ class InvoicesRelationManager extends RelationManager
                     ->label('Dirección')
                     ->limit(35)
                     ->tooltip(fn ($record) => $record->address)
-                    ->visibleFrom('xl')
-                    ->toggleable(isToggledHiddenByDefault: false),
+                    // Oculta por defecto (vista compacta) — activable con ⊞.
+                    ->toggleable(isToggledHiddenByDefault: true),
 
                 TextColumn::make('total')
                     ->label('Total')
