@@ -22,6 +22,20 @@ class InvoiceLineFactory extends Factory
 {
     protected $model = InvoiceLine::class;
 
+    /**
+     * Secuencia global para line_number en tests.
+     *
+     * Garantiza unicidad sobre la constraint `(invoice_id, line_number)`
+     * cuando un test crea varias líneas para la MISMA factura sin fijar el
+     * número explícitamente. Antes se usaba fake()->numberBetween(1, 50),
+     * que colisionaba por azar (UniqueConstraintViolationException
+     * intermitente, p.ej. PrintInvoicesControllerTest con 4 líneas por
+     * factura). Un contador incremental nunca repite, así que la constraint
+     * siempre se satisface. Los tests que necesiten un número específico
+     * siguen pudiendo sobrescribir 'line_number' vía create([...]).
+     */
+    protected static int $lineNumberSequence = 0;
+
     public function definition(): array
     {
         $boxes = 10;
@@ -34,7 +48,7 @@ class InvoiceLineFactory extends Factory
             'invoice_id' => Invoice::factory(),
             'jaremar_line_id' => fake()->numerify('L####'),
             'invoice_jaremar_id' => fake()->numberBetween(1, 99999),
-            'line_number' => fake()->numberBetween(1, 50),
+            'line_number' => ++static::$lineNumberSequence,
             'product_id' => fake()->bothify('PRD###'),
             'product_description' => fake()->words(3, true),
             'product_type' => 'A',
