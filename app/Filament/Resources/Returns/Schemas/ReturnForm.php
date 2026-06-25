@@ -45,7 +45,7 @@ class ReturnForm
                         $q->where('invoice_number', 'like', "%{$search}%")
                             ->orWhere('client_name', 'like', "%{$search}%");
                     })
-                    ->when($user->isWarehouseUser(), fn ($q) => $q->where('warehouse_id', $user->warehouse_id)
+                    ->when($user->isWarehouseUser(), fn ($q) => $q->whereIn('warehouse_id', $user->warehouseIds())
                     )
                     ->whereIn('status', ['imported', 'partial_return'])
                     ->limit(20)

@@ -55,7 +55,7 @@ class ExportMultiTenantTest extends TestCase
         $oacManifest = Manifest::factory()->create(['warehouse_id' => $this->oac->id]);
         $oasManifest = Manifest::factory()->create(['warehouse_id' => $this->oas->id]);
 
-        $export = new ManifestsExport(warehouseId: $this->oac->id);
+        $export = new ManifestsExport(warehouseIds: [$this->oac->id]);
         $ids = $export->query()->pluck('id')->toArray();
 
         $this->assertContains($oacManifest->id, $ids);
@@ -94,7 +94,7 @@ class ExportMultiTenantTest extends TestCase
             'bank' => 'FICOHSA',
         ]);
 
-        $export = new DepositsExport(warehouseId: $this->oac->id);
+        $export = new DepositsExport(warehouseIds: [$this->oac->id]);
         $ids = $export->query()->pluck('id')->toArray();
 
         $this->assertContains($oacDeposit->id, $ids);
@@ -111,7 +111,7 @@ class ExportMultiTenantTest extends TestCase
         $oacReturn = InvoiceReturn::factory()->create(['warehouse_id' => $this->oac->id]);
         $oasReturn = InvoiceReturn::factory()->create(['warehouse_id' => $this->oas->id]);
 
-        $export = new ReturnsExport(warehouseId: $this->oac->id);
+        $export = new ReturnsExport(warehouseIds: [$this->oac->id]);
         $ids = $export->query()->pluck('id')->toArray();
 
         $this->assertContains($oacReturn->id, $ids);
@@ -146,7 +146,7 @@ class ExportMultiTenantTest extends TestCase
             'line_total' => 1000.00,
         ]);
 
-        $export = new ReturnsDetailExport(warehouseId: $this->oac->id);
+        $export = new ReturnsDetailExport(warehouseIds: [$this->oac->id]);
         $ids = $export->query()->pluck('id')->toArray();
 
         $this->assertContains($oacLine->id, $ids);

@@ -154,7 +154,11 @@ class TestUsersSeeder extends Seeder
     }
 
     /**
-     * Crea (o recupera) un usuario y le asigna el rol indicado.
+     * Crea (o recupera) un usuario, le asigna el rol y lo vincula a su bodega.
+     *
+     * Multi-bodega: la bodega vive en el pivote user_warehouse (no en una
+     * columna). syncWithoutDetaching es idempotente y no quita otras bodegas
+     * que el admin haya asignado manualmente desde el panel.
      *
      * El cast 'password' => 'hashed' del modelo User hashea — pasamos
      * plaintext. assignRole es idempotente (syncWithoutDetaching interno).
@@ -174,13 +178,16 @@ class TestUsersSeeder extends Seeder
                 'password' => $password,
                 'is_active' => true,
                 'email_verified_at' => now(),
-                'warehouse_id' => $warehouseId,
                 'created_by' => $createdBy,
             ]
         );
 
         if (! $user->hasRole($role)) {
             $user->assignRole($role);
+        }
+
+        if ($warehouseId !== null) {
+            $user->warehouses()->syncWithoutDetaching([$warehouseId]);
         }
 
         return $user;

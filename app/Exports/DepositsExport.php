@@ -31,15 +31,15 @@ class DepositsExport implements FromQuery, ShouldAutoSize, ShouldQueue, WithChun
     public string $queue = 'reports';
 
     /**
-     * @param  ?int  $warehouseId  Filtro de bodega vía manifest.warehouse_id.
-     *                             `null` = ver todas las bodegas (super_admin/admin).
-     *                             Los depósitos no tienen warehouse_id propio; por
-     *                             eso filtramos via whereHas('manifest').
+     * @param  array<int, int>  $warehouseIds  Filtro de bodega(s) vía
+     *                                         manifest.warehouse_id. `[]` = todas.
+     *                                         Los depósitos no tienen warehouse_id
+     *                                         propio; filtramos via whereHas('manifest').
      */
     public function __construct(
         private readonly ?string $dateFrom = null,
         private readonly ?string $dateTo = null,
-        private readonly ?int $warehouseId = null,
+        private readonly array $warehouseIds = [],
     ) {}
 
     public function chunkSize(): int
@@ -71,9 +71,9 @@ class DepositsExport implements FromQuery, ShouldAutoSize, ShouldQueue, WithChun
 
         // Multi-tenant: usuarios de bodega solo ven depósitos de manifiestos
         // de su bodega. Via whereHas porque Deposit no tiene warehouse_id.
-        if ($this->warehouseId) {
+        if ($this->warehouseIds !== []) {
             $query->whereHas('manifest', function (Builder $q): void {
-                $q->where('warehouse_id', $this->warehouseId);
+                $q->whereIn('warehouse_id', $this->warehouseIds);
             });
         }
 

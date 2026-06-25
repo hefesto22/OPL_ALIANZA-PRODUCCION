@@ -57,13 +57,13 @@ class ManifestPolicyTest extends TestCase
         $this->oac = Warehouse::factory()->oac()->create();
         $this->oas = Warehouse::factory()->oas()->create();
 
-        $this->globalUser = User::factory()->create(['warehouse_id' => null]);
+        $this->globalUser = User::factory()->create();
         $this->globalUser->assignRole($rolFull);
 
-        $this->oacUser = User::factory()->create(['warehouse_id' => $this->oac->id]);
+        $this->oacUser = User::factory()->forWarehouse($this->oac)->create();
         $this->oacUser->assignRole($rolFull);
 
-        $this->userSinPermisos = User::factory()->create(['warehouse_id' => $this->oac->id]);
+        $this->userSinPermisos = User::factory()->forWarehouse($this->oac)->create();
 
         $this->policy = new ManifestPolicy;
     }
@@ -191,5 +191,30 @@ class ManifestPolicyTest extends TestCase
         // Sin permiso: ni en su propia bodega.
         $this->assertFalse($this->policy->close($this->userSinPermisos, $manifiestoOac));
         $this->assertFalse($this->policy->reopen($this->userSinPermisos, $manifiestoOac));
+    }
+
+    public function test_usuario_multi_bodega_accede_a_manifiestos_de_todas_sus_bodegas(): void
+    {
+        // Caso especial: un encargado que cubre OAC y OAS a la vez.
+        $userMulti = User::factory()->forWarehouse([$this->oac, $this->oas])->create();
+        $userMulti->assignRole('tester-full');
+
+        $manifiestoOac = $this->manifestFor($this->oac);
+        $manifiestoOas = $this->manifestFor($this->oas);
+
+        // Ve y opera AMBAS bodegas...
+        $this->assertTrue($this->policy->view($userMulti, $manifiestoOac));
+        $this->assertTrue($this->policy->view($userMulti, $manifiestoOas));
+        $this->assertTrue($this->policy->close($userMulti, $manifiestoOac));
+        $this->assertTrue($this->policy->close($userMulti, $manifiestoOas));
+
+        // ...pero NO una bodega ajena (OAO).
+        $oao = Warehouse::factory()->create(['code' => 'OAO']);
+        $manifiestoOao = $this->manifestFor($oao);
+        $this->assertFalse($this->policy->view($userMulti, $manifiestoOao));
+
+        // También funciona sobre manifiestos API (warehouse_id null) de cualquiera de sus bodegas.
+        $apiOas = $this->apiManifestWithInvoicesFor($this->oas);
+        $this->assertTrue($this->policy->view($userMulti, $apiOas));
     }
 }

@@ -31,16 +31,17 @@ class ManifestsExport implements FromQuery, ShouldAutoSize, ShouldQueue, WithChu
     public string $queue = 'reports';
 
     /**
-     * @param  ?int  $warehouseId  Filtro de bodega. `null` = ver todas las bodegas
-     *                             (solo super_admin/admin). Se captura en el call
-     *                             site con WarehouseScope::getWarehouseId() porque
-     *                             el job corre en worker sin contexto de Auth.
+     * @param  array<int, int>  $warehouseIds  Filtro de bodega(s). `[]` = todas
+     *                                         (solo super_admin/admin). Se captura
+     *                                         en el call site con
+     *                                         WarehouseScope::getWarehouseIds()
+     *                                         porque el job corre sin Auth.
      */
     public function __construct(
         private readonly ?string $status = null,
         private readonly ?string $dateFrom = null,
         private readonly ?string $dateTo = null,
-        private readonly ?int $warehouseId = null,
+        private readonly array $warehouseIds = [],
     ) {}
 
     public function chunkSize(): int
@@ -65,9 +66,9 @@ class ManifestsExport implements FromQuery, ShouldAutoSize, ShouldQueue, WithChu
             $query->whereDate('date', '<=', $this->dateTo);
         }
 
-        // Multi-tenant: usuarios de bodega solo ven su bodega.
-        if ($this->warehouseId) {
-            $query->where('warehouse_id', $this->warehouseId);
+        // Multi-tenant: usuarios de bodega solo ven sus bodegas.
+        if ($this->warehouseIds !== []) {
+            $query->whereIn('warehouse_id', $this->warehouseIds);
         }
 
         return $query->orderBy('date', 'desc');

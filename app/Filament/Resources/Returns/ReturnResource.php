@@ -31,7 +31,7 @@ class ReturnResource extends Resource
         /** @var \App\Models\User $user */
         $user = Auth::user();
         if ($user->isWarehouseUser()) {
-            $query->where('warehouse_id', $user->warehouse_id);
+            $query->whereIn('warehouse_id', $user->warehouseIds());
         }
 
         return $query;

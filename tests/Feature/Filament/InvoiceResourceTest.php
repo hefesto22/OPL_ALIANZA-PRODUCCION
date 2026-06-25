@@ -78,10 +78,10 @@ class InvoiceResourceTest extends TestCase
         $this->admin = User::factory()->create();
         $this->admin->assignRole('admin');
 
-        $this->warehouseUser = User::factory()->create(['warehouse_id' => $this->warehouseOAC->id]);
+        $this->warehouseUser = User::factory()->forWarehouse($this->warehouseOAC)->create();
         $this->warehouseUser->assignRole('encargado');
 
-        $this->operator = User::factory()->create(['warehouse_id' => $this->warehouseOAC->id]);
+        $this->operator = User::factory()->forWarehouse($this->warehouseOAC)->create();
         $this->operator->assignRole('operador');
     }
 

@@ -520,7 +520,7 @@ class PrintInvoicesControllerTest extends TestCase
             ->for($this->warehouseOAS, 'warehouse')
             ->create();
 
-        $operatorOAC = User::factory()->create(['warehouse_id' => $this->warehouseOAC->id]);
+        $operatorOAC = User::factory()->forWarehouse($this->warehouseOAC)->create();
 
         $response = $this->actingAs($operatorOAC)
             ->postJson(route('invoices.print.confirm'), [

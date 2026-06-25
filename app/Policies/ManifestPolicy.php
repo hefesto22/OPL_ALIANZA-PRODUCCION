@@ -121,19 +121,22 @@ class ManifestPolicy
     private function userOwnsManifest(AuthUser $authUser, Manifest $manifest): bool
     {
         /** @var User $authUser */
-        if ($authUser->isGlobalUser()) {
+        $warehouseIds = $authUser->warehouseIds();
+
+        // Usuario global (sin bodegas) → ve cualquier manifiesto.
+        if ($warehouseIds === []) {
             return true;
         }
 
         // Caso 1: el manifiesto tiene bodega propia (datos demo/manuales).
         if ($manifest->warehouse_id !== null) {
-            return (int) $manifest->warehouse_id === (int) $authUser->warehouse_id;
+            return in_array((int) $manifest->warehouse_id, $warehouseIds, true);
         }
 
         // Caso 2: manifiesto multi-bodega (API). Pertenece si tiene alguna
-        // factura de la bodega del usuario — misma lógica que el listado.
+        // factura de UNA de las bodegas del usuario — misma lógica que el listado.
         return $manifest->invoices()
-            ->where('warehouse_id', $authUser->warehouse_id)
+            ->whereIn('warehouse_id', $warehouseIds)
             ->exists();
     }
 }

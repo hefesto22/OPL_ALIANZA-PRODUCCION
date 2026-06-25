@@ -60,13 +60,13 @@ class InvoiceReturnPolicyTest extends TestCase
         $this->oac = Warehouse::factory()->oac()->create();
         $this->oas = Warehouse::factory()->oas()->create();
 
-        $this->globalUser = User::factory()->create(['warehouse_id' => null]);
+        $this->globalUser = User::factory()->create();
         $this->globalUser->assignRole($rolFull);
 
-        $this->oacUser = User::factory()->create(['warehouse_id' => $this->oac->id]);
+        $this->oacUser = User::factory()->forWarehouse($this->oac)->create();
         $this->oacUser->assignRole($rolFull);
 
-        $this->userSinPermisos = User::factory()->create(['warehouse_id' => $this->oac->id]);
+        $this->userSinPermisos = User::factory()->forWarehouse($this->oac)->create();
 
         $this->policy = new InvoiceReturnPolicy;
     }

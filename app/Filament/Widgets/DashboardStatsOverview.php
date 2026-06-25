@@ -23,33 +23,33 @@ class DashboardStatsOverview extends BaseWidget
         // Clave de caché única por bodega: evita que un usuario de bodega A
         // vea los datos cacheados de la bodega B (o del admin global).
         $cacheKey = WarehouseScope::cacheKey('dashboard:stats:overview');
-        $warehouseId = WarehouseScope::getWarehouseId();
+        $warehouseIds = WarehouseScope::getWarehouseIds();
 
-        $data = Cache::remember($cacheKey, now()->addMinutes(2), function () use ($warehouseId) {
+        $data = Cache::remember($cacheKey, now()->addMinutes(2), function () use ($warehouseIds) {
             $activeStatuses = ['pending', 'processing', 'imported'];
             $thisMonth = now()->month;
             $thisYear = now()->year;
             $lastMonth = now()->subMonth()->month;
             $lastMonthYear = now()->subMonth()->year;
 
-            // Helper: query base de Manifest ya filtrado por bodega si aplica
-            $mq = fn () => $warehouseId
-                ? Manifest::where('warehouse_id', $warehouseId)
+            // Helper: query base de Manifest ya filtrado por bodega(s) si aplica
+            $mq = fn () => $warehouseIds !== []
+                ? Manifest::whereIn('warehouse_id', $warehouseIds)
                 : Manifest::query();
 
-            // Helper: query base de Deposit filtrado por bodega via manifest
-            $dq = fn () => $warehouseId
-                ? Deposit::whereHas('manifest', fn ($q) => $q->where('warehouse_id', $warehouseId))
+            // Helper: query base de Deposit filtrado por bodega(s) via manifest
+            $dq = fn () => $warehouseIds !== []
+                ? Deposit::whereHas('manifest', fn ($q) => $q->whereIn('warehouse_id', $warehouseIds))
                 : Deposit::query();
 
-            // Helper: query base de InvoiceReturn filtrado por bodega
-            $rq = fn () => $warehouseId
-                ? InvoiceReturn::where('warehouse_id', $warehouseId)
+            // Helper: query base de InvoiceReturn filtrado por bodega(s)
+            $rq = fn () => $warehouseIds !== []
+                ? InvoiceReturn::whereIn('warehouse_id', $warehouseIds)
                 : InvoiceReturn::query();
 
-            // Helper: query base de Invoice filtrado por bodega
-            $iq = fn () => $warehouseId
-                ? Invoice::where('warehouse_id', $warehouseId)
+            // Helper: query base de Invoice filtrado por bodega(s)
+            $iq = fn () => $warehouseIds !== []
+                ? Invoice::whereIn('warehouse_id', $warehouseIds)
                 : Invoice::query();
 
             // ── Manifiestos ────────────────────────────────────────────

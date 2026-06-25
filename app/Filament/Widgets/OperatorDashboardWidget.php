@@ -31,7 +31,10 @@ class OperatorDashboardWidget extends BaseWidget
     public function getHeading(): ?string
     {
         $user = Auth::user();
-        $warehouseName = $user->warehouse?->name ?? 'Mi Bodega';
+        // getHeading puede invocarse sin usuario autenticado (descubrimiento
+        // de widgets en shield:generate / cache de componentes). Guard ante null.
+        $names = $user?->warehouses->pluck('name')->implode(', ') ?? '';
+        $warehouseName = $names !== '' ? $names : 'Mi Bodega';
 
         return "Resumen — {$warehouseName}";
     }
@@ -51,11 +54,11 @@ class OperatorDashboardWidget extends BaseWidget
             ];
         }
 
-        $warehouseId = $user->warehouse_id;
+        $warehouseIds = $user->warehouseIds();
 
-        $cacheKey = "dashboard:operator:warehouse:{$warehouseId}";
+        $cacheKey = 'dashboard:operator:warehouse:'.implode('-', $warehouseIds);
 
-        $data = Cache::remember($cacheKey, now()->addMinutes(3), function () use ($warehouseId) {
+        $data = Cache::remember($cacheKey, now()->addMinutes(3), function () use ($warehouseIds) {
             $thisMonth = now()->month;
             $thisYear = now()->year;
 
@@ -63,11 +66,11 @@ class OperatorDashboardWidget extends BaseWidget
 
             // Manifiestos activos con facturas en esta bodega
             $activeManifests = Manifest::whereIn('status', $activeStatuses)
-                ->whereHas('invoices', fn ($q) => $q->where('warehouse_id', $warehouseId))
+                ->whereHas('invoices', fn ($q) => $q->whereIn('warehouse_id', $warehouseIds))
                 ->count();
 
             // Facturas del mes en esta bodega
-            $invoicesMes = Invoice::where('warehouse_id', $warehouseId)
+            $invoicesMes = Invoice::whereIn('warehouse_id', $warehouseIds)
                 ->whereMonth('invoice_date', $thisMonth)
                 ->whereYear('invoice_date', $thisYear)
                 ->where('status', '!=', 'rejected')
@@ -77,11 +80,11 @@ class OperatorDashboardWidget extends BaseWidget
             $closedManifests = Manifest::where('status', 'closed')
                 ->whereMonth('date', $thisMonth)
                 ->whereYear('date', $thisYear)
-                ->whereHas('invoices', fn ($q) => $q->where('warehouse_id', $warehouseId))
+                ->whereHas('invoices', fn ($q) => $q->whereIn('warehouse_id', $warehouseIds))
                 ->count();
 
             // Último manifiesto con facturas en esta bodega
-            $lastManifest = Manifest::whereHas('invoices', fn ($q) => $q->where('warehouse_id', $warehouseId))
+            $lastManifest = Manifest::whereHas('invoices', fn ($q) => $q->whereIn('warehouse_id', $warehouseIds))
                 ->latest('date')
                 ->first();
 

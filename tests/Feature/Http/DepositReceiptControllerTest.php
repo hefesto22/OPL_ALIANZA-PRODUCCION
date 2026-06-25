@@ -66,7 +66,7 @@ class DepositReceiptControllerTest extends TestCase
         $this->admin = User::factory()->create();
         $this->admin->assignRole('admin');
 
-        $this->warehouseUserOAC = User::factory()->create(['warehouse_id' => $this->warehouseOAC->id]);
+        $this->warehouseUserOAC = User::factory()->forWarehouse($this->warehouseOAC)->create();
         $this->warehouseUserOAC->assignRole('encargado');
     }
 

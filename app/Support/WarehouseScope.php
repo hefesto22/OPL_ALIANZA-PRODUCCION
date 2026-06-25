@@ -28,7 +28,7 @@ class WarehouseScope
     public static function apply(Builder $query, string $column = 'warehouse_id'): Builder
     {
         if (self::isScoped()) {
-            $query->where($column, self::getWarehouseId());
+            $query->whereIn($column, self::getWarehouseIds());
         }
 
         return $query;
@@ -44,9 +44,9 @@ class WarehouseScope
         string $column = 'warehouse_id'
     ): Builder {
         if (self::isScoped()) {
-            $warehouseId = self::getWarehouseId();
-            $query->whereHas($relation, function (Builder $q) use ($warehouseId, $column) {
-                $q->where($column, $warehouseId);
+            $warehouseIds = self::getWarehouseIds();
+            $query->whereHas($relation, function (Builder $q) use ($warehouseIds, $column) {
+                $q->whereIn($column, $warehouseIds);
             });
         }
 
@@ -54,24 +54,29 @@ class WarehouseScope
     }
 
     /**
-     * Genera una clave de caché única por bodega.
+     * Genera una clave de caché única por conjunto de bodegas.
      * Esto evita que un usuario de bodega vea la caché de otro usuario.
      *
      * Ejemplo: WarehouseScope::cacheKey('dashboard:stats')
-     *   → 'dashboard:stats:global'        (admin / super_admin)
-     *   → 'dashboard:stats:warehouse:3'   (encargado de bodega 3)
+     *   → 'dashboard:stats:global'          (admin / super_admin)
+     *   → 'dashboard:stats:warehouse:3'     (usuario de la bodega 3)
+     *   → 'dashboard:stats:warehouse:1-3'   (usuario de las bodegas 1 y 3)
      */
     public static function cacheKey(string $base): string
     {
-        $warehouseId = self::getWarehouseId();
+        $warehouseIds = self::getWarehouseIds();
 
-        return $warehouseId
-            ? "{$base}:warehouse:{$warehouseId}"
-            : "{$base}:global";
+        if ($warehouseIds === []) {
+            return "{$base}:global";
+        }
+
+        sort($warehouseIds); // estable: [3,1] y [1,3] dan la misma clave
+
+        return "{$base}:warehouse:".implode('-', $warehouseIds);
     }
 
     /**
-     * Retorna true si el usuario autenticado está limitado a una bodega.
+     * Retorna true si el usuario autenticado está limitado a una o más bodegas.
      */
     public static function isScoped(): bool
     {
@@ -81,10 +86,13 @@ class WarehouseScope
     }
 
     /**
-     * Retorna el warehouse_id del usuario autenticado, o null si es global.
+     * Retorna los IDs de las bodegas del usuario autenticado.
+     * Arreglo vacío = usuario global (ve todas las bodegas).
+     *
+     * @return array<int, int>
      */
-    public static function getWarehouseId(): ?int
+    public static function getWarehouseIds(): array
     {
-        return Auth::user()?->warehouse_id;
+        return Auth::user()?->warehouseIds() ?? [];
     }
 }

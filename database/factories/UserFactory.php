@@ -41,4 +41,25 @@ class UserFactory extends Factory
             'email_verified_at' => null,
         ]);
     }
+
+    /**
+     * Vincula el usuario a una o varias bodegas (pivote user_warehouse).
+     *
+     * Reemplaza al antiguo `->create(['warehouse_id' => $id])`, que ya no
+     * existe: la bodega es muchos-a-muchos. Acepta modelos o IDs.
+     *
+     * Ejemplos:
+     *   User::factory()->forWarehouse($oac)->create();          // 1 bodega
+     *   User::factory()->forWarehouse([$oac, $oas])->create();  // 2 bodegas
+     */
+    public function forWarehouse(\App\Models\Warehouse|int|array $warehouses): static
+    {
+        $ids = collect(is_array($warehouses) ? $warehouses : [$warehouses])
+            ->map(fn ($w) => $w instanceof \App\Models\Warehouse ? $w->id : (int) $w)
+            ->all();
+
+        return $this->afterCreating(function (\App\Models\User $user) use ($ids): void {
+            $user->warehouses()->syncWithoutDetaching($ids);
+        });
+    }
 }

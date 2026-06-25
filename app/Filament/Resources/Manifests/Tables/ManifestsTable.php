@@ -114,9 +114,9 @@ class ManifestsTable
                         /** @var User $user */
                         $user = Auth::user();
                         if ($user->isWarehouseUser()) {
-                            return (int) ($record->warehouseTotals
-                                ->where('warehouse_id', $user->warehouse_id)
-                                ->first()?->invoices_count ?? 0);
+                            return (int) $record->warehouseTotals
+                                ->whereIn('warehouse_id', $user->warehouseIds())
+                                ->sum('invoices_count');
                         }
 
                         return (int) $record->invoices_count;
@@ -136,9 +136,9 @@ class ManifestsTable
                         /** @var User $user */
                         $user = Auth::user();
                         if ($user->isWarehouseUser()) {
-                            return (int) ($record->warehouseTotals
-                                ->where('warehouse_id', $user->warehouse_id)
-                                ->first()?->clients_count ?? 0);
+                            return (int) $record->warehouseTotals
+                                ->whereIn('warehouse_id', $user->warehouseIds())
+                                ->sum('clients_count');
                         }
 
                         return (int) $record->clients_count;
@@ -154,9 +154,9 @@ class ManifestsTable
                         /** @var User $user */
                         $user = Auth::user();
                         if ($user->isWarehouseUser()) {
-                            return (float) ($record->warehouseTotals
-                                ->where('warehouse_id', $user->warehouse_id)
-                                ->first()?->total_invoices ?? 0);
+                            return (float) $record->warehouseTotals
+                                ->whereIn('warehouse_id', $user->warehouseIds())
+                                ->sum('total_invoices');
                         }
 
                         return (float) $record->total_invoices;
@@ -177,9 +177,9 @@ class ManifestsTable
                         /** @var User $user */
                         $user = Auth::user();
                         if ($user->isWarehouseUser()) {
-                            return (float) ($record->warehouseTotals
-                                ->where('warehouse_id', $user->warehouse_id)
-                                ->first()?->total_returns ?? 0);
+                            return (float) $record->warehouseTotals
+                                ->whereIn('warehouse_id', $user->warehouseIds())
+                                ->sum('total_returns');
                         }
 
                         return (float) $record->total_returns;
@@ -196,9 +196,9 @@ class ManifestsTable
                         /** @var User $user */
                         $user = Auth::user();
                         if ($user->isWarehouseUser()) {
-                            return (float) ($record->warehouseTotals
-                                ->where('warehouse_id', $user->warehouse_id)
-                                ->first()?->total_to_deposit ?? 0);
+                            return (float) $record->warehouseTotals
+                                ->whereIn('warehouse_id', $user->warehouseIds())
+                                ->sum('total_to_deposit');
                         }
 
                         return (float) $record->total_to_deposit;
@@ -214,9 +214,9 @@ class ManifestsTable
                         /** @var User $user */
                         $user = Auth::user();
                         if ($user->isWarehouseUser()) {
-                            return (float) ($record->warehouseTotals
-                                ->where('warehouse_id', $user->warehouse_id)
-                                ->first()?->total_deposited ?? 0);
+                            return (float) $record->warehouseTotals
+                                ->whereIn('warehouse_id', $user->warehouseIds())
+                                ->sum('total_deposited');
                         }
 
                         return (float) $record->total_deposited;
@@ -240,9 +240,9 @@ class ManifestsTable
                         /** @var User $user */
                         $user = Auth::user();
                         if ($user->isWarehouseUser()) {
-                            return (float) ($record->warehouseTotals
-                                ->where('warehouse_id', $user->warehouse_id)
-                                ->first()?->difference ?? 0);
+                            return (float) $record->warehouseTotals
+                                ->whereIn('warehouse_id', $user->warehouseIds())
+                                ->sum('difference');
                         }
 
                         return (float) $record->difference;

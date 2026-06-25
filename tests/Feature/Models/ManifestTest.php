@@ -197,7 +197,7 @@ class ManifestTest extends TestCase
             'total' => 500,
         ]);
 
-        $oacSummary = $manifest->getInvoicesSummary($oac->id);
+        $oacSummary = $manifest->getInvoicesSummary([$oac->id]);
 
         $this->assertSame(1, $oacSummary['imported']['count']);
         $this->assertEqualsWithDelta(1000.0, $oacSummary['imported']['total'], 0.01);

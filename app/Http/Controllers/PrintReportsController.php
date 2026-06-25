@@ -195,9 +195,10 @@ class PrintReportsController extends Controller
             ->with(['warehouse'])
             ->where('status', '!=', 'rejected');
 
-        // Filtrar por bodega cuando el usuario tiene bodega asignada (operador)
-        if (! empty($data['warehouse_id'])) {
-            $invoiceQuery->where('warehouse_id', (int) $data['warehouse_id']);
+        // Filtrar por bodega(s) cuando el usuario tiene bodegas asignadas (operador/encargado)
+        $warehouseIds = $this->warehouseIdsFromPayload($data);
+        if ($warehouseIds !== []) {
+            $invoiceQuery->whereIn('warehouse_id', $warehouseIds);
         }
 
         $invoiceQuery
@@ -216,11 +217,11 @@ class PrintReportsController extends Controller
             ];
         })->sortKeys();
 
-        // Si se filtra por bodega, recalcular devoluciones y neto solo para esa bodega
-        $warehouseFiltered = ! empty($data['warehouse_id']);
+        // Si se filtra por bodega(s), recalcular devoluciones y neto solo para esas bodegas
+        $warehouseFiltered = $warehouseIds !== [];
         $totalReturns = $warehouseFiltered
             ? $manifest->returns()
-                ->where('warehouse_id', (int) $data['warehouse_id'])
+                ->whereIn('warehouse_id', $warehouseIds)
                 ->where('status', 'approved')
                 ->sum('total')
             : $manifest->total_returns;
@@ -284,8 +285,9 @@ class PrintReportsController extends Controller
         if (! empty($data['status'])) {
             $query->where('status', $data['status']);
         }
-        if (! empty($data['warehouse_id'])) {
-            $query->where('warehouse_id', $data['warehouse_id']);
+        $warehouseIds = $this->warehouseIdsFromPayload($data);
+        if ($warehouseIds !== []) {
+            $query->whereIn('warehouse_id', $warehouseIds);
         }
 
         $this->enforceRowLimit($query, 'devoluciones');
@@ -488,11 +490,12 @@ class PrintReportsController extends Controller
         $invoiceQuery = $manifest->invoices()
             ->where('status', '!=', 'rejected');
 
-        // Filtrar por IDs específicos (bulk action) o por bodega
+        // Filtrar por IDs específicos (bulk action) o por bodega(s)
+        $warehouseIds = $this->warehouseIdsFromPayload($data);
         if (! empty($data['invoice_ids'])) {
             $invoiceQuery->whereIn('id', $data['invoice_ids']);
-        } elseif (! empty($data['warehouse_id'])) {
-            $invoiceQuery->where('warehouse_id', (int) $data['warehouse_id']);
+        } elseif ($warehouseIds !== []) {
+            $invoiceQuery->whereIn('warehouse_id', $warehouseIds);
         }
 
         $invoiceIds = $invoiceQuery->pluck('id');
@@ -527,7 +530,7 @@ class PrintReportsController extends Controller
             'totals' => $totals,
             'supplier' => Supplier::first(),
             'generatedAt' => now()->format('d/m/Y H:i:s'),
-            'warehouseFiltered' => ! empty($data['warehouse_id']),
+            'warehouseFiltered' => $warehouseIds !== [],
         ])->render();
 
         return response($html, 200, ['Content-Type' => 'text/html; charset=UTF-8']);
@@ -552,16 +555,19 @@ class PrintReportsController extends Controller
         $invoiceQuery = $manifest->invoices()
             ->where('status', '!=', 'rejected');
 
-        $warehouseFiltered = ! empty($data['warehouse_id']);
+        $warehouseIds = $this->warehouseIdsFromPayload($data);
+        $warehouseFiltered = $warehouseIds !== [];
         $warehouseName = '—';
 
-        // Filtrar por IDs específicos (bulk action) o por bodega
+        // Filtrar por IDs específicos (bulk action) o por bodega(s)
         if (! empty($data['invoice_ids'])) {
             $invoiceQuery->whereIn('id', $data['invoice_ids']);
         } elseif ($warehouseFiltered) {
-            $invoiceQuery->where('warehouse_id', (int) $data['warehouse_id']);
-            $warehouse = \App\Models\Warehouse::find((int) $data['warehouse_id']);
-            $warehouseName = $warehouse ? "{$warehouse->code} — {$warehouse->name}" : '—';
+            $invoiceQuery->whereIn('warehouse_id', $warehouseIds);
+            $warehouses = \App\Models\Warehouse::whereIn('id', $warehouseIds)->get();
+            $warehouseName = $warehouses
+                ->map(fn ($w) => "{$w->code} — {$w->name}")
+                ->implode(', ') ?: '—';
         }
 
         $invoiceQuery
@@ -600,6 +606,28 @@ class PrintReportsController extends Controller
     }
 
     // ── Helpers ───────────────────────────────────────────────────
+
+    /**
+     * Normaliza los IDs de bodega del payload.
+     *
+     * Soporta el formato multi-bodega `warehouse_ids` (array) y el legacy
+     * `warehouse_id` (int) por retrocompatibilidad con enlaces viejos.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array<int, int> Vacío = sin filtro de bodega (ver todo).
+     */
+    private function warehouseIdsFromPayload(array $data): array
+    {
+        if (! empty($data['warehouse_ids']) && is_array($data['warehouse_ids'])) {
+            return array_values(array_map('intval', $data['warehouse_ids']));
+        }
+
+        if (! empty($data['warehouse_id'])) {
+            return [(int) $data['warehouse_id']];
+        }
+
+        return [];
+    }
 
     private function decryptPayload(Request $request): array
     {

@@ -7,7 +7,7 @@ use BezhanSalleh\FilamentShield\Traits\HasPanelShield;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Panel;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -39,7 +39,6 @@ class User extends Authenticatable implements FilamentUser
         'phone',
         'avatar_url',
         'is_active',
-        'warehouse_id',
         'last_login_at',
         'last_login_ip',
         'created_by',
@@ -80,7 +79,7 @@ class User extends Authenticatable implements FilamentUser
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
-            ->logOnly(['name', 'email', 'phone', 'is_active', 'warehouse_id'])
+            ->logOnly(['name', 'email', 'phone', 'is_active'])
             ->logOnlyDirty()
             ->dontSubmitEmptyLogs()
             ->setDescriptionForEvent(fn (string $eventName) => "Usuario {$eventName}");
@@ -94,29 +93,49 @@ class User extends Authenticatable implements FilamentUser
         ]);
     }
 
-    // ─── Bodega ───────────────────────────────────────────────
+    // ─── Bodegas (muchos-a-muchos) ────────────────────────────
 
-    public function warehouse(): BelongsTo
+    /**
+     * Bodegas asignadas al usuario. Un usuario puede supervisar varias
+     * (ej. encargado regional). Sin bodegas = usuario global (ve todo).
+     */
+    public function warehouses(): BelongsToMany
     {
-        return $this->belongsTo(Warehouse::class);
+        return $this->belongsToMany(Warehouse::class, 'user_warehouse')
+            ->withTimestamps();
     }
 
     /**
-     * True si no tiene bodega asignada (admin, super_admin, haremar).
+     * IDs de las bodegas del usuario. Fuente única para el aislamiento por
+     * bodega (WarehouseScope, Policies). Carga la relación si no está cargada
+     * para evitar N+1 en loops.
+     *
+     * @return array<int, int>
+     */
+    public function warehouseIds(): array
+    {
+        return $this->warehouses
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+    }
+
+    /**
+     * True si NO tiene bodegas asignadas (admin, super_admin, haremar).
      * Estos usuarios ven todos los manifiestos y todas las facturas.
      */
     public function isGlobalUser(): bool
     {
-        return is_null($this->warehouse_id);
+        return $this->warehouseIds() === [];
     }
 
     /**
-     * True si pertenece a una bodega específica.
-     * Solo ve facturas de su bodega.
+     * True si pertenece a una o más bodegas específicas.
+     * Solo ve facturas de SUS bodegas.
      */
     public function isWarehouseUser(): bool
     {
-        return ! is_null($this->warehouse_id);
+        return $this->warehouseIds() !== [];
     }
 
     // ─── Relaciones jerárquicas ───────────────────────────────

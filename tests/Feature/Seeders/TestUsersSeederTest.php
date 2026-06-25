@@ -107,7 +107,7 @@ class TestUsersSeederTest extends TestCase
 
         foreach ($warehouseUsers as $user) {
             $this->assertSame($superAdmin->id, $user->created_by);
-            $this->assertNotNull($user->warehouse_id);
+            $this->assertNotEmpty($user->warehouseIds());
             $this->assertTrue($user->isWarehouseUser());
             $this->assertTrue($user->is_active);
         }
@@ -142,9 +142,9 @@ class TestUsersSeederTest extends TestCase
                 $user = User::query()->where('email', $email)->first();
 
                 $this->assertNotNull($user, "Falta el usuario {$email}");
-                $this->assertSame(
+                $this->assertContains(
                     $warehouseByCode->get($code)->id,
-                    $user->warehouse_id,
+                    $user->warehouseIds(),
                     "El usuario {$email} debería pertenecer a la bodega {$code}."
                 );
                 $this->assertTrue(

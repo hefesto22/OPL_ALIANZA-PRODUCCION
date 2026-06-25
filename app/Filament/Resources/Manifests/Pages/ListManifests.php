@@ -251,7 +251,7 @@ class ListManifests extends ListRecords
                             status: $data['status'] ?? null,
                             dateFrom: $from,
                             dateTo: $to,
-                            warehouseId: WarehouseScope::getWarehouseId(),
+                            warehouseIds: WarehouseScope::getWarehouseIds(),
                         ))->queue($filePath, 'local')->chain([
                             (new NotifyExportReady(
                                 userId: Auth::id(),

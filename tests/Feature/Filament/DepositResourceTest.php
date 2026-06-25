@@ -83,10 +83,10 @@ class DepositResourceTest extends TestCase
         $this->admin->assignRole('admin');
 
         // Finance NO es usuario de bodega — ve todo (no warehouse_id).
-        $this->finance = User::factory()->create(['warehouse_id' => null]);
+        $this->finance = User::factory()->create();
         $this->finance->assignRole('finance');
 
-        $this->warehouseUser = User::factory()->create(['warehouse_id' => $this->warehouseOAC->id]);
+        $this->warehouseUser = User::factory()->forWarehouse($this->warehouseOAC)->create();
         $this->warehouseUser->assignRole('encargado');
     }
 

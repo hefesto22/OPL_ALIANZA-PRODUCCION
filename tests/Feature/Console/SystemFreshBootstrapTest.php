@@ -230,7 +230,7 @@ class SystemFreshBootstrapTest extends TestCase
                 $user = User::query()->where('email', $email)->first();
                 $this->assertNotNull($user, "Falta {$email}");
                 $this->assertTrue($user->hasRole($role));
-                $this->assertNotNull($user->warehouse_id);
+                $this->assertNotEmpty($user->warehouseIds());
             }
         }
     }

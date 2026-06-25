@@ -66,7 +66,7 @@ trait HandlesWarehouseScope
             return false;
         }
 
-        return (int) $recordWarehouseId === (int) $user->warehouse_id;
+        return in_array((int) $recordWarehouseId, $user->warehouseIds(), true);
     }
 
     /**
@@ -109,6 +109,6 @@ trait HandlesWarehouseScope
             return false;
         }
 
-        return (int) $relatedWarehouseId === (int) $user->warehouse_id;
+        return in_array((int) $relatedWarehouseId, $user->warehouseIds(), true);
     }
 }

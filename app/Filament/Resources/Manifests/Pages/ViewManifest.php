@@ -210,8 +210,8 @@ class ViewManifest extends ViewRecord
                         ];
 
                         // Si el usuario tiene bodega asignada, filtrar solo sus facturas
-                        if ($user->warehouse_id) {
-                            $payloadData['warehouse_id'] = $user->warehouse_id;
+                        if ($user->isWarehouseUser()) {
+                            $payloadData['warehouse_ids'] = $user->warehouseIds();
                         }
 
                         $payload = Crypt::encryptString(json_encode($payloadData));
@@ -231,8 +231,8 @@ class ViewManifest extends ViewRecord
                             'manifest_id' => $this->record->id,
                         ];
 
-                        if ($user->warehouse_id) {
-                            $payloadData['warehouse_id'] = $user->warehouse_id;
+                        if ($user->isWarehouseUser()) {
+                            $payloadData['warehouse_ids'] = $user->warehouseIds();
                         }
 
                         $payload = Crypt::encryptString(json_encode($payloadData));
@@ -252,8 +252,8 @@ class ViewManifest extends ViewRecord
                             'manifest_id' => $this->record->id,
                         ];
 
-                        if ($user->warehouse_id) {
-                            $payloadData['warehouse_id'] = $user->warehouse_id;
+                        if ($user->isWarehouseUser()) {
+                            $payloadData['warehouse_ids'] = $user->warehouseIds();
                         }
 
                         $payload = Crypt::encryptString(json_encode($payloadData));

@@ -108,12 +108,12 @@ class ListDeposits extends ListRecords
                         // Export despachado a cola `reports` (ver DepositsExport::$queue).
                         // El chain encadena NotifyExportReady con cola `high` para que
                         // la notificación no quede bloqueada detrás de otros exports.
-                        // WarehouseScope: capturamos el warehouse_id acá (donde Auth
+                        // WarehouseScope: capturamos las bodegas acá (donde Auth
                         // existe) — dentro del job worker `Auth::user()` es null.
                         (new DepositsExport(
                             dateFrom: $data['date_from'] ?? null,
                             dateTo: $data['date_to'] ?? null,
-                            warehouseId: WarehouseScope::getWarehouseId(),
+                            warehouseIds: WarehouseScope::getWarehouseIds(),
                         ))->queue($filePath, 'local')->chain([
                             (new NotifyExportReady(
                                 userId: Auth::id(),

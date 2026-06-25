@@ -36,16 +36,15 @@ class ReturnsExport implements FromQuery, ShouldAutoSize, ShouldQueue, WithChunk
     public string $queue = 'reports';
 
     /**
-     * @param  ?int  $warehouseId  Filtro de bodega. `null` = ver todas
-     *                             (super_admin/admin). Se pasa desde el call
-     *                             site con WarehouseScope::getWarehouseId()
-     *                             porque el worker no tiene Auth::user().
-     *                             Cambiado de `?string` a `?int` para tipado
-     *                             correcto y serialización estable.
+     * @param  array<int, int>  $warehouseIds  Filtro de bodega(s). `[]` = ver
+     *                                         todas (super_admin/admin). Se pasa
+     *                                         desde el call site con
+     *                                         WarehouseScope::getWarehouseIds()
+     *                                         porque el worker no tiene Auth::user().
      */
     public function __construct(
         private readonly ?string $status = null,
-        private readonly ?int $warehouseId = null,
+        private readonly array $warehouseIds = [],
         private readonly ?string $dateFrom = null,
         private readonly ?string $dateTo = null,
     ) {}
@@ -73,8 +72,8 @@ class ReturnsExport implements FromQuery, ShouldAutoSize, ShouldQueue, WithChunk
             $query->where('status', $this->status);
         }
 
-        if ($this->warehouseId) {
-            $query->where('warehouse_id', $this->warehouseId);
+        if ($this->warehouseIds !== []) {
+            $query->whereIn('warehouse_id', $this->warehouseIds);
         }
 
         if ($this->dateFrom) {

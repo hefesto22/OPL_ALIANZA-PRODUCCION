@@ -126,7 +126,7 @@ class ManifestResource extends Resource
         // Usuario de bodega: solo ve manifiestos que tengan facturas de su bodega
         if ($user && $user->isWarehouseUser()) {
             $query->whereHas('invoices', function (Builder $q) use ($user) {
-                $q->where('warehouse_id', $user->warehouse_id)
+                $q->whereIn('warehouse_id', $user->warehouseIds())
                     ->where('status', 'imported');
             });
         }

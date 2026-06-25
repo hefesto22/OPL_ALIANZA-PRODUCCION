@@ -136,14 +136,17 @@ class Manifest extends Model
 
     /**
      * Resumen de facturas agrupado por status.
+     *
+     * @param  array<int, int>  $warehouseIds  Bodegas a las que limitar el
+     *                                         resumen. Vacío = todas (global).
      */
-    public function getInvoicesSummary(?int $warehouseId = null): array
+    public function getInvoicesSummary(array $warehouseIds = []): array
     {
         $query = $this->invoices()
             ->selectRaw('status, COUNT(*) as count, COALESCE(SUM(total), 0) as total');
 
-        if ($warehouseId) {
-            $query->where('warehouse_id', $warehouseId);
+        if ($warehouseIds !== []) {
+            $query->whereIn('warehouse_id', $warehouseIds);
         }
 
         return $query

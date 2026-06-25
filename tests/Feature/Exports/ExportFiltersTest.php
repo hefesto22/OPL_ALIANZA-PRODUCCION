@@ -150,7 +150,7 @@ class ExportFiltersTest extends TestCase
 
         $onlyPendingOfWarehouse = (new ReturnsExport(
             status: 'pending',
-            warehouseId: $this->warehouse->id,
+            warehouseIds: [$this->warehouse->id],
         ))->query()->pluck('id')->toArray();
 
         $this->assertCount(1, $onlyPendingOfWarehouse);

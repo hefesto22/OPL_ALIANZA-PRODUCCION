@@ -544,17 +544,29 @@ class ApiInvoiceImporterService
             $notified = 0;
 
             // ── Notificar usuarios de cada bodega afectada ───────────
-            $warehouseUsers = User::whereIn('warehouse_id', $affectedIds)
+            // Multi-bodega: un usuario puede cubrir varias bodegas; le sumamos
+            // las facturas de TODAS sus bodegas afectadas por este import.
+            $warehouseUsers = User::query()
+                ->whereHas('warehouses', fn ($q) => $q->whereIn('warehouses.id', $affectedIds))
                 ->where('is_active', true)
+                ->with('warehouses:id')
                 ->get();
 
             foreach ($warehouseUsers as $user) {
-                $count = $warehouseCounts[$user->warehouse_id] ?? 0;
+                $userAffectedIds = array_values(array_intersect($user->warehouseIds(), $affectedIds));
+
+                $count = 0;
+                foreach ($userAffectedIds as $wid) {
+                    $count += $warehouseCounts[$wid] ?? 0;
+                }
+
                 if ($count === 0) {
                     continue;
                 }
 
-                $warehouseName = $warehouseNames[$user->warehouse_id] ?? 'Desconocida';
+                $warehouseName = collect($userAffectedIds)
+                    ->map(fn (int $wid) => $warehouseNames[$wid] ?? 'Desconocida')
+                    ->implode(', ');
 
                 $user->notify(new InvoicesImported(
                     title: 'Nuevas facturas importadas',
@@ -566,7 +578,7 @@ class ApiInvoiceImporterService
             }
 
             // ── Notificar usuarios globales (sin bodega) con resumen ─
-            $globalUsers = User::whereNull('warehouse_id')
+            $globalUsers = User::doesntHave('warehouses')
                 ->where('is_active', true)
                 ->get();
 

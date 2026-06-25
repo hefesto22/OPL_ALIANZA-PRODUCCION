@@ -37,13 +37,13 @@ class ManifestAgingWidget extends BaseWidget
     {
         // Clave de caché única por bodega
         $cacheKey = WarehouseScope::cacheKey('dashboard:aging');
-        $warehouseId = WarehouseScope::getWarehouseId();
+        $warehouseIds = WarehouseScope::getWarehouseIds();
 
-        $aging = Cache::remember($cacheKey, now()->addMinutes(3), function () use ($warehouseId) {
+        $aging = Cache::remember($cacheKey, now()->addMinutes(3), function () use ($warehouseIds) {
             $activeStatuses = ['pending', 'processing', 'imported'];
 
-            $query = $warehouseId
-                ? Manifest::where('warehouse_id', $warehouseId)
+            $query = $warehouseIds !== []
+                ? Manifest::whereIn('warehouse_id', $warehouseIds)
                 : Manifest::query();
 
             $rows = $query

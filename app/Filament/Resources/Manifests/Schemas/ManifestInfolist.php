@@ -113,8 +113,8 @@ class ManifestInfolist
                                     /** @var User $user */
                                     $user = Auth::user();
                                     $query = $record->invoices();
-                                    if ($user->warehouse_id) {
-                                        $query->where('warehouse_id', $user->warehouse_id);
+                                    if ($user->isWarehouseUser()) {
+                                        $query->whereIn('warehouse_id', $user->warehouseIds());
                                     }
 
                                     return $query->count();
@@ -133,7 +133,7 @@ class ManifestInfolist
                                 ->state(function ($record): int {
                                     /** @var User $user */
                                     $user = Auth::user();
-                                    $summary = $record->getInvoicesSummary($user->warehouse_id);
+                                    $summary = $record->getInvoicesSummary($user->warehouseIds());
 
                                     return ($summary['imported']['count'] ?? 0)
                                          + ($summary['partial_return']['count'] ?? 0)
@@ -154,7 +154,7 @@ class ManifestInfolist
                                     /** @var User $user */
                                     $user = Auth::user();
 
-                                    return $record->getInvoicesSummary($user->warehouse_id)['pending_warehouse']['count'] ?? 0;
+                                    return $record->getInvoicesSummary($user->warehouseIds())['pending_warehouse']['count'] ?? 0;
                                 })
                                 ->extraAttributes([
                                     'class' => 'cursor-pointer select-none rounded-lg px-3 py-2 transition-all hover:bg-warning-50 dark:hover:bg-warning-500/10',
@@ -171,7 +171,7 @@ class ManifestInfolist
                                     /** @var User $user */
                                     $user = Auth::user();
 
-                                    return $record->getInvoicesSummary($user->warehouse_id)['rejected']['count'] ?? 0;
+                                    return $record->getInvoicesSummary($user->warehouseIds())['rejected']['count'] ?? 0;
                                 })
                                 ->extraAttributes([
                                     'class' => 'cursor-pointer select-none rounded-lg px-3 py-2 transition-all hover:bg-danger-50 dark:hover:bg-danger-500/10',
@@ -192,8 +192,8 @@ class ManifestInfolist
                                     /** @var User $user */
                                     $user = Auth::user();
                                     $query = $record->invoices();
-                                    if ($user->warehouse_id) {
-                                        $query->where('warehouse_id', $user->warehouse_id);
+                                    if ($user->isWarehouseUser()) {
+                                        $query->whereIn('warehouse_id', $user->warehouseIds());
                                     }
 
                                     return ' de '.$query->count().' enviadas';
@@ -201,9 +201,9 @@ class ManifestInfolist
                                 ->state(function ($record): int {
                                     /** @var User $user */
                                     $user = Auth::user();
-                                    if ($user->warehouse_id) {
+                                    if ($user->isWarehouseUser()) {
                                         return (int) $record->invoices()
-                                            ->where('warehouse_id', $user->warehouse_id)
+                                            ->whereIn('warehouse_id', $user->warehouseIds())
                                             ->whereNotNull('warehouse_id')
                                             ->count();
                                     }
@@ -216,9 +216,9 @@ class ManifestInfolist
                                 ->state(function ($record): int {
                                     /** @var User $user */
                                     $user = Auth::user();
-                                    if ($user->warehouse_id) {
+                                    if ($user->isWarehouseUser()) {
                                         return (int) $record->returns()
-                                            ->where('warehouse_id', $user->warehouse_id)
+                                            ->whereIn('warehouse_id', $user->warehouseIds())
                                             ->where('status', '!=', 'cancelled')
                                             ->count();
                                     }
@@ -234,12 +234,13 @@ class ManifestInfolist
                                 ->state(function ($record): string {
                                     /** @var User $user */
                                     $user = Auth::user();
-                                    if ($user->warehouse_id) {
-                                        $wt = $record->warehouseTotals
-                                            ->where('warehouse_id', $user->warehouse_id)
-                                            ->first();
-                                        $toDeposit = (float) ($wt?->total_to_deposit ?? 0);
-                                        $deposited = (float) ($wt?->total_deposited ?? 0);
+                                    if ($user->isWarehouseUser()) {
+                                        $toDeposit = (float) $record->warehouseTotals
+                                            ->whereIn('warehouse_id', $user->warehouseIds())
+                                            ->sum('total_to_deposit');
+                                        $deposited = (float) $record->warehouseTotals
+                                            ->whereIn('warehouse_id', $user->warehouseIds())
+                                            ->sum('total_deposited');
                                     } else {
                                         $toDeposit = (float) $record->total_to_deposit;
                                         $deposited = (float) $record->total_deposited;
@@ -254,12 +255,13 @@ class ManifestInfolist
                                 ->color(function ($record): string {
                                     /** @var User $user */
                                     $user = Auth::user();
-                                    if ($user->warehouse_id) {
-                                        $wt = $record->warehouseTotals
-                                            ->where('warehouse_id', $user->warehouse_id)
-                                            ->first();
-                                        $toDeposit = (float) ($wt?->total_to_deposit ?? 0);
-                                        $deposited = (float) ($wt?->total_deposited ?? 0);
+                                    if ($user->isWarehouseUser()) {
+                                        $toDeposit = (float) $record->warehouseTotals
+                                            ->whereIn('warehouse_id', $user->warehouseIds())
+                                            ->sum('total_to_deposit');
+                                        $deposited = (float) $record->warehouseTotals
+                                            ->whereIn('warehouse_id', $user->warehouseIds())
+                                            ->sum('total_deposited');
                                     } else {
                                         $toDeposit = (float) $record->total_to_deposit;
                                         $deposited = (float) $record->total_deposited;
@@ -300,9 +302,9 @@ class ManifestInfolist
                             /** @var User $user */
                             $user = Auth::user();
                             if ($user->isWarehouseUser()) {
-                                return (float) ($record->warehouseTotals
-                                    ->where('warehouse_id', $user->warehouse_id)
-                                    ->first()?->total_invoices ?? 0);
+                                return (float) $record->warehouseTotals
+                                    ->whereIn('warehouse_id', $user->warehouseIds())
+                                    ->sum('total_invoices');
                             }
 
                             return (float) $record->total_invoices;
@@ -316,9 +318,9 @@ class ManifestInfolist
                             /** @var User $user */
                             $user = Auth::user();
                             if ($user->isWarehouseUser()) {
-                                return (float) ($record->warehouseTotals
-                                    ->where('warehouse_id', $user->warehouse_id)
-                                    ->first()?->total_returns ?? 0);
+                                return (float) $record->warehouseTotals
+                                    ->whereIn('warehouse_id', $user->warehouseIds())
+                                    ->sum('total_returns');
                             }
 
                             return (float) $record->total_returns;
@@ -333,9 +335,9 @@ class ManifestInfolist
                             /** @var User $user */
                             $user = Auth::user();
                             if ($user->isWarehouseUser()) {
-                                return (float) ($record->warehouseTotals
-                                    ->where('warehouse_id', $user->warehouse_id)
-                                    ->first()?->total_to_deposit ?? 0);
+                                return (float) $record->warehouseTotals
+                                    ->whereIn('warehouse_id', $user->warehouseIds())
+                                    ->sum('total_to_deposit');
                             }
 
                             return (float) $record->total_to_deposit;
@@ -349,9 +351,9 @@ class ManifestInfolist
                             /** @var User $user */
                             $user = Auth::user();
                             if ($user->isWarehouseUser()) {
-                                return (float) ($record->warehouseTotals
-                                    ->where('warehouse_id', $user->warehouse_id)
-                                    ->first()?->total_deposited ?? 0);
+                                return (float) $record->warehouseTotals
+                                    ->whereIn('warehouse_id', $user->warehouseIds())
+                                    ->sum('total_deposited');
                             }
 
                             return (float) $record->total_deposited;
@@ -365,9 +367,9 @@ class ManifestInfolist
                             /** @var User $user */
                             $user = Auth::user();
                             if ($user->isWarehouseUser()) {
-                                return (float) ($record->warehouseTotals
-                                    ->where('warehouse_id', $user->warehouse_id)
-                                    ->first()?->difference ?? 0);
+                                return (float) $record->warehouseTotals
+                                    ->whereIn('warehouse_id', $user->warehouseIds())
+                                    ->sum('difference');
                             }
 
                             return (float) $record->difference;

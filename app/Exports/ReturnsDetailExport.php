@@ -92,7 +92,7 @@ class ReturnsDetailExport implements FromQuery, ShouldQueue, WithChunkReading, W
         private readonly ?string $dateFrom = null,
         private readonly ?string $dateTo = null,
         private readonly ?string $status = null,
-        private readonly ?int $warehouseId = null,
+        private readonly array $warehouseIds = [],
     ) {}
 
     // ─── Chunking ──────────────────────────────────────────────────────────
@@ -127,8 +127,8 @@ class ReturnsDetailExport implements FromQuery, ShouldQueue, WithChunkReading, W
                 if ($this->status) {
                     $q->where('status', $this->status);
                 }
-                if ($this->warehouseId) {
-                    $q->where('warehouse_id', $this->warehouseId);
+                if ($this->warehouseIds !== []) {
+                    $q->whereIn('warehouse_id', $this->warehouseIds);
                 }
             })
             ->orderBy('return_id')

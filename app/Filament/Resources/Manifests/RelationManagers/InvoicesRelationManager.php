@@ -151,7 +151,7 @@ class InvoicesRelationManager extends RelationManager
                         $query = Invoice::where('manifest_id', $this->getOwnerRecord()->id);
 
                         if ($user->isWarehouseUser()) {
-                            $query->where('warehouse_id', $user->warehouse_id);
+                            $query->whereIn('warehouse_id', $user->warehouseIds());
                         }
 
                         return $query->distinct()
@@ -225,7 +225,7 @@ class InvoicesRelationManager extends RelationManager
                 $query->with(['warehouse:id,code']);
 
                 if ($user->isWarehouseUser()) {
-                    $query->where('warehouse_id', $user->warehouse_id);
+                    $query->whereIn('warehouse_id', $user->warehouseIds());
                 }
 
                 if (! empty($this->statusesFilter)) {
