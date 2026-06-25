@@ -173,6 +173,24 @@ class SystemFreshBootstrapTest extends TestCase
         $this->assertTrue($encargado->hasPermissionTo('Update:Manifest'));
         $this->assertFalse($encargado->hasPermissionTo('Delete:Manifest'));
 
+        // ── Permisos custom (CustomPermissionSeeder) generados y asignados ──
+        $this->assertTrue(
+            Permission::query()->where('name', 'Close:Manifest')->exists(),
+            'CustomPermissionSeeder debe crear Close:Manifest.'
+        );
+        $this->assertTrue(
+            $admin->hasPermissionTo('Reopen:Manifest'),
+            'admin debe poder reabrir manifiestos.'
+        );
+        $this->assertTrue(
+            $encargado->hasPermissionTo('Close:Manifest'),
+            'encargado debe poder cerrar manifiestos de su bodega.'
+        );
+        $this->assertFalse(
+            $encargado->hasPermissionTo('Reopen:Manifest'),
+            'encargado NO debe poder reabrir (sensible, solo admin).'
+        );
+
         // super_admin: Shield le asigna TODOS los permisos al promoverlo
         // (shield:super-admin syncPermissions internamente). Además queda
         // gateado por intercept_gate='before' como belt-and-suspenders.
@@ -184,25 +202,33 @@ class SystemFreshBootstrapTest extends TestCase
         );
 
         // ── Bodegas ──────────────────────────────────────────────
-        $this->assertSame(3, Warehouse::query()->count());
-        $this->assertNotNull(Warehouse::query()->where('code', 'OAC')->first());
-        $this->assertNotNull(Warehouse::query()->where('code', 'OAS')->first());
-        $this->assertNotNull(Warehouse::query()->where('code', 'OAO')->first());
+        $this->assertSame(4, Warehouse::query()->count());
+        foreach (['OAC', 'OAS', 'OAO', 'OAI'] as $code) {
+            $this->assertNotNull(
+                Warehouse::query()->where('code', $code)->first(),
+                "Falta la bodega {$code}."
+            );
+        }
 
         // ── Usuarios ─────────────────────────────────────────────
-        // 1 super_admin + 1 admin OPL + 9 de bodega = 11
-        $this->assertSame(11, User::query()->count());
+        // 1 super_admin + 12 de bodega (3 roles × 4 bodegas) = 13
+        $this->assertSame(13, User::query()->count());
 
-        // Admin OPL Alianza
-        $opl = User::query()->where('email', 'oplalianza@gmail.com')->first();
-        $this->assertNotNull($opl);
-        $this->assertTrue($opl->hasRole('admin'));
+        // El rol 'admin' existe pero NO se siembra usuario con él.
+        $this->assertSame(0, User::query()->role('admin')->count());
 
-        // Los 9 de bodega
-        foreach (['OAC', 'OAS', 'OAO'] as $code) {
+        // Los 12 de bodega (email por slug de ciudad)
+        $slugs = [
+            'OAC' => 'copan',
+            'OAS' => 'santabarbara',
+            'OAO' => 'ocotepeque',
+            'OAI' => 'intibuca',
+        ];
+        foreach ($slugs as $code => $slug) {
             foreach (['encargado', 'operador', 'finance'] as $role) {
-                $user = User::query()->where('email', "{$role}{$code}@gmail.com")->first();
-                $this->assertNotNull($user, "Falta {$role}{$code}@gmail.com");
+                $email = "{$role}.{$slug}@gmail.com";
+                $user = User::query()->where('email', $email)->first();
+                $this->assertNotNull($user, "Falta {$email}");
                 $this->assertTrue($user->hasRole($role));
                 $this->assertNotNull($user->warehouse_id);
             }
@@ -266,7 +292,7 @@ class SystemFreshBootstrapTest extends TestCase
             ->assertExitCode(0);
 
         // Aun en "producción" simulada, deja el sistema listo
-        $this->assertSame(11, User::query()->count());
+        $this->assertSame(13, User::query()->count());
         $this->assertSame(5, Role::query()->count());
     }
 

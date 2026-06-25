@@ -57,6 +57,7 @@ class ListDeposits extends ListRecords
                     ->label('Ver Reporte PDF')
                     ->icon('heroicon-o-document-text')
                     ->color('danger')
+                    ->visible(fn (): bool => Auth::user()->can('ExportPdf:Deposit'))
                     ->schema([
                         DatePicker::make('date_from')
                             ->label('Fecha desde')
@@ -85,6 +86,7 @@ class ListDeposits extends ListRecords
                     ->label('Exportar Excel')
                     ->icon('heroicon-o-table-cells')
                     ->color('success')
+                    ->visible(fn (): bool => Auth::user()->can('ExportExcel:Deposit'))
                     ->schema([
                         DatePicker::make('date_from')
                             ->label('Fecha desde')

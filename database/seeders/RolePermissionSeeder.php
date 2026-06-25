@@ -85,10 +85,10 @@ class RolePermissionSeeder extends Seeder
         // (eso queda reservado al super_admin para evitar escaladas).
         'admin' => [
             'Activity' => ['ViewAny', 'View'],
-            'Deposit' => ['ViewAny', 'View', 'Create', 'Update', 'Delete', 'Restore'],
+            'Deposit' => ['ViewAny', 'View', 'Create', 'Update', 'Delete', 'Restore', 'ExportPdf', 'ExportExcel'],
             'Invoice' => ['ViewAny', 'View', 'Update', 'Delete', 'Restore'],
-            'InvoiceReturn' => ['ViewAny', 'View', 'Create', 'Update', 'Delete', 'Restore'],
-            'Manifest' => ['ViewAny', 'View', 'Update', 'Delete', 'Restore'],
+            'InvoiceReturn' => ['ViewAny', 'View', 'Create', 'Update', 'Delete', 'Restore', 'ExportPdf', 'ExportExcel'],
+            'Manifest' => ['ViewAny', 'View', 'Update', 'Delete', 'Restore', 'Close', 'Reopen'],
             'ReturnReason' => ['ViewAny', 'View', 'Create', 'Update', 'Delete'],
             'User' => ['ViewAny', 'View', 'Create', 'Update'],
             'Warehouse' => ['ViewAny', 'View', 'Update'],
@@ -100,10 +100,12 @@ class RolePermissionSeeder extends Seeder
         // facturas/manifiestos de SU bodega (Policy lo filtra),
         // registra/edita devoluciones y depósitos.
         'encargado' => [
-            'Deposit' => ['ViewAny', 'View', 'Create', 'Update'],
+            'Deposit' => ['ViewAny', 'View', 'Create', 'Update', 'ExportPdf', 'ExportExcel'],
             'Invoice' => ['ViewAny', 'View', 'Update'],
-            'InvoiceReturn' => ['ViewAny', 'View', 'Create', 'Update'],
-            'Manifest' => ['ViewAny', 'View', 'Update'],
+            'InvoiceReturn' => ['ViewAny', 'View', 'Create', 'Update', 'ExportPdf', 'ExportExcel'],
+            // Close: el encargado cierra manifiestos de SU bodega (la Policy
+            // lo filtra). Reopen NO — reabrir es sensible, queda en admin.
+            'Manifest' => ['ViewAny', 'View', 'Update', 'Close'],
             'ReturnReason' => ['ViewAny', 'View'],
             'Warehouse' => ['ViewAny', 'View'],
         ],
@@ -113,7 +115,8 @@ class RolePermissionSeeder extends Seeder
         // devoluciones. No edita, no borra.
         'operador' => [
             'Invoice' => ['ViewAny', 'View'],
-            'InvoiceReturn' => ['ViewAny', 'View', 'Create'],
+            // Captura devoluciones e imprime su PDF. NO exporta Excel.
+            'InvoiceReturn' => ['ViewAny', 'View', 'Create', 'ExportPdf'],
             'Manifest' => ['ViewAny', 'View'],
             'ReturnReason' => ['ViewAny', 'View'],
             'Warehouse' => ['ViewAny', 'View'],
@@ -123,7 +126,7 @@ class RolePermissionSeeder extends Seeder
         // Lectura de facturas/manifiestos de su bodega + CRUD de
         // depósitos para conciliación bancaria.
         'finance' => [
-            'Deposit' => ['ViewAny', 'View', 'Create', 'Update'],
+            'Deposit' => ['ViewAny', 'View', 'Create', 'Update', 'ExportPdf', 'ExportExcel'],
             'Invoice' => ['ViewAny', 'View'],
             'InvoiceReturn' => ['ViewAny', 'View'],
             'Manifest' => ['ViewAny', 'View'],

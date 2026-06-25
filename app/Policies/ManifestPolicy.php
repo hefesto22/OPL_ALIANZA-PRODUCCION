@@ -74,4 +74,29 @@ class ManifestPolicy
     {
         return $authUser->can('Reorder:Manifest');
     }
+
+    /**
+     * Cerrar un manifiesto (acción de negocio, permiso custom).
+     *
+     * Permiso: Close:Manifest (ver CustomPermissionSeeder). La condición
+     * de estado (isReadyToClose) la valida la UI/Service — la Policy solo
+     * autoriza al actor y lo restringe a SU bodega vía userOwnsRecord.
+     */
+    public function close(AuthUser $authUser, Manifest $manifest): bool
+    {
+        return $authUser->can('Close:Manifest')
+            && $this->userOwnsRecord($authUser, $manifest);
+    }
+
+    /**
+     * Reabrir un manifiesto cerrado (acción sensible, permiso custom).
+     *
+     * Permiso: Reopen:Manifest. Por matriz solo lo tiene admin (+ super_admin
+     * vía gate). userOwnsRecord deja pasar a usuarios globales.
+     */
+    public function reopen(AuthUser $authUser, Manifest $manifest): bool
+    {
+        return $authUser->can('Reopen:Manifest')
+            && $this->userOwnsRecord($authUser, $manifest);
+    }
 }

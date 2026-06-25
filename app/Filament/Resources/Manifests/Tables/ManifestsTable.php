@@ -413,7 +413,7 @@ class ManifestsTable
                         /** @var User $user */
                         $user = Auth::user();
 
-                        return $record->isReadyToClose() && $user->hasAnyRole(['super_admin', 'admin']);
+                        return $record->isReadyToClose() && $user->can('close', $record);
                     })
                     ->action(function (Manifest $record): void {
                         app(\App\Services\ManifestService::class)
@@ -437,7 +437,7 @@ class ManifestsTable
                         /** @var User $user */
                         $user = Auth::user();
 
-                        return $record->isClosed() && $user->hasRole('super_admin');
+                        return $record->isClosed() && $user->can('reopen', $record);
                     })
                     ->action(function (Manifest $record): void {
                         app(\App\Services\ManifestService::class)

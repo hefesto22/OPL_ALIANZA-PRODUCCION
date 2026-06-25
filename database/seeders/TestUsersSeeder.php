@@ -12,82 +12,77 @@ use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Models\Role;
 
 /**
- * Crea los usuarios de operación inicial del sistema.
+ * Crea los usuarios de operación inicial del sistema (uno por rol y bodega).
  *
- * Estructura jerárquica (refleja la realidad operativa OPL Alianza):
+ * Estructura jerárquica:
  *
- *     super_admin (creado por AdminUserSeeder)
- *         └── admin OPL Alianza (oplalianza@gmail.com)
- *                   ├── encargadoOAC, operadorOAC, financeOAC   ← bodega Choloma
- *                   ├── encargadoOAS, operadorOAS, financeOAS   ← bodega Santa Rosa
- *                   └── encargadoOAO, operadorOAO, financeOAO   ← bodega Omoa
+ *     super_admin (creado por system:fresh-bootstrap — admin@gmail.com)
+ *         ├── encargado.copan / operador.copan / finance.copan          ← OAC (Copán)
+ *         ├── encargado.santabarbara / operador… / finance…             ← OAS (Santa Bárbara)
+ *         ├── encargado.ocotepeque / operador… / finance…               ← OAO (Ocotepeque)
+ *         └── encargado.intibuca / operador… / finance…                 ← OAI (Intibucá)
  *
- * Total: 10 usuarios creados aquí (1 admin + 9 de bodega).
- * El super_admin lo crea AdminUserSeeder y es la raíz de la jerarquía.
+ * Total: 12 usuarios (3 roles × 4 bodegas). El super_admin lo crea el
+ * comando de bootstrap y es la raíz de la jerarquía (created_by).
+ *
+ * NO se crea un usuario con rol 'admin' (gestor global). El rol existe en
+ * el sistema con su matriz de permisos, pero se asigna desde el panel si
+ * el negocio lo necesita. Si quieres volver a sembrar un admin global,
+ * agrégalo aquí con warehouse_id = null.
+ *
+ * ──────────────────────────────────────────────────────────────────────
+ *  EMAIL — "que diga de dónde es"
+ * ──────────────────────────────────────────────────────────────────────
+ *  Patrón: '{rol}.{ciudad}@gmail.com' → operador.ocotepeque@gmail.com.
+ *  El slug de ciudad hace el correo legible para un humano (a diferencia
+ *  del código OAO). Ver self::WAREHOUSE_SLUG.
  *
  * ──────────────────────────────────────────────────────────────────────
  *  PASSWORD
  * ──────────────────────────────────────────────────────────────────────
  *  Se lee de TEST_USER_PASSWORD en .env, con fallback a 'Hozana@2026'.
- *  Es un único password compartido para los 10 usuarios — esto es
- *  apropiado para QA/staging/bootstrap inicial donde el equipo cambiará
- *  su password individual al primer login.
- *
- *  Si necesitas password distinto por usuario en producción real, ese
- *  es trabajo del admin desde el panel — no del seeder.
+ *  Password compartido para los 12 usuarios — apropiado para
+ *  QA/bootstrap inicial donde cada quien cambia el suyo al primer login.
+ *  Para usar '12345678' en local: define TEST_USER_PASSWORD=12345678 en .env.
  *
  * ──────────────────────────────────────────────────────────────────────
  *  IDEMPOTENCIA
  * ──────────────────────────────────────────────────────────────────────
- *  Usa firstOrCreate por email. Re-ejecutar el seeder NO duplica
- *  usuarios ni cambia passwords existentes. Si necesitas resetear los
- *  passwords usa el comando system:fresh-bootstrap que reconstruye
- *  todo desde cero.
- *
- *  Re-asigna el rol siempre (assignRole es idempotente en Spatie:
- *  internamente usa syncWithoutDetaching).
+ *  firstOrCreate por email. Re-ejecutar NO duplica ni cambia passwords
+ *  existentes. Para resetear, usa system:fresh-bootstrap.
  *
  * ──────────────────────────────────────────────────────────────────────
  *  NO se incluye en DatabaseSeeder por seguridad
  * ──────────────────────────────────────────────────────────────────────
- *  Este seeder NO está en DatabaseSeeder::$call para evitar que un
- *  db:seed accidental en producción cree usuarios con password
- *  conocido. Se invoca explícitamente desde:
- *    - system:fresh-bootstrap (recomendado)
- *    - php artisan db:seed --class=TestUsersSeeder (manual)
+ *  Crea usuarios con password conocido. Se invoca explícitamente desde
+ *  system:fresh-bootstrap o `db:seed --class=TestUsersSeeder`.
  */
 class TestUsersSeeder extends Seeder
 {
     /**
-     * Definición de los usuarios de bodega.
-     * Formato: [código_bodega, rol] — el email se deriva del patrón
-     * '{rol}{código}@gmail.com' para mantener consistencia con la
-     * convención actual del sistema productivo.
+     * Bodegas activas y su slug de ciudad para el email.
+     *
+     * @var array<string, string> código => slug-ciudad
      */
-    private const WAREHOUSE_USERS = [
-        ['OAC', 'encargado'],
-        ['OAC', 'operador'],
-        ['OAC', 'finance'],
-        ['OAS', 'encargado'],
-        ['OAS', 'operador'],
-        ['OAS', 'finance'],
-        ['OAO', 'encargado'],
-        ['OAO', 'operador'],
-        ['OAO', 'finance'],
+    private const WAREHOUSE_SLUG = [
+        'OAC' => 'copan',
+        'OAS' => 'santabarbara',
+        'OAO' => 'ocotepeque',
+        'OAI' => 'intibuca',
     ];
 
-    private const ADMIN_EMAIL = 'oplalianza@gmail.com';
-
-    private const ADMIN_NAME = 'AdminOPLAlianza';
+    /**
+     * Roles de bodega que se crean por cada bodega.
+     *
+     * @var array<int, string>
+     */
+    private const WAREHOUSE_ROLES = ['encargado', 'operador', 'finance'];
 
     public function run(): void
     {
         $password = env('TEST_USER_PASSWORD', 'Hozana@2026');
 
-        // ── Pre-flight: requiere rol super_admin + usuario con ese rol + 3 bodegas ──
-        // Cheque del ROL primero: Spatie lanza RoleDoesNotExist al usar
-        // ->role(X) si el rol no existe en la tabla roles. Hay que
-        // chequear existencia ANTES de invocar el scope.
+        // ── Pre-flight: requiere rol super_admin + usuario con ese rol + bodegas ──
         $superAdminRoleName = Utils::getSuperAdminName();
 
         if (! Role::query()->where('name', $superAdminRoleName)->exists()) {
@@ -106,19 +101,21 @@ class TestUsersSeeder extends Seeder
         if (! $superAdmin) {
             $this->command?->error(
                 '[TestUsersSeeder] No existe ningún usuario con rol super_admin. '.
-                'Corre primero: php artisan db:seed (incluye AdminUserSeeder)'
+                'Corre primero el bootstrap (system:fresh-bootstrap).'
             );
 
             return;
         }
 
+        $codes = array_keys(self::WAREHOUSE_SLUG);
+
         $warehouses = Warehouse::query()
-            ->whereIn('code', ['OAC', 'OAS', 'OAO'])
+            ->whereIn('code', $codes)
             ->get()
             ->keyBy('code');
 
-        if ($warehouses->count() !== 3) {
-            $missing = collect(['OAC', 'OAS', 'OAO'])
+        if ($warehouses->count() !== count($codes)) {
+            $missing = collect($codes)
                 ->diff($warehouses->pluck('code'))
                 ->implode(', ');
 
@@ -132,41 +129,35 @@ class TestUsersSeeder extends Seeder
 
         // Una sola transacción: si algo falla, no quedan usuarios huérfanos.
         DB::transaction(function () use ($superAdmin, $warehouses, $password) {
-            // ── 1. Admin OPL Alianza (hijo del super_admin) ────────
-            $admin = $this->createUserWithRole(
-                email: self::ADMIN_EMAIL,
-                name: self::ADMIN_NAME,
-                password: $password,
-                role: 'admin',
-                warehouseId: null,
-                createdBy: $superAdmin->id,
-            );
-
-            // ── 2. Usuarios de bodega (hijos del admin) ────────────
-            foreach (self::WAREHOUSE_USERS as [$code, $role]) {
+            foreach (self::WAREHOUSE_SLUG as $code => $slug) {
                 $warehouse = $warehouses->get($code);
 
-                $this->createUserWithRole(
-                    email: strtolower($role).$code.'@gmail.com',
-                    name: $role.$code,
-                    password: $password,
-                    role: $role,
-                    warehouseId: $warehouse->id,
-                    createdBy: $admin->id,
-                );
+                foreach (self::WAREHOUSE_ROLES as $role) {
+                    $this->createUserWithRole(
+                        email: "{$role}.{$slug}@gmail.com",
+                        name: ucfirst($role).' '.$code,
+                        password: $password,
+                        role: $role,
+                        warehouseId: $warehouse->id,
+                        createdBy: $superAdmin->id,
+                    );
+                }
             }
         });
 
+        $total = count(self::WAREHOUSE_SLUG) * count(self::WAREHOUSE_ROLES);
+
         $this->command?->info(
-            '[TestUsersSeeder] '.(count(self::WAREHOUSE_USERS) + 1).' usuarios provistos (1 admin + '.count(self::WAREHOUSE_USERS).' de bodega).'
+            "[TestUsersSeeder] {$total} usuarios de bodega provistos ".
+            '(3 roles × 4 bodegas).'
         );
     }
 
     /**
      * Crea (o recupera) un usuario y le asigna el rol indicado.
      *
-     * El cast 'password' => 'hashed' del modelo User se encarga del
-     * hashing — pasamos plaintext. assignRole es idempotente.
+     * El cast 'password' => 'hashed' del modelo User hashea — pasamos
+     * plaintext. assignRole es idempotente (syncWithoutDetaching interno).
      */
     private function createUserWithRole(
         string $email,
@@ -188,8 +179,6 @@ class TestUsersSeeder extends Seeder
             ]
         );
 
-        // Si el usuario ya existía pero le falta el rol (caso edge:
-        // alguien lo creó manualmente sin rol), igual lo asigna.
         if (! $user->hasRole($role)) {
             $user->assignRole($role);
         }

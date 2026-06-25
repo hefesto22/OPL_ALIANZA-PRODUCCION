@@ -60,7 +60,7 @@ class ViewManifest extends ViewRecord
                     /** @var User $user */
                     $user = Auth::user();
 
-                    return $this->record->isReadyToClose() && $user->hasAnyRole(['super_admin', 'admin']);
+                    return $this->record->isReadyToClose() && $user->can('close', $this->record);
                 })
                 ->action(function (): void {
                     app(\App\Services\ManifestService::class)
@@ -89,7 +89,7 @@ class ViewManifest extends ViewRecord
                     /** @var User $user */
                     $user = Auth::user();
 
-                    return $this->record->isClosed() && $user->hasRole('super_admin');
+                    return $this->record->isClosed() && $user->can('reopen', $this->record);
                 })
                 ->action(function (): void {
                     app(\App\Services\ManifestService::class)

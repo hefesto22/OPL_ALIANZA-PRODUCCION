@@ -172,7 +172,7 @@ class DepositResource extends Resource
                     ->label('Eliminar')
                     ->icon('heroicon-o-trash')
                     ->color('danger')
-                    ->visible(fn (Deposit $record): bool => Auth::user()->hasRole('super_admin')
+                    ->visible(fn (Deposit $record): bool => Auth::user()->can('forceDelete', $record)
                         && ! $record->manifest->isClosed()
                     )
                     ->requiresConfirmation()

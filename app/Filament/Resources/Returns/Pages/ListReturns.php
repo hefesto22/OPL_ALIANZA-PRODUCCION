@@ -80,6 +80,7 @@ class ListReturns extends ListRecords
                     ->label('Ver Reporte PDF')
                     ->icon('heroicon-o-document-text')
                     ->color('danger')
+                    ->visible(fn (): bool => Auth::user()->can('ExportPdf:InvoiceReturn'))
                     ->schema([
                         DatePicker::make('date_from')
                             ->label('Fecha desde')
@@ -127,6 +128,7 @@ class ListReturns extends ListRecords
                     ->label('Excel Interno — Resumen simple')
                     ->icon('heroicon-o-document-chart-bar')
                     ->color('success')
+                    ->visible(fn (): bool => Auth::user()->can('ExportExcel:InvoiceReturn'))
                     ->schema([
                         DatePicker::make('date_from')
                             ->label('Fecha desde')
@@ -193,6 +195,7 @@ class ListReturns extends ListRecords
                     ->label('Excel Jaremar — 71 columnas')
                     ->icon('heroicon-o-table-cells')
                     ->color('warning')
+                    ->visible(fn (): bool => Auth::user()->can('ExportExcel:InvoiceReturn'))
                     ->schema([
                         DatePicker::make('date_from')
                             ->label('Fecha desde')

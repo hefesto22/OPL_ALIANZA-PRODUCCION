@@ -44,7 +44,7 @@ class ManifestPolicyTest extends TestCase
         $acciones = [
             'ViewAny', 'View', 'Create', 'Update', 'Delete',
             'Restore', 'RestoreAny', 'ForceDelete', 'ForceDeleteAny',
-            'Replicate', 'Reorder',
+            'Replicate', 'Reorder', 'Close', 'Reopen',
         ];
         foreach ($acciones as $action) {
             Permission::create(['name' => "{$action}:Manifest", 'guard_name' => 'web']);
@@ -125,5 +125,25 @@ class ManifestPolicyTest extends TestCase
         $this->assertTrue($this->policy->reorder($this->oacUser));
 
         $this->assertFalse($this->policy->viewAny($this->userSinPermisos));
+    }
+
+    public function test_close_y_reopen_respetan_permiso_y_aislamiento_por_bodega(): void
+    {
+        $manifiestoOac = $this->manifestFor($this->oac);
+        $manifiestoOas = $this->manifestFor($this->oas);
+
+        // Usuario de OAC con permiso: cierra/reabre SU bodega, no la ajena.
+        $this->assertTrue($this->policy->close($this->oacUser, $manifiestoOac));
+        $this->assertTrue($this->policy->reopen($this->oacUser, $manifiestoOac));
+        $this->assertFalse($this->policy->close($this->oacUser, $manifiestoOas));
+        $this->assertFalse($this->policy->reopen($this->oacUser, $manifiestoOas));
+
+        // Usuario global con permiso: cierra/reabre cualquier bodega.
+        $this->assertTrue($this->policy->close($this->globalUser, $manifiestoOas));
+        $this->assertTrue($this->policy->reopen($this->globalUser, $manifiestoOas));
+
+        // Sin permiso: ni en su propia bodega.
+        $this->assertFalse($this->policy->close($this->userSinPermisos, $manifiestoOac));
+        $this->assertFalse($this->policy->reopen($this->userSinPermisos, $manifiestoOac));
     }
 }

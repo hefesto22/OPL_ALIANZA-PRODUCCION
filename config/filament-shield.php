@@ -23,7 +23,7 @@ return [
             'pages' => true,
             'widgets' => true,
             'resources' => true,
-            'custom_permissions' => false,
+            'custom_permissions' => true,
         ],
     ],
 
@@ -228,7 +228,19 @@ return [
     |
     */
 
-    'custom_permissions' => [],
+    'custom_permissions' => [
+        // Permisos de acciones/botones que NO derivan de un Resource.
+        // Se crean en BD vía Database\Seeders\CustomPermissionSeeder y se
+        // asignan a roles en RolePermissionSeeder. Listados aquí para que
+        // aparezcan en la pestaña "Permisos personalizados" del editor de
+        // roles. Mantener sincronizado con CustomPermissionSeeder::PERMISSIONS.
+        'Close:Manifest',
+        'Reopen:Manifest',
+        'ExportPdf:Deposit',
+        'ExportExcel:Deposit',
+        'ExportPdf:InvoiceReturn',
+        'ExportExcel:InvoiceReturn',
+    ],
 
     /*
     |--------------------------------------------------------------------------

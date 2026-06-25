@@ -64,12 +64,12 @@ class WarehouseResource extends Resource
                 ->label('Nombre')
                 ->required()
                 ->maxLength(100)
-                ->placeholder('Ej. Bodega Choloma'),
+                ->placeholder('Ej. Bodega Copán'),
 
             TextInput::make('city')
                 ->label('Ciudad')
                 ->maxLength(60)
-                ->placeholder('Ej. Choloma'),
+                ->placeholder('Ej. Santa Rosa de Copán'),
 
             TextInput::make('department')
                 ->label('Departamento')

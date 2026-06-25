@@ -18,11 +18,12 @@ use Tests\TestCase;
  * Tests del TestUsersSeeder.
  *
  * Cubrimos:
- *  - Crea exactamente 10 usuarios (1 admin + 9 de bodega)
- *  - Jerarquía created_by: admin→super_admin, bodega→admin
+ *  - Crea exactamente 12 usuarios de bodega (3 roles × 4 bodegas)
+ *  - Jerarquía created_by: todos hijos del super_admin
  *  - warehouse_id correcto por código de bodega
+ *  - Email derivado del slug de ciudad ({rol}.{ciudad}@gmail.com)
  *  - Rol correcto asignado
- *  - Password hasheable (cast 'hashed' del modelo)
+ *  - Password hasheable (cast 'hashed' del modelo) + override por env
  *  - Idempotencia: 2 corridas no duplican
  *  - Cada usuario puede acceder al panel (canAccessPanel())
  *  - Aborta gracefully si faltan dependencias (super_admin o bodegas)
@@ -31,13 +32,29 @@ class TestUsersSeederTest extends TestCase
 {
     use RefreshDatabase;
 
-    protected function setUp(): void
-    {
-        parent::setUp();
+    /**
+     * Emails esperados de los 12 usuarios de bodega.
+     *
+     * @var array<int, string>
+     */
+    private const EXPECTED_EMAILS = [
+        'encargado.copan@gmail.com', 'operador.copan@gmail.com', 'finance.copan@gmail.com',
+        'encargado.santabarbara@gmail.com', 'operador.santabarbara@gmail.com', 'finance.santabarbara@gmail.com',
+        'encargado.ocotepeque@gmail.com', 'operador.ocotepeque@gmail.com', 'finance.ocotepeque@gmail.com',
+        'encargado.intibuca@gmail.com', 'operador.intibuca@gmail.com', 'finance.intibuca@gmail.com',
+    ];
 
-        // Filament necesita un panel registrado para los tests que verifiquen acceso.
-        // En entornos de testing Filament usa el panel registrado por el AppProvider.
-    }
+    /**
+     * Mapa código de bodega → slug de ciudad usado en el email.
+     *
+     * @var array<string, string>
+     */
+    private const WAREHOUSE_SLUG = [
+        'OAC' => 'copan',
+        'OAS' => 'santabarbara',
+        'OAO' => 'ocotepeque',
+        'OAI' => 'intibuca',
+    ];
 
     private function seedDependencies(): void
     {
@@ -46,10 +63,9 @@ class TestUsersSeederTest extends TestCase
             WarehouseSeeder::class,
         ]);
 
-        // El super_admin antes lo creaba AdminUserSeeder. Ahora ese
-        // seeder está deprecado — el bootstrap lo crea tipeando email
-        // y password en runtime. Para los tests del TestUsersSeeder
-        // basta con un super_admin pelado con un rol asignado.
+        // El super_admin lo crea el bootstrap tipeando credenciales en
+        // runtime. Para los tests del TestUsersSeeder basta con un
+        // super_admin pelado con su rol asignado: es la raíz de la jerarquía.
         $superAdmin = User::factory()->create([
             'name' => 'Super Admin (test)',
             'email' => 'superadmin-test@hozana.local',
@@ -60,7 +76,7 @@ class TestUsersSeederTest extends TestCase
         $superAdmin->assignRole(Utils::getSuperAdminName());
     }
 
-    public function test_creates_exactly_ten_users_with_correct_total(): void
+    public function test_creates_exactly_twelve_warehouse_users(): void
     {
         $this->seedDependencies();
         $usersBefore = User::query()->count(); // 1 super_admin
@@ -68,59 +84,46 @@ class TestUsersSeederTest extends TestCase
         $this->seed(TestUsersSeeder::class);
 
         $this->assertSame(
-            $usersBefore + 10,
+            $usersBefore + 12,
             User::query()->count(),
-            'Debe crear 10 usuarios: 1 admin OPL + 3 bodegas × 3 roles.'
+            'Debe crear 12 usuarios: 3 roles × 4 bodegas.'
         );
     }
 
-    public function test_admin_opl_alianza_is_created_as_child_of_super_admin(): void
+    public function test_warehouse_users_are_children_of_super_admin(): void
     {
         $this->seedDependencies();
         $this->seed(TestUsersSeeder::class);
-
-        $admin = User::query()->where('email', 'oplalianza@gmail.com')->first();
-        $this->assertNotNull($admin);
 
         $superAdmin = User::query()
             ->role(Utils::getSuperAdminName())
             ->first();
 
-        $this->assertSame($superAdmin->id, $admin->created_by);
-        $this->assertNull($admin->warehouse_id, 'El admin es global, sin warehouse_id.');
-        $this->assertTrue($admin->hasRole('admin'));
-        $this->assertTrue($admin->isGlobalUser());
-        $this->assertTrue($admin->is_active);
+        $warehouseUsers = User::query()
+            ->whereIn('email', self::EXPECTED_EMAILS)
+            ->get();
+
+        $this->assertCount(12, $warehouseUsers);
+
+        foreach ($warehouseUsers as $user) {
+            $this->assertSame($superAdmin->id, $user->created_by);
+            $this->assertNotNull($user->warehouse_id);
+            $this->assertTrue($user->isWarehouseUser());
+            $this->assertTrue($user->is_active);
+        }
     }
 
-    public function test_warehouse_users_are_children_of_admin(): void
+    public function test_no_admin_role_user_is_seeded(): void
     {
         $this->seedDependencies();
         $this->seed(TestUsersSeeder::class);
 
-        $admin = User::query()->where('email', 'oplalianza@gmail.com')->first();
-
-        $warehouseUsers = User::query()
-            ->whereIn('email', [
-                'encargadoOAC@gmail.com',
-                'operadorOAC@gmail.com',
-                'financeOAC@gmail.com',
-                'encargadoOAS@gmail.com',
-                'operadorOAS@gmail.com',
-                'financeOAS@gmail.com',
-                'encargadoOAO@gmail.com',
-                'operadorOAO@gmail.com',
-                'financeOAO@gmail.com',
-            ])
-            ->get();
-
-        $this->assertCount(9, $warehouseUsers);
-
-        foreach ($warehouseUsers as $user) {
-            $this->assertSame($admin->id, $user->created_by);
-            $this->assertNotNull($user->warehouse_id);
-            $this->assertTrue($user->isWarehouseUser());
-        }
+        // El rol 'admin' existe pero el seeder NO crea un usuario con él.
+        $this->assertSame(
+            0,
+            User::query()->role('admin')->count(),
+            'El seeder no debe crear usuarios con rol admin (se asignan desde el panel).'
+        );
     }
 
     public function test_each_warehouse_user_is_linked_to_correct_warehouse(): void
@@ -129,25 +132,24 @@ class TestUsersSeederTest extends TestCase
         $this->seed(TestUsersSeeder::class);
 
         $warehouseByCode = Warehouse::query()
-            ->whereIn('code', ['OAC', 'OAS', 'OAO'])
+            ->whereIn('code', array_keys(self::WAREHOUSE_SLUG))
             ->get()
             ->keyBy('code');
 
-        foreach (['OAC', 'OAS', 'OAO'] as $code) {
+        foreach (self::WAREHOUSE_SLUG as $code => $slug) {
             foreach (['encargado', 'operador', 'finance'] as $role) {
-                $user = User::query()
-                    ->where('email', "{$role}{$code}@gmail.com")
-                    ->first();
+                $email = "{$role}.{$slug}@gmail.com";
+                $user = User::query()->where('email', $email)->first();
 
-                $this->assertNotNull($user, "Falta el usuario {$role}{$code}@gmail.com");
+                $this->assertNotNull($user, "Falta el usuario {$email}");
                 $this->assertSame(
                     $warehouseByCode->get($code)->id,
                     $user->warehouse_id,
-                    "El usuario {$role}{$code} debería pertenecer a la bodega {$code}."
+                    "El usuario {$email} debería pertenecer a la bodega {$code}."
                 );
                 $this->assertTrue(
                     $user->hasRole($role),
-                    "El usuario {$role}{$code} debería tener el rol {$role}."
+                    "El usuario {$email} debería tener el rol {$role}."
                 );
             }
         }
@@ -155,36 +157,43 @@ class TestUsersSeederTest extends TestCase
 
     public function test_password_is_hashed_using_model_cast(): void
     {
-        $this->seedDependencies();
-        $this->seed(TestUsersSeeder::class);
-
-        $user = User::query()->where('email', 'encargadoOAC@gmail.com')->first();
-
-        // No debe quedar plaintext
-        $this->assertNotSame('Hozana@2026', $user->getAttributes()['password']);
-
-        // Debe matchear contra el plaintext esperado
-        $this->assertTrue(
-            Hash::check('Hozana@2026', $user->password),
-            'El password seedeado debería verificar contra Hash::check.'
-        );
-    }
-
-    public function test_password_can_be_overridden_via_env(): void
-    {
-        // putenv() NO impacta env() de Laravel — Laravel lee desde el
-        // Dotenv repository (Env::getRepository), no desde getenv().
-        // Hay que usar el bridge oficial para que env() vea el cambio.
-        Env::getRepository()->set('TEST_USER_PASSWORD', 'PasswordCustomQA123!');
+        // Fijamos el password en el test para no depender del .env local
+        // del desarrollador (que puede tener TEST_USER_PASSWORD definido).
+        // Así el test es determinista en cualquier máquina/CI.
+        Env::getRepository()->set('TEST_USER_PASSWORD', 'Hozana@2026');
 
         try {
             $this->seedDependencies();
             $this->seed(TestUsersSeeder::class);
 
-            $user = User::query()->where('email', 'operadorOAS@gmail.com')->first();
+            $user = User::query()->where('email', 'encargado.copan@gmail.com')->first();
+
+            // No debe quedar plaintext
+            $this->assertNotSame('Hozana@2026', $user->getAttributes()['password']);
+
+            // Debe matchear contra el plaintext vía el cast 'hashed' del modelo
+            $this->assertTrue(
+                Hash::check('Hozana@2026', $user->password),
+                'El password seedeado debería verificar contra Hash::check.'
+            );
+        } finally {
+            Env::getRepository()->clear('TEST_USER_PASSWORD');
+        }
+    }
+
+    public function test_password_can_be_overridden_via_env(): void
+    {
+        // putenv() NO impacta env() de Laravel — hay que usar el bridge oficial.
+        Env::getRepository()->set('TEST_USER_PASSWORD', '12345678');
+
+        try {
+            $this->seedDependencies();
+            $this->seed(TestUsersSeeder::class);
+
+            $user = User::query()->where('email', 'operador.santabarbara@gmail.com')->first();
 
             $this->assertTrue(
-                Hash::check('PasswordCustomQA123!', $user->password),
+                Hash::check('12345678', $user->password),
                 'El password debería leerse del env TEST_USER_PASSWORD.'
             );
         } finally {
@@ -252,14 +261,7 @@ class TestUsersSeederTest extends TestCase
 
         $panel = Filament::getPanel('admin');
 
-        $emails = [
-            'oplalianza@gmail.com',
-            'encargadoOAC@gmail.com', 'operadorOAC@gmail.com', 'financeOAC@gmail.com',
-            'encargadoOAS@gmail.com', 'operadorOAS@gmail.com', 'financeOAS@gmail.com',
-            'encargadoOAO@gmail.com', 'operadorOAO@gmail.com', 'financeOAO@gmail.com',
-        ];
-
-        foreach ($emails as $email) {
+        foreach (self::EXPECTED_EMAILS as $email) {
             $user = User::query()->where('email', $email)->first();
 
             $this->assertTrue(

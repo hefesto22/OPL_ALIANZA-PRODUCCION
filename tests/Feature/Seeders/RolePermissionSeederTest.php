@@ -61,6 +61,12 @@ class RolePermissionSeederTest extends TestCase
             }
         }
 
+        // Permisos custom (los crea CustomPermissionSeeder en runtime real).
+        // Aquí los sembramos a mano para que la matriz pueda asignarlos.
+        foreach (\Database\Seeders\CustomPermissionSeeder::PERMISSIONS as $name) {
+            Permission::firstOrCreate(['name' => $name, 'guard_name' => 'web']);
+        }
+
         app(PermissionRegistrar::class)->forgetCachedPermissions();
     }
 
@@ -170,6 +176,41 @@ class RolePermissionSeederTest extends TestCase
         // No edita facturas
         $this->assertNotContains('Update:Invoice', $permissions);
         $this->assertNotContains('Delete:Invoice', $permissions);
+    }
+
+    public function test_custom_button_permissions_are_assigned_per_matrix(): void
+    {
+        $this->seedShieldPermissions();
+        $this->seed(RolePermissionSeeder::class);
+
+        $perms = fn (string $role): array => Role::query()
+            ->where('name', $role)->first()->permissions->pluck('name')->all();
+
+        // ── admin: cierra y reabre manifiestos, exporta todo ──
+        $admin = $perms('admin');
+        $this->assertContains('Close:Manifest', $admin);
+        $this->assertContains('Reopen:Manifest', $admin);
+        $this->assertContains('ExportPdf:Deposit', $admin);
+        $this->assertContains('ExportExcel:InvoiceReturn', $admin);
+
+        // ── encargado: cierra (su bodega) pero NO reabre ──
+        $encargado = $perms('encargado');
+        $this->assertContains('Close:Manifest', $encargado);
+        $this->assertNotContains('Reopen:Manifest', $encargado);
+        $this->assertContains('ExportExcel:Deposit', $encargado);
+
+        // ── operador: solo PDF de devoluciones, nada de Excel ni cerrar ──
+        $operador = $perms('operador');
+        $this->assertContains('ExportPdf:InvoiceReturn', $operador);
+        $this->assertNotContains('ExportExcel:InvoiceReturn', $operador);
+        $this->assertNotContains('Close:Manifest', $operador);
+
+        // ── finance: exporta depósitos, no toca manifiestos ni devoluciones ──
+        $finance = $perms('finance');
+        $this->assertContains('ExportPdf:Deposit', $finance);
+        $this->assertContains('ExportExcel:Deposit', $finance);
+        $this->assertNotContains('ExportPdf:InvoiceReturn', $finance);
+        $this->assertNotContains('Close:Manifest', $finance);
     }
 
     public function test_super_admin_receives_no_explicit_permissions(): void

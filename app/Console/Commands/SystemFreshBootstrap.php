@@ -26,14 +26,14 @@ use function Laravel\Prompts\text;
  *
  * BORRA TODA LA BASE DE DATOS y la deja con:
  *   • 5 roles (super_admin, admin, encargado, operador, finance)
- *   • Permisos Shield asignados según matriz (RolePermissionSeeder)
- *   • 3 bodegas (OAC, OAS, OAO)
+ *   • Permisos Shield + 6 permisos custom asignados según matriz
+ *   • 4 bodegas (OAC=Copán, OAS=Santa Bárbara, OAO=Ocotepeque, OAI=Intibucá)
  *   • Proveedor Jaremar
  *   • 30 motivos de devolución
- *   • 11 usuarios listos para QA:
+ *   • 13 usuarios listos para QA:
  *       - super_admin (credenciales tipeadas por el operador en runtime)
- *       - 1 admin OPL Alianza
- *       - 9 usuarios de bodega (3 por bodega × 3 bodegas)
+ *       - 12 usuarios de bodega (3 roles × 4 bodegas)
+ *   El rol 'admin' (gestor global) queda definido pero sin usuario sembrado.
  *
  * ──────────────────────────────────────────────────────────────────────
  *  TRIPLE GUARD CONTRA DESTRUCCIÓN ACCIDENTAL
@@ -75,8 +75,8 @@ use function Laravel\Prompts\text;
  * ──────────────────────────────────────────────────────────────────────
  *  CREDENCIALES DE LOS USUARIOS DE BODEGA
  * ──────────────────────────────────────────────────────────────────────
- *  Los 10 usuarios no-super_admin comparten password de
- *  TEST_USER_PASSWORD en .env (default: Hozana@2026). Al final del
+ *  Los 12 usuarios de bodega comparten password de TEST_USER_PASSWORD
+ *  en .env (default: Hozana@2026; para local usa 12345678). Al final del
  *  comando se imprime ese password en pantalla. El password del
  *  super_admin NUNCA se imprime — solo lo conoce quien lo tipeó.
  */
@@ -309,9 +309,10 @@ class SystemFreshBootstrap extends Command
      *                                       (NO crea super_admin; AdminUserSeeder fue retirado)
      *                                       (RolePermissionSeeder hace graceful skip aquí)
      *   3. shield:generate --all          → genera permisos Shield (solo permisos, no policies)
-     *   4. provisionSuperAdmin()          → crea el User super_admin + shield:super-admin
-     *   5. db:seed RolePermissionSeeder   → asigna permisos a admin/encargado/operador/finance
-     *   6. db:seed TestUsersSeeder        → crea admin OPL + 9 usuarios de bodega
+     *   4. db:seed CustomPermissionSeeder → crea los 6 permisos custom de botones
+     *   5. provisionSuperAdmin()          → crea el User super_admin + shield:super-admin
+     *   6. db:seed RolePermissionSeeder   → asigna permisos a admin/encargado/operador/finance
+     *   7. db:seed TestUsersSeeder        → crea 12 usuarios de bodega
      *
      * NOTA: NO pasamos $this->output a Artisan::call. En contexto de
      * tests, $this->output es un mock de Mockery configurado solo para
@@ -360,10 +361,21 @@ class SystemFreshBootstrap extends Command
             ],
         );
 
-        // ── Fase 3: provisioning del super_admin (patrón Shield) ──
+        // ── Fase 3: permisos custom de botones (no derivan de Resource) ──
+        // Se crean ANTES de promover al super_admin para que shield:super-admin
+        // también se los asigne a ese rol, y ANTES de RolePermissionSeeder
+        // para que la matriz pueda referenciarlos (Close/Reopen:Manifest,
+        // ExportPdf/Excel:Deposit/InvoiceReturn).
+        $this->runArtisanStep(
+            label: 'Creando permisos personalizados (CustomPermissionSeeder)',
+            command: 'db:seed',
+            parameters: ['--class' => 'Database\\Seeders\\CustomPermissionSeeder', '--force' => true],
+        );
+
+        // ── Fase 4: provisioning del super_admin (patrón Shield) ──
         $this->provisionSuperAdmin();
 
-        // ── Fase 4: asignación de permisos a roles + usuarios QA ──
+        // ── Fase 5: asignación de permisos a roles + usuarios QA ──
         $this->runArtisanStep(
             label: 'Asignando permisos a roles (RolePermissionSeeder)',
             command: 'db:seed',
@@ -465,24 +477,24 @@ class SystemFreshBootstrap extends Command
             [[$this->superAdminEmail, 'super_admin', 'global']]
         );
 
-        $this->line('<fg=cyan;options=bold>Admin OPL Alianza:</>');
-        $this->table(
-            ['Email', 'Password', 'Rol', 'Bodega'],
-            [['oplalianza@gmail.com', $password, 'admin', 'global']]
-        );
-
-        $this->line('<fg=cyan;options=bold>Usuarios de bodega:</>');
+        $this->line('<fg=cyan;options=bold>Usuarios de bodega (3 roles × 4 bodegas):</>');
+        $slugs = [
+            'OAC' => 'copan',
+            'OAS' => 'santabarbara',
+            'OAO' => 'ocotepeque',
+            'OAI' => 'intibuca',
+        ];
         $rows = [];
-        foreach (['OAC', 'OAS', 'OAO'] as $code) {
+        foreach ($slugs as $code => $slug) {
             foreach (['encargado', 'operador', 'finance'] as $role) {
-                $rows[] = ["{$role}{$code}@gmail.com", $password, $role, $code];
+                $rows[] = ["{$role}.{$slug}@gmail.com", $password, $role, $code];
             }
         }
         $this->table(['Email', 'Password', 'Rol', 'Bodega'], $rows);
 
         $this->newLine();
         $this->components->warn(
-            'Los 10 usuarios no-super_admin comparten el mismo password. '.
+            'Los 12 usuarios de bodega comparten el mismo password. '.
             'Cámbialos individualmente desde el panel antes de pasar a operación real.'
         );
         $this->newLine();
