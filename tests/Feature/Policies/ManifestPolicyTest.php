@@ -127,6 +127,52 @@ class ManifestPolicyTest extends TestCase
         $this->assertFalse($this->policy->viewAny($this->userSinPermisos));
     }
 
+    /**
+     * Crea un manifiesto SIN warehouse_id (como los que entran por la API)
+     * con N facturas de la bodega indicada — refleja datos reales del
+     * importador, donde el manifiesto es multi-bodega y la bodega vive en
+     * cada factura.
+     */
+    private function apiManifestWithInvoicesFor(Warehouse $warehouse): Manifest
+    {
+        $manifest = Manifest::factory()->create([
+            'supplier_id' => $this->supplier->id,
+            'warehouse_id' => null,
+        ]);
+
+        \App\Models\Invoice::factory()
+            ->count(2)
+            ->for($manifest, 'manifest')
+            ->for($warehouse, 'warehouse')
+            ->create();
+
+        return $manifest;
+    }
+
+    public function test_usuario_de_bodega_puede_abrir_manifiesto_api_con_facturas_de_su_bodega(): void
+    {
+        // Manifiesto importado por API: warehouse_id null, facturas de OAC.
+        $manifiesto = $this->apiManifestWithInvoicesFor($this->oac);
+
+        // El encargado de OAC debe poder verlo/editarlo/cerrarlo (regresión 403).
+        $this->assertTrue($this->policy->view($this->oacUser, $manifiesto));
+        $this->assertTrue($this->policy->update($this->oacUser, $manifiesto));
+        $this->assertTrue($this->policy->close($this->oacUser, $manifiesto));
+    }
+
+    public function test_usuario_de_bodega_no_puede_abrir_manifiesto_api_de_otra_bodega(): void
+    {
+        // Manifiesto API con facturas SOLO de OAS.
+        $manifiestoOas = $this->apiManifestWithInvoicesFor($this->oas);
+
+        // El usuario de OAC no debe poder abrirlo.
+        $this->assertFalse($this->policy->view($this->oacUser, $manifiestoOas));
+        $this->assertFalse($this->policy->update($this->oacUser, $manifiestoOas));
+
+        // El usuario global sí.
+        $this->assertTrue($this->policy->view($this->globalUser, $manifiestoOas));
+    }
+
     public function test_close_y_reopen_respetan_permiso_y_aislamiento_por_bodega(): void
     {
         $manifiestoOac = $this->manifestFor($this->oac);
