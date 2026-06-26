@@ -536,7 +536,19 @@ class ManifestApiController extends Controller
 
     /**
      * Notifica a todos los admins y super_admins cuando un manifiesto
-     * es rechazado — por fecha inválida o almacén desconocido.
+     * es rechazado, sin importar el motivo.
+     *
+     * Maneja TODAS las formas de rechazo que llegan a este método:
+     *   - Rechazo por fecha de manifiesto existente (paso 4): trae
+     *     'fecha_original' / 'fecha_intento'.
+     *   - Rechazos del importador (paso 7), discriminados por 'motivo':
+     *     ALMACENES_DESCONOCIDOS, MANIFIESTO_CERRADO,
+     *     FACTURAS_DUPLICADAS_EN_OTRO_MANIFIESTO, FACTURAS_YA_EXISTENTES.
+     *
+     * Cada motivo tiene claves propias en el array de rechazo; por eso el
+     * acceso es defensivo (?? []) — un motivo nuevo nunca debe poder tumbar
+     * el request con un TypeError. Construir el mensaje no es crítico; el
+     * rechazo correcto ya se devolvió a Jaremar antes de llegar acá.
      */
     private function notifyAdmins(array $manifistosRechazados, string $batchUuid): void
     {
@@ -547,20 +559,52 @@ class ManifestApiController extends Controller
         }
 
         foreach ($manifistosRechazados as $rechazado) {
-            $manifiesto = $rechazado['manifiesto'];
+            $manifiesto = $rechazado['manifiesto'] ?? '(desconocido)';
+            $total = $rechazado['total_facturas'] ?? 0;
 
+            // Rechazo por fecha de manifiesto existente (paso 4): no trae
+            // 'motivo' sino 'fecha_original'.
             if (isset($rechazado['fecha_original'])) {
                 $titulo = "Manifiesto #{$manifiesto} rechazado — fecha inválida";
-                $cuerpo = "Jaremar intentó agregar {$rechazado['total_facturas']} factura(s) al manifiesto #{$manifiesto} ".
+                $cuerpo = "Jaremar intentó agregar {$total} factura(s) al manifiesto #{$manifiesto} ".
                           "el día {$rechazado['fecha_intento']}, pero ese manifiesto fue creado el {$rechazado['fecha_original']} ".
                           'y ya no acepta facturas nuevas. Se rechazó el batch completo.';
             } else {
-                $total = $rechazado['total_facturas'];
-                $codigos = implode(', ', array_keys($rechazado['almacenes_desconocidos']));
-                $titulo = "Manifiesto #{$manifiesto} rechazado — almacén desconocido";
-                $cuerpo = "El manifiesto #{$manifiesto} fue rechazado. ".
-                           "Contiene {$total} factura(s) con almacén(es) no registrado(s): {$codigos}. ".
-                           'Jaremar debe registrar el almacén o corregir el código y reenviar.';
+                $motivo = $rechazado['motivo'] ?? 'DESCONOCIDO';
+
+                [$titulo, $cuerpo] = match ($motivo) {
+                    'ALMACENES_DESCONOCIDOS' => [
+                        "Manifiesto #{$manifiesto} rechazado — almacén desconocido",
+                        "El manifiesto #{$manifiesto} fue rechazado. Contiene {$total} factura(s) con almacén(es) ".
+                            'no registrado(s): '.implode(', ', array_keys($rechazado['almacenes_desconocidos'] ?? [])).
+                            '. Jaremar debe registrar el almacén o corregir el código y reenviar.',
+                    ],
+                    'MANIFIESTO_CERRADO' => [
+                        "Manifiesto #{$manifiesto} rechazado — manifiesto cerrado",
+                        "El manifiesto #{$manifiesto} está cerrado y no acepta modificaciones. ".
+                            "Se rechazó el batch completo ({$total} factura(s)).",
+                    ],
+                    'FACTURAS_DUPLICADAS_EN_OTRO_MANIFIESTO' => [
+                        "Manifiesto #{$manifiesto} rechazado — facturas en otro manifiesto",
+                        "El manifiesto #{$manifiesto} contiene facturas que ya existen en otros manifiestos: ".
+                            implode(', ', array_map(
+                                fn ($f) => $f['factura'] ?? '?',
+                                $rechazado['facturas_duplicadas'] ?? []
+                            )).". Se rechazó el batch completo ({$total} factura(s)).",
+                    ],
+                    'FACTURAS_YA_EXISTENTES' => [
+                        "Manifiesto #{$manifiesto} rechazado — facturas ya registradas",
+                        "El manifiesto #{$manifiesto} contiene facturas que ya fueron registradas: ".
+                            implode(', ', array_map(
+                                fn ($f) => $f['factura'] ?? '?',
+                                $rechazado['facturas_existentes'] ?? []
+                            )).'. Jaremar debe reenviar únicamente las facturas nuevas.',
+                    ],
+                    default => [
+                        "Manifiesto #{$manifiesto} rechazado",
+                        "El manifiesto #{$manifiesto} fue rechazado ({$total} factura(s)). Revise el detalle en el log de la API.",
+                    ],
+                };
             }
 
             foreach ($admins as $admin) {

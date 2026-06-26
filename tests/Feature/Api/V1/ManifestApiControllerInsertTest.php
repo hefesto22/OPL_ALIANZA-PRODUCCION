@@ -7,6 +7,7 @@ use App\Models\Invoice;
 use App\Models\InvoiceLine;
 use App\Models\Manifest;
 use App\Models\Supplier;
+use App\Models\User;
 use App\Models\Warehouse;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
@@ -53,6 +54,14 @@ class ManifestApiControllerInsertTest extends TestCase
         // a mano para mantener el test independiente del seeder.
         Role::create(['name' => 'super_admin', 'guard_name' => 'web']);
         Role::create(['name' => 'admin',       'guard_name' => 'web']);
+
+        // Un usuario super_admin REAL: sin él, notifyAdmins() retorna temprano
+        // (User::role([...])->isEmpty()) y nunca ejecuta la construcción del
+        // mensaje por motivo. Con él, TODO test de rechazo ejercita esa ruta
+        // — así reproducimos el 500 que ocurría en producción cuando el motivo
+        // era FACTURAS_YA_EXISTENTES / FACTURAS_DUPLICADAS_EN_OTRO_MANIFIESTO
+        // (motivos sin la clave 'almacenes_desconocidos' que asumía el código).
+        User::factory()->create()->assignRole('super_admin');
 
         // Supplier activo: el importador requiere al menos uno para
         // crear manifiestos nuevos via createManifest().
