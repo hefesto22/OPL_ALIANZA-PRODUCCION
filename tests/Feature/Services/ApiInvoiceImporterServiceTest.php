@@ -328,7 +328,7 @@ class ApiInvoiceImporterServiceTest extends TestCase
         $this->assertSame(0, Invoice::where('invoice_number', 'F-CLEAN-002')->count());
     }
 
-    public function test_duplicate_in_one_manifest_does_not_block_other_manifests_in_batch(): void
+    public function test_duplicate_in_one_manifest_blocks_entire_batch_estricto_total(): void
     {
         // Manifiesto A previo con factura F-DUP-B
         $manifestA = Manifest::factory()->create([
@@ -360,18 +360,19 @@ class ApiInvoiceImporterServiceTest extends TestCase
             $this->importRecord(),
         );
 
-        // MAN-BAD rechazado, MAN-OK procesado normal.
-        $this->assertSame(1, $summary['invoices_rejected']);
-        $this->assertSame(2, $summary['invoices_inserted']);
+        // Estricto total: el duplicado en MAN-BAD bloquea TODO el lote.
+        $this->assertSame(0, $summary['invoices_inserted']);
+        $this->assertSame(3, $summary['invoices_rejected']); // el lote completo
         $this->assertCount(1, $summary['manifiestos_rechazados']);
         $this->assertSame('MAN-BAD', $summary['manifiestos_rechazados'][0]['manifiesto']);
 
-        // Las 2 facturas del manifiesto limpio sí entraron.
-        $this->assertSame(1, Invoice::where('invoice_number', 'F-OK-001')->count());
-        $this->assertSame(1, Invoice::where('invoice_number', 'F-OK-002')->count());
+        // El manifiesto limpio NO entró (rollback total).
+        $this->assertSame(0, Invoice::where('invoice_number', 'F-OK-001')->count());
+        $this->assertSame(0, Invoice::where('invoice_number', 'F-OK-002')->count());
+        $this->assertSame(0, Manifest::where('number', 'MAN-OK')->count());
     }
 
-    public function test_unchanged_invoice_increments_unchanged_counter(): void
+    public function test_existing_identical_invoice_rejects_batch_estricto_total(): void
     {
         // Crear manifiesto con factura existente
         $manifest = Manifest::factory()->create([
@@ -421,12 +422,16 @@ class ApiInvoiceImporterServiceTest extends TestCase
 
         $summary = $this->service()->processBatch([$inv], $this->importRecord());
 
-        $this->assertSame(1, $summary['invoices_unchanged']);
+        // Estricto total: una factura ya existente (aunque idéntica) rechaza
+        // el lote completo; no se cuenta como "sin cambios" ni se inserta nada.
         $this->assertSame(0, $summary['invoices_inserted']);
-        $this->assertSame(0, $summary['invoices_pending_review']);
+        $this->assertSame(0, $summary['invoices_unchanged']);
+        $this->assertSame(1, $summary['invoices_rejected']);
+        $this->assertNotEmpty($summary['manifiestos_rechazados']);
+        $this->assertSame('FACTURAS_YA_EXISTENTES', $summary['manifiestos_rechazados'][0]['motivo']);
     }
 
-    public function test_changed_invoice_creates_conflict_row(): void
+    public function test_changed_existing_invoice_rejects_batch_estricto_total(): void
     {
         $manifest = Manifest::factory()->create([
             'number' => 'MAN-DIFF',
@@ -451,15 +456,19 @@ class ApiInvoiceImporterServiceTest extends TestCase
         $importRecord = $this->importRecord();
         $summary = $this->service()->processBatch([$inv], $importRecord);
 
-        $this->assertSame(1, $summary['invoices_pending_review']);
-        $this->assertCount(1, $summary['warnings']);
-        $this->assertStringContainsString('diferencias', $summary['warnings'][0]['mensaje']);
+        // Estricto total: una factura existente con cambios YA NO genera
+        // conflicto — rechaza el lote completo y no toca la original.
+        $this->assertSame(0, $summary['invoices_inserted']);
+        $this->assertSame(0, $summary['invoices_pending_review']);
+        $this->assertNotEmpty($summary['manifiestos_rechazados']);
+        $this->assertSame('FACTURAS_YA_EXISTENTES', $summary['manifiestos_rechazados'][0]['motivo']);
 
-        // Fila de conflicto en BD
-        $conflict = ApiInvoiceImportConflict::where('api_invoice_import_id', $importRecord->id)->first();
-        $this->assertNotNull($conflict);
-        $this->assertSame('F-DIFF-001', $conflict->invoice_number);
-        $this->assertSame('MAN-DIFF', $conflict->manifest_number);
+        // No se crea fila de conflicto.
+        $this->assertSame(0, ApiInvoiceImportConflict::where('api_invoice_import_id', $importRecord->id)->count());
+
+        // La factura original queda intacta (total 100).
+        $invoice = Invoice::where('invoice_number', 'F-DIFF-001')->first();
+        $this->assertEqualsWithDelta(100.0, (float) $invoice->total, 0.01);
     }
 
     // ═══════════════════════════════════════════════════════════════

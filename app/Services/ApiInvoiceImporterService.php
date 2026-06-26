@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use App\Models\ApiInvoiceImport;
-use App\Models\ApiInvoiceImportConflict;
 use App\Models\Invoice;
 use App\Models\Manifest;
 use App\Models\Supplier;
@@ -18,21 +17,6 @@ class ApiInvoiceImporterService
 {
     /** Cache de bodegas: ['OAC' => 1, 'OAO' => 2, 'OAS' => 3] */
     protected array $warehouseMap = [];
-
-    /**
-     * Campos que se comparan para detectar cambios.
-     * No incluimos campos de auditoría ni IDs internos.
-     */
-    protected array $comparableFields = [
-        'total', 'isv15', 'isv18', 'discounts',
-        'importe_gravado', 'importe_gravado_isv15', 'importe_gravado_total',
-        'importe_exento_total', 'importe_exonerado_total',
-        'client_name', 'client_rtn', 'deliver_to',
-        'seller_id', 'seller_name',
-        'payment_type', 'credit_days',
-        'invoice_date', 'due_date',
-        'route_number', 'warehouse_id',
-    ];
 
     protected ManifestDateValidator $dateValidator;
 
@@ -93,14 +77,76 @@ class ApiInvoiceImporterService
 
         $grouped = collect($invoices)->groupBy('NumeroManifiesto');
 
+        // ── FASE 1: ANALIZAR todo el lote SIN escribir en BD ───────────────
+        // Estricto total (todo o nada): detectamos cualquier anomalía. Si
+        // UNA sola falla, no se inserta nada del lote.
+        $plan = [];
+        $rechazos = [];
+
         foreach ($grouped as $manifestNumber => $manifestInvoices) {
-            $this->processManifestGroup(
+            $analysis = $this->analyzeManifestGroup(
                 (string) $manifestNumber,
                 $manifestInvoices->values()->all(),
-                $importRecord,
-                $summary,
                 $existingInvoices,
             );
+
+            if ($analysis['rejected']) {
+                $rechazos[] = $analysis['rejection'];
+            } else {
+                $plan[] = $analysis['plan'];
+            }
+        }
+
+        // ── Decisión atómica: cualquier rechazo → NO se inserta nada ───────
+        if (! empty($rechazos)) {
+            $summary['manifiestos_rechazados'] = $rechazos;
+            $summary['invoices_rejected'] = count($invoices);
+
+            Log::warning('API Jaremar: lote rechazado completo (todo o nada).', [
+                'batch_uuid' => $importRecord->batch_uuid,
+                'total_facturas' => count($invoices),
+                'manifiestos_rechazados' => count($rechazos),
+            ]);
+
+            return $summary;
+        }
+
+        // ── FASE 2: APLICAR todo el lote en UNA transacción ────────────────
+        // O entra todo, o no entra nada. Las notificaciones se disparan
+        // DESPUÉS del commit para no bloquear la transacción con IO.
+        $notifyQueue = [];
+
+        DB::transaction(function () use ($plan, $importRecord, &$summary, &$notifyQueue) {
+            foreach ($plan as $group) {
+                $manifest = $group['manifest']
+                    ?? $this->createManifest($group['manifest_number'], $group['operation_date']);
+
+                $bulkResult = $this->bulkInsertNewInvoices($group['new'], $manifest);
+                $summary['invoices_inserted'] += $bulkResult['total'];
+
+                foreach ($bulkResult['by_warehouse'] as $warehouseId => $count) {
+                    $summary['inserted_warehouse_counts'][$warehouseId] =
+                        ($summary['inserted_warehouse_counts'][$warehouseId] ?? 0) + $count;
+                }
+
+                $manifest->recalculateTotals();
+
+                $this->logManifestImport(
+                    $manifest,
+                    $group['manifest_number'],
+                    $importRecord,
+                    $summary,
+                    count($group['new']),
+                );
+
+                if (! empty($bulkResult['by_warehouse'])) {
+                    $notifyQueue[] = [$manifest, $bulkResult['by_warehouse']];
+                }
+            }
+        });
+
+        foreach ($notifyQueue as [$manifest, $warehouseCounts]) {
+            $this->notifyWarehouseUsers($manifest, $warehouseCounts);
         }
 
         return $summary;
@@ -189,294 +235,125 @@ class ApiInvoiceImporterService
         ];
     }
 
-    protected function processManifestGroup(
+    /**
+     * Analiza un grupo de facturas de un manifiesto SIN escribir en BD.
+     *
+     * Estricto total (todo o nada): el manifiesto se rechaza completo si
+     * hay almacén desconocido, está cerrado, o si CUALQUIER factura ya
+     * existe en el sistema (en este u otro manifiesto, idéntica o con
+     * cambios). Solo si TODAS las facturas son nuevas y válidas devuelve un
+     * plan de inserción; el insert real lo hace processBatch dentro de una
+     * transacción única para todo el lote.
+     *
+     * @return array{rejected: bool, rejection: ?array, plan: ?array}
+     */
+    protected function analyzeManifestGroup(
         string $manifestNumber,
         array $invoices,
-        ApiInvoiceImport $importRecord,
-        array &$summary,
         \Illuminate\Support\Collection $existingInvoices,
-    ): void {
-        // ── 1. Validar almacenes ANTES de tocar la BD ─────────────────
-        $warehouseErrors = $this->validateWarehouses($invoices);
-
-        if (! empty($warehouseErrors)) {
-            $totalFacturas = count($invoices);
-            $summary['invoices_rejected'] += $totalFacturas;
-            $summary['manifiestos_rechazados'][] = [
-                'manifiesto' => $manifestNumber,
-                'total_facturas' => $totalFacturas,
-                'motivo' => 'ALMACENES_DESCONOCIDOS',
-                'almacenes_desconocidos' => $warehouseErrors,
-            ];
-
-            Log::warning("API Jaremar: manifiesto #{$manifestNumber} rechazado por almacenes desconocidos.", [
-                'almacenes_desconocidos' => array_keys($warehouseErrors),
-                'total_facturas' => $totalFacturas,
-            ]);
-
-            return;
-        }
-
-        // ── 2. Manifiesto cerrado → rechazar el manifiesto entero ──────
-        //
-        // Regla de negocio (consistente con almacén desconocido en paso 1):
-        // un manifiesto YA cerrado no acepta ninguna factura adicional.
-        // Reportamos como manifiestos_rechazados[] agrupado (no errors[]
-        // individuales) para que Jaremar lea UNA sola lista de manifiestos
-        // que debe reenviar limpios.
-        $manifest = Manifest::where('number', $manifestNumber)->first();
-
-        if ($manifest && $manifest->isClosed()) {
-            $totalFacturas = count($invoices);
-            $summary['invoices_rejected'] += $totalFacturas;
-            $summary['manifiestos_rechazados'][] = [
-                'manifiesto' => $manifestNumber,
-                'total_facturas' => $totalFacturas,
-                'motivo' => 'MANIFIESTO_CERRADO',
-                'mensaje' => "El manifiesto #{$manifestNumber} está cerrado y no acepta modificaciones.",
-            ];
-
-            Log::warning("API Jaremar: manifiesto #{$manifestNumber} rechazado porque ya está cerrado.", [
-                'total_facturas' => $totalFacturas,
-            ]);
-
-            return;
-        }
-
-        // ── 2.5 Pre-check: facturas duplicadas en otro manifiesto ──────
-        //
-        // Si alguna factura del batch para este manifiesto ya existe en
-        // BD bajo otro NumeroManifiesto, rechazamos el manifiesto entero
-        // (los demás del batch siguen procesándose). Forzamos a Jaremar
-        // a reenviar el manifiesto limpio — más seguro que aceptar un
-        // subconjunto ambiguo.
-        //
-        // El check usa $existingInvoices (Collection precargada en
-        // processBatch con 1 sola query) → O(N) en memoria, sin tocar BD.
-        $facturasDuplicadas = $this->detectInvoicesDuplicatedInOtherManifest(
-            $invoices,
-            $existingInvoices,
-            $manifest?->id,
-        );
-
-        if (! empty($facturasDuplicadas)) {
-            $totalFacturas = count($invoices);
-            $summary['invoices_rejected'] += $totalFacturas;
-            $summary['manifiestos_rechazados'][] = [
-                'manifiesto' => $manifestNumber,
-                'total_facturas' => $totalFacturas,
-                'motivo' => 'FACTURAS_DUPLICADAS_EN_OTRO_MANIFIESTO',
-                'facturas_duplicadas' => $facturasDuplicadas,
-                'mensaje' => "El manifiesto #{$manifestNumber} contiene facturas que ya existen en otros manifiestos. Reenvíelo limpio.",
-            ];
-
-            Log::warning("API Jaremar: manifiesto #{$manifestNumber} rechazado por facturas duplicadas en otros manifiestos.", [
-                'total_facturas' => $totalFacturas,
-                'facturas_duplicadas' => array_column($facturasDuplicadas, 'factura'),
-            ]);
-
-            return;
-        }
-
-        // ── 3. Manifiesto no existe → crearlo ─────────────────────────
-        //
-        // La fecha del manifiesto (manifests.date) la resuelve el validador
-        // según config('manifests.dates.manifest_date_source'):
-        //   - 'upload' (default) → día de carga (hoy). El manifiesto es el
-        //      lote del día; cada factura conserva su invoice_date real.
-        //   - 'invoice'          → derivada de la FechaFactura (modo legacy).
-        //
-        // Para cuando llegamos acá, las facturas YA pasaron por
-        // ManifestDateValidator en el controller (V2/V3 por factura: ninguna
-        // futura ni más antigua que el límite), así que la fecha es segura.
-        if (! $manifest) {
-            $operationDate = $this->dateValidator->resolveManifestOperationalDate($invoices)
-                ?? now()->toDateString(); // fallback defensivo
-
-            $manifest = $this->createManifest($manifestNumber, $operationDate);
-        }
-
-        // ── 4. Clasificar facturas: nuevas, sin cambios, o con conflicto
-        $classified = $this->classifyInvoices($invoices, $manifest, $existingInvoices, $summary);
-
-        // ── 5. Insert masivo de facturas nuevas + sus líneas ───────────
-        // Aislar conteos de bodegas para ESTE manifiesto antes del bulk.
-        $prevWarehouseCounts = $summary['inserted_warehouse_counts'];
-        $summary['inserted_warehouse_counts'] = [];
-
-        if (! empty($classified['new'])) {
-            $bulkResult = $this->bulkInsertNewInvoices($classified['new'], $manifest);
-            $summary['invoices_inserted'] += $bulkResult['total'];
-            $summary['inserted_warehouse_counts'] = $bulkResult['by_warehouse'];
-        }
-
-        // ── 6. Crear filas de conflicto ────────────────────────────────
-        $this->createConflictRows($classified['conflicts'], $importRecord, $manifest, $summary);
-
-        // Restaurar acumulado global de conteos por bodega
-        $thisManifestWarehouseCounts = $summary['inserted_warehouse_counts'];
-        foreach ($thisManifestWarehouseCounts as $whId => $count) {
-            $prevWarehouseCounts[$whId] = ($prevWarehouseCounts[$whId] ?? 0) + $count;
-        }
-        $summary['inserted_warehouse_counts'] = $prevWarehouseCounts;
-
-        // ── 7. Recalcular totales del manifiesto ───────────────────────
-        $manifest->recalculateTotals();
-
-        // ── 8. Log + notificaciones ───────────────────────────────────
-        $this->logManifestImport($manifest, $manifestNumber, $importRecord, $summary, count($invoices));
-
-        if (! empty($thisManifestWarehouseCounts)) {
-            $this->notifyWarehouseUsers($manifest, $thisManifestWarehouseCounts);
-        }
-    }
-
-    /**
-     * Detecta facturas del batch que YA EXISTEN en BD bajo un manifiesto
-     * distinto al que se está procesando. Esto cubre dos sub-casos:
-     *
-     *   a) El manifiesto del batch es nuevo (todavía no existe en BD):
-     *      $currentManifestId es null. Cualquier factura existente apunta
-     *      por definición a otro manifiesto → todas son duplicadas.
-     *
-     *   b) El manifiesto del batch ya existe: cualquier factura cuyo
-     *      manifest_id NO coincida es duplicada en otro manifiesto.
-     *
-     * Devuelve detalle por factura para que Jaremar sepa exactamente qué
-     * número de factura está colisionando y con qué manifiesto previo.
-     *
-     * @param  array  $invoices  Facturas del batch para este manifiesto.
-     * @param  \Illuminate\Support\Collection  $existingInvoices  Preload keyBy('invoice_number').
-     * @param  int|null  $currentManifestId  Id del manifiesto procesado (null si es nuevo).
-     * @return array<int, array{factura: string, manifiesto_existente: string}>
-     */
-    protected function detectInvoicesDuplicatedInOtherManifest(
-        array $invoices,
-        \Illuminate\Support\Collection $existingInvoices,
-        ?int $currentManifestId,
     ): array {
-        $duplicadas = [];
+        $totalFacturas = count($invoices);
+
+        // ── 1. Almacén desconocido ─────────────────────────────────────
+        $warehouseErrors = $this->validateWarehouses($invoices);
+        if (! empty($warehouseErrors)) {
+            return $this->rejection($manifestNumber, $totalFacturas, 'ALMACENES_DESCONOCIDOS', [
+                'almacenes_desconocidos' => $warehouseErrors,
+                'mensaje' => "El manifiesto #{$manifestNumber} contiene almacenes no registrados en el sistema.",
+            ]);
+        }
+
+        // ── 2. Manifiesto cerrado ──────────────────────────────────────
+        $manifest = Manifest::where('number', $manifestNumber)->first();
+        if ($manifest && $manifest->isClosed()) {
+            return $this->rejection($manifestNumber, $totalFacturas, 'MANIFIESTO_CERRADO', [
+                'mensaje' => "El manifiesto #{$manifestNumber} está cerrado y no acepta modificaciones.",
+            ]);
+        }
+
+        // ── 3. Facturas que YA existen (estricto total) ────────────────
+        // Cualquier factura ya registrada bloquea el lote. Distinguimos si
+        // está en OTRO manifiesto (reenviar limpio) o en ESTE mismo (reenvío
+        // de algo ya cargado → mandar solo lo nuevo).
+        $enOtroManifiesto = [];
+        $yaExistentes = [];
 
         foreach ($invoices as $invoice) {
             $invoiceNumber = $invoice['Nfactura'] ?? null;
-
             if (! $invoiceNumber) {
                 continue;
             }
 
             $existing = $existingInvoices->get($invoiceNumber);
-
             if (! $existing) {
-                continue; // factura nueva, no es duplicada
+                continue; // factura nueva → ok
             }
 
-            if ($existing->manifest_id === $currentManifestId) {
-                continue; // misma factura en el mismo manifiesto = update válido
+            if ($manifest && $existing->manifest_id === $manifest->id) {
+                $yaExistentes[] = ['factura' => $invoiceNumber];
+            } else {
+                $enOtroManifiesto[] = [
+                    'factura' => $invoiceNumber,
+                    'manifiesto_existente' => (string) $existing->manifest->number,
+                ];
             }
-
-            $duplicadas[] = [
-                'factura' => $invoiceNumber,
-                'manifiesto_existente' => (string) $existing->manifest->number,
-            ];
         }
 
-        return $duplicadas;
-    }
-
-    /**
-     * Clasifica las facturas del batch en 3 categorías:
-     *   - new:       facturas que no existen → se insertarán en bulk
-     *   - conflicts: facturas existentes con campos distintos → pendientes de revisión
-     *   - unchanged: facturas idénticas (solo incrementan contador en $summary)
-     *
-     * Las facturas que existen en OTRO manifiesto ya fueron rechazadas
-     * antes de llegar acá por detectInvoicesDuplicatedInOtherManifest()
-     * en processManifestGroup. Si llegan, se loguea como invariante rota.
-     *
-     * @return array{new: array, conflicts: array}
-     */
-    protected function classifyInvoices(
-        array $invoices,
-        Manifest $manifest,
-        \Illuminate\Support\Collection $existingInvoices,
-        array &$summary,
-    ): array {
-        $newInvoicesData = [];
-        $conflictsToCreate = [];
-
-        foreach ($invoices as $invoiceData) {
-            $invoiceNumber = $invoiceData['Nfactura'];
-            $existing = $existingInvoices->get($invoiceNumber);
-
-            // Defensa en profundidad: este caso YA se filtra en el paso
-            // 2.5 de processManifestGroup (detectInvoicesDuplicatedInOtherManifest).
-            // Si llegamos acá con una factura cruzada, es una invariante
-            // rota — registramos en log y saltamos para no contaminar.
-            if ($existing && $existing->manifest_id !== $manifest->id) {
-                Log::critical(
-                    "Invariante rota: factura {$invoiceNumber} llegó a classifyInvoices ".
-                    "estando en otro manifiesto (#{$existing->manifest->number}). ".
-                    'El pre-check de duplicados debió haberla bloqueado.',
-                    ['manifest_id_actual' => $manifest->id, 'manifest_id_otra' => $existing->manifest_id]
-                );
-
-                continue;
-            }
-
-            // Factura nueva → se insertará en bulk
-            if (! $existing) {
-                $newInvoicesData[] = $invoiceData;
-
-                continue;
-            }
-
-            // Factura existente en el mismo manifiesto → comparar campos
-            $incomingMapped = $this->mapInvoiceFields($invoiceData, $manifest);
-            $changes = $this->detectChanges($existing, $incomingMapped);
-
-            if (empty($changes)) {
-                $summary['invoices_unchanged']++;
-
-                continue;
-            }
-
-            $conflictsToCreate[] = [
-                'existing' => $existing,
-                'changes' => $changes,
-                'invoice_number' => $invoiceNumber,
-            ];
-        }
-
-        return ['new' => $newInvoicesData, 'conflicts' => $conflictsToCreate];
-    }
-
-    /**
-     * Persiste las filas de conflicto y actualiza el summary con warnings.
-     */
-    protected function createConflictRows(
-        array $conflicts,
-        ApiInvoiceImport $importRecord,
-        Manifest $manifest,
-        array &$summary,
-    ): void {
-        foreach ($conflicts as $conflict) {
-            ApiInvoiceImportConflict::create([
-                'api_invoice_import_id' => $importRecord->id,
-                'invoice_id' => $conflict['existing']->id,
-                'invoice_number' => $conflict['invoice_number'],
-                'manifest_number' => $manifest->number,
-                'previous_values' => $conflict['changes']['previous'],
-                'incoming_values' => $conflict['changes']['incoming'],
+        if (! empty($enOtroManifiesto)) {
+            return $this->rejection($manifestNumber, $totalFacturas, 'FACTURAS_DUPLICADAS_EN_OTRO_MANIFIESTO', [
+                'facturas_duplicadas' => $enOtroManifiesto,
+                'mensaje' => "El manifiesto #{$manifestNumber} contiene facturas que ya existen en otros manifiestos. Reenvíelo limpio.",
             ]);
-
-            $summary['invoices_pending_review']++;
-            $summary['warnings'][] = [
-                'factura' => $conflict['invoice_number'],
-                'manifiesto' => $manifest->number,
-                'campos_con_cambio' => array_keys($conflict['changes']['previous']),
-                'mensaje' => 'Factura recibida con diferencias respecto a la versión existente. Pendiente de revisión por Hosana.',
-            ];
         }
+
+        if (! empty($yaExistentes)) {
+            return $this->rejection($manifestNumber, $totalFacturas, 'FACTURAS_YA_EXISTENTES', [
+                'facturas_existentes' => $yaExistentes,
+                'mensaje' => "El manifiesto #{$manifestNumber} contiene facturas que ya fueron registradas. Reenvíe únicamente las facturas nuevas.",
+            ]);
+        }
+
+        // ── Limpio: todas las facturas son nuevas → plan de inserción ──
+        // La fecha operacional la resuelve el validador (config
+        // manifests.dates.manifest_date_source). Las fechas por factura ya
+        // fueron validadas en el controller (V2/V3), así que es segura.
+        $operationDate = $manifest
+            ? null
+            : ($this->dateValidator->resolveManifestOperationalDate($invoices) ?? now()->toDateString());
+
+        return [
+            'rejected' => false,
+            'rejection' => null,
+            'plan' => [
+                'manifest' => $manifest,            // null → se crea en la fase de aplicar
+                'manifest_number' => $manifestNumber,
+                'operation_date' => $operationDate,
+                'new' => $invoices,
+            ],
+        ];
+    }
+
+    /**
+     * Construye una entrada de rechazo para manifiestos_rechazados[].
+     *
+     * @param  array<string, mixed>  $extra  Detalle específico del motivo.
+     * @return array{rejected: bool, rejection: array, plan: null}
+     */
+    protected function rejection(string $manifestNumber, int $totalFacturas, string $motivo, array $extra): array
+    {
+        Log::warning("API Jaremar: manifiesto #{$manifestNumber} rechazado ({$motivo}).", [
+            'total_facturas' => $totalFacturas,
+        ]);
+
+        return [
+            'rejected' => true,
+            'plan' => null,
+            'rejection' => array_merge([
+                'manifiesto' => $manifestNumber,
+                'total_facturas' => $totalFacturas,
+                'motivo' => $motivo,
+            ], $extra),
+        ];
     }
 
     /**
@@ -764,38 +641,6 @@ class ApiInvoiceImporterService
         }
 
         return $counts;
-    }
-
-    protected function detectChanges(Invoice $existing, array $incoming): array
-    {
-        $previous = [];
-        $newValues = [];
-
-        foreach ($this->comparableFields as $field) {
-            if (! array_key_exists($field, $incoming)) {
-                continue;
-            }
-
-            $existingValue = $existing->getRawOriginal($field);
-            $incomingValue = $incoming[$field];
-
-            $existingNorm = is_numeric($existingValue) ? (float) $existingValue : (string) $existingValue;
-            $incomingNorm = is_numeric($incomingValue) ? (float) $incomingValue : (string) $incomingValue;
-
-            if ($existingNorm !== $incomingNorm) {
-                $previous[$field] = $existingValue;
-                $newValues[$field] = $incomingValue;
-            }
-        }
-
-        if (empty($previous)) {
-            return [];
-        }
-
-        return [
-            'previous' => $previous,
-            'incoming' => $newValues,
-        ];
     }
 
     protected function mapInvoiceFields(array $data, Manifest $manifest): array

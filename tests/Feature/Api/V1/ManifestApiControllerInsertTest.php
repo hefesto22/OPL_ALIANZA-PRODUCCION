@@ -345,9 +345,11 @@ class ManifestApiControllerInsertTest extends TestCase
         $this->assertSame(1, Invoice::where('invoice_number', 'FPREV0001')->count());
     }
 
-    public function test_insert_returns_conflict_for_existing_invoice_with_changes(): void
+    public function test_insert_rejects_batch_when_invoice_already_exists_with_changes(): void
     {
-        // Primer POST: factura nueva.
+        // Estricto total: una factura que YA existe (aunque venga con cambios)
+        // NO genera conflicto ni se aplica parcial — rechaza el lote completo
+        // con 422 FACTURAS_YA_EXISTENTES y deja la original intacta.
         $first = [$this->invoicePayload([
             'Nfactura' => 'FCONF0001',
             'NumeroManifiesto' => 'MANCONF001',
@@ -356,9 +358,8 @@ class ManifestApiControllerInsertTest extends TestCase
         ])];
         $this->postInsertar($first)->assertStatus(200);
 
-        // Segundo POST: misma factura con Total distinto → debe generar
-        // un conflict y terminar en invoices_pending_review, NO
-        // sobrescribir la factura original.
+        // Segundo POST: misma factura con Total distinto (hash distinto, no
+        // entra por idempotencia) → la factura ya existe → rechazo total.
         $second = [$this->invoicePayload([
             'Nfactura' => 'FCONF0001',
             'NumeroManifiesto' => 'MANCONF001',
@@ -367,19 +368,24 @@ class ManifestApiControllerInsertTest extends TestCase
         ])];
         $response = $this->postInsertar($second);
 
-        $response->assertStatus(200);
+        $response->assertStatus(422);
         $response->assertJson([
-            'success' => true,
+            'success' => false,
+            'motivo' => 'FACTURAS_YA_EXISTENTES',
             'resumen' => [
                 'insertadas' => 0,
-                'pendientes_revision' => 1,
+                'rechazadas' => 1,
             ],
         ]);
+        $response->assertJsonPath('manifiestos_rechazados.0.motivo', 'FACTURAS_YA_EXISTENTES');
+        $response->assertJsonPath('manifiestos_rechazados.0.facturas_existentes.0.factura', 'FCONF0001');
 
-        // La factura en BD mantiene el total original (500) — el nuevo
-        // valor queda en ApiInvoiceImportConflict esperando revisión.
+        // La factura en BD mantiene el total original (500) — nada se tocó.
         $invoice = Invoice::where('invoice_number', 'FCONF0001')->first();
         $this->assertEqualsWithDelta(500.0, (float) $invoice->total, 0.01);
+
+        // No se crea ningún conflicto (la función de conflictos ya no aplica).
+        $this->assertSame(0, \App\Models\ApiInvoiceImportConflict::count());
     }
 
     // ── Rechazos ────────────────────────────────────────────────────────
@@ -495,6 +501,36 @@ class ManifestApiControllerInsertTest extends TestCase
         $this->assertSame(0, Invoice::where('invoice_number', 'F-CLEAN-NEW')->count());
         // La duplicada original sigue intacta en el manifiesto previo.
         $this->assertSame(1, Invoice::where('invoice_number', 'FDUP-API')->where('manifest_id', $manifestPrev->id)->count());
+    }
+
+    public function test_insert_rolls_back_entire_batch_when_one_manifest_fails(): void
+    {
+        // Atomicidad ENTRE manifiestos (todo o nada): un lote con un
+        // manifiesto válido y nuevo + uno cerrado NO debe insertar nada,
+        // ni siquiera el manifiesto válido.
+        Manifest::factory()->closed()->create(['number' => 'MAN-CLOSED-AT']);
+
+        $payload = [
+            $this->invoicePayload([
+                'Nfactura' => 'F-ATOMIC-OK',
+                'NumeroManifiesto' => 'MAN-OK-AT',
+            ]),
+            $this->invoicePayload([
+                'Nfactura' => 'F-ATOMIC-BAD',
+                'NumeroManifiesto' => 'MAN-CLOSED-AT',
+            ]),
+        ];
+
+        $response = $this->postInsertar($payload);
+
+        $response->assertStatus(422);
+        $response->assertJson(['success' => false]);
+
+        // NADA se insertó: ni la factura del manifiesto válido.
+        $this->assertSame(0, Invoice::where('invoice_number', 'F-ATOMIC-OK')->count());
+        $this->assertSame(0, Invoice::where('invoice_number', 'F-ATOMIC-BAD')->count());
+        // El manifiesto válido tampoco se creó (rollback total).
+        $this->assertSame(0, Manifest::where('number', 'MAN-OK-AT')->count());
     }
 
     public function test_insert_rejects_entire_batch_when_manifest_is_from_past_day(): void

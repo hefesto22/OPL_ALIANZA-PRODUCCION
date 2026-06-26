@@ -249,20 +249,35 @@ class ManifestApiController extends Controller
         // ── 7. Procesar el batch ───────────────────────────────────────
         try {
             $summary = $this->importer->processBatch($invoices, $importRecord);
-            $importRecord->markAsProcessed($summary);
 
-            Log::info('API Jaremar: batch procesado correctamente.', [
-                'batch_uuid' => $importRecord->batch_uuid,
-                'ip' => $request->ip(),
-                'summary' => $summary,
-            ]);
-
-            // Notificar a admins si hubo rechazos por almacén desconocido
+            // Estricto total: si hubo CUALQUIER rechazo, NO se insertó nada.
+            // Marcamos el import como 'failed' para liberar el payload_hash:
+            // la idempotencia solo debe bloquear lotes realmente procesados,
+            // así Jaremar puede reenviar el lote corregido sin quedar atrapado.
             if (! empty($summary['manifiestos_rechazados'])) {
+                $importRecord->markAsFailed(
+                    'Lote rechazado (todo o nada): '.
+                    collect($summary['manifiestos_rechazados'])->pluck('motivo')->unique()->implode(', ')
+                );
+
+                Log::warning('API Jaremar: lote rechazado, nada insertado.', [
+                    'batch_uuid' => $importRecord->batch_uuid,
+                    'ip' => $request->ip(),
+                    'manifiestos_rechazados' => $summary['manifiestos_rechazados'],
+                ]);
+
                 $this->notifyAdmins(
                     $summary['manifiestos_rechazados'],
                     $importRecord->batch_uuid
                 );
+            } else {
+                $importRecord->markAsProcessed($summary);
+
+                Log::info('API Jaremar: batch procesado correctamente.', [
+                    'batch_uuid' => $importRecord->batch_uuid,
+                    'ip' => $request->ip(),
+                    'summary' => $summary,
+                ]);
             }
 
             // ── 8. Construir respuesta para Jaremar ────────────────────
@@ -312,6 +327,7 @@ class ManifestApiController extends Controller
                         'ALMACENES_DESCONOCIDOS' => 'Uno o más manifiestos fueron rechazados por contener almacenes no registrados en el sistema.',
                         'MANIFIESTO_CERRADO' => 'Uno o más manifiestos fueron rechazados porque ya están cerrados y no aceptan modificaciones.',
                         'FACTURAS_DUPLICADAS_EN_OTRO_MANIFIESTO' => 'Uno o más manifiestos fueron rechazados por contener facturas que ya existen en otros manifiestos.',
+                        'FACTURAS_YA_EXISTENTES' => 'Uno o más manifiestos fueron rechazados por contener facturas que ya fueron registradas. Reenvíe únicamente las facturas nuevas.',
                         default => 'Uno o más manifiestos fueron rechazados.',
                     };
                 } else {
@@ -452,6 +468,11 @@ class ManifestApiController extends Controller
             'FACTURAS_DUPLICADAS_EN_OTRO_MANIFIESTO' => array_merge($base, [
                 'mensaje' => $rejected['mensaje'],
                 'facturas_duplicadas' => $rejected['facturas_duplicadas'],
+            ]),
+
+            'FACTURAS_YA_EXISTENTES' => array_merge($base, [
+                'mensaje' => $rejected['mensaje'],
+                'facturas_existentes' => $rejected['facturas_existentes'],
             ]),
 
             default => $base,
