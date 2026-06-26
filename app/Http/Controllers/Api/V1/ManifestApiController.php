@@ -10,6 +10,7 @@ use App\Services\ApiInvoiceImporterService;
 use App\Services\ApiInvoiceValidatorService;
 use App\Services\ManifestDateValidator;
 use Filament\Notifications\Notification;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -203,40 +204,47 @@ class ManifestApiController extends Controller
         }
 
         // ── 5. Detectar batch duplicado (hash) ─────────────────────────
-        // Solo llegamos aquí si todas las fechas son válidas.
-        // Aplica únicamente para batches procesados hoy.
+        // Idempotencia: si este payload ya fue procesado (registro activo,
+        // status != 'failed'), respondemos con el resultado original en vez
+        // de re-procesar. El alcance NO se filtra por fecha para coincidir
+        // con el índice único parcial `..._payload_hash_active_unique`
+        // (también global): así el pre-chequeo y la constraint son consistentes
+        // y un reenvío idéntico de otro día no termina en un 500.
         $payloadHash = hash('sha256', $request->getContent());
         $duplicate = ApiInvoiceImport::where('payload_hash', $payloadHash)
             ->where('status', '!=', 'failed')
-            ->whereDate('created_at', today())
             ->first();
 
         if ($duplicate) {
-            return new JsonResponse([
-                'success' => true,
-                'message' => 'Este batch ya fue procesado anteriormente el día de hoy.',
-                'batch_uuid' => $duplicate->batch_uuid,
-                'resumen' => [
-                    'recibidas' => $duplicate->total_received,
-                    'insertadas' => $duplicate->invoices_inserted,
-                    'actualizadas' => $duplicate->invoices_updated,
-                    'sin_cambios' => $duplicate->invoices_unchanged,
-                    'pendientes_revision' => $duplicate->invoices_pending_review,
-                    'rechazadas' => $duplicate->invoices_rejected,
-                ],
-            ], 200);
+            return $this->duplicateBatchResponse($duplicate);
         }
 
         // ── 6. Persistir el payload crudo ──────────────────────────────
-        $importRecord = ApiInvoiceImport::create([
-            'batch_uuid' => Str::uuid()->toString(),
-            'api_key_hint' => $keyHint,
-            'ip_address' => $request->ip(),
-            'total_received' => count($invoices),
-            'raw_payload' => $invoices,
-            'payload_hash' => $payloadHash,
-            'status' => 'received',
-        ]);
+        // El índice único parcial sobre payload_hash es la última línea de
+        // defensa ante una carrera: dos peticiones idénticas simultáneas que
+        // ambas pasan el chequeo del paso 5. Si la constraint salta,
+        // respondemos idempotente con el registro existente en vez de un 500.
+        try {
+            $importRecord = ApiInvoiceImport::create([
+                'batch_uuid' => Str::uuid()->toString(),
+                'api_key_hint' => $keyHint,
+                'ip_address' => $request->ip(),
+                'total_received' => count($invoices),
+                'raw_payload' => $invoices,
+                'payload_hash' => $payloadHash,
+                'status' => 'received',
+            ]);
+        } catch (UniqueConstraintViolationException $e) {
+            $existing = ApiInvoiceImport::where('payload_hash', $payloadHash)
+                ->where('status', '!=', 'failed')
+                ->first();
+
+            if ($existing) {
+                return $this->duplicateBatchResponse($existing);
+            }
+
+            throw $e;
+        }
 
         // ── 7. Procesar el batch ───────────────────────────────────────
         try {
@@ -345,6 +353,31 @@ class ManifestApiController extends Controller
                 'batch_uuid' => $importRecord->batch_uuid,
             ], 500);
         }
+    }
+
+    /**
+     * Respuesta idempotente para un batch ya procesado (mismo payload_hash).
+     *
+     * Reutilizada por el pre-chequeo de duplicados (paso 5) y por el catch
+     * de la carrera en el insert (paso 6). Devuelve 200 con el resumen del
+     * import original, de modo que reenviar el mismo payload nunca produzca
+     * un 500 y Jaremar reciba un resultado consistente.
+     */
+    private function duplicateBatchResponse(ApiInvoiceImport $import): JsonResponse
+    {
+        return new JsonResponse([
+            'success' => true,
+            'message' => 'Este batch ya fue procesado anteriormente.',
+            'batch_uuid' => $import->batch_uuid,
+            'resumen' => [
+                'recibidas' => $import->total_received,
+                'insertadas' => $import->invoices_inserted,
+                'actualizadas' => $import->invoices_updated,
+                'sin_cambios' => $import->invoices_unchanged,
+                'pendientes_revision' => $import->invoices_pending_review,
+                'rechazadas' => $import->invoices_rejected,
+            ],
+        ], 200);
     }
 
     /**

@@ -312,6 +312,39 @@ class ManifestApiControllerInsertTest extends TestCase
         $this->assertSame(1, Invoice::where('invoice_number', 'FDUP0001')->count());
     }
 
+    public function test_insert_is_idempotent_for_identical_batch_from_a_previous_day(): void
+    {
+        // Regresión del 500 en producción (25-jun-2026): cuando Jaremar
+        // reenvía un payload idéntico cuyo import original NO es de hoy, el
+        // pre-chequeo filtraba por fecha y no lo encontraba → el INSERT
+        // chocaba con el índice único parcial GLOBAL y devolvía un 500.
+        // Ahora el pre-chequeo es global (sin filtro de fecha) y, además, el
+        // catch de la carrera responde idempotente. Debe dar 200, no 500.
+        $payload = [$this->invoicePayload([
+            'Nfactura' => 'FPREV0001',
+            'NumeroManifiesto' => 'MANPREV01',
+            'Total' => 150.0,
+        ])];
+
+        $first = $this->postInsertar($payload);
+        $first->assertStatus(200);
+        $firstBatchUuid = $first->json('batch_uuid');
+
+        // Simulamos que ese import fue de un día anterior.
+        ApiInvoiceImport::query()->update(['created_at' => now()->subDays(2)]);
+
+        // Reenvío idéntico: NO debe dar 500, debe responder 200 idempotente
+        // con el mismo batch original.
+        $second = $this->postInsertar($payload);
+        $second->assertStatus(200);
+        $second->assertJson(['success' => true]);
+        $this->assertSame($firstBatchUuid, $second->json('batch_uuid'));
+
+        // No se creó un import nuevo ni se duplicó la factura.
+        $this->assertSame(1, ApiInvoiceImport::count());
+        $this->assertSame(1, Invoice::where('invoice_number', 'FPREV0001')->count());
+    }
+
     public function test_insert_returns_conflict_for_existing_invoice_with_changes(): void
     {
         // Primer POST: factura nueva.
