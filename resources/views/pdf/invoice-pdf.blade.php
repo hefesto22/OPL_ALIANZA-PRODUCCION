@@ -98,9 +98,15 @@
 
 .invoice-page {
     font-family: 'Courier New', Courier, monospace;
-    font-size: 6.5pt;
+    font-size: 7pt;
     color: #000;
     line-height: 1.2;
+    /* Negrita global para impresión en matriz de punto (Epson LX-350).
+       En monoespaciada la negrita NO cambia el ancho del carácter, así
+       que oscurece los trazos sin romper el calce de columnas AS400.
+       Es la palanca de legibilidad más segura para 9 agujas. */
+    font-weight: bold;
+    -webkit-font-smoothing: none;
 }
 
 .bold { font-weight: bold; }
@@ -117,7 +123,7 @@ table.lines {
     margin-top: 3px;
 }
 table.lines th {
-    font-size: 5.2pt;
+    font-size: 5.8pt;
     font-weight: bold;
     text-align: center;
     padding: 1px 0px;
@@ -127,7 +133,8 @@ table.lines th {
     white-space: nowrap;
 }
 table.lines td {
-    font-size: 5.5pt;
+    font-size: 6.2pt;
+    font-weight: bold;
     padding: 1px 0px;
     overflow: hidden;
     white-space: nowrap;
@@ -136,7 +143,7 @@ table.lines td {
     margin-top: 3px;
     border-top: 1px solid #000;
     padding-top: 2px;
-    font-size: 5.3pt;
+    font-size: 6.2pt;
     line-height: 1.25;
 }
 .notas p { margin-bottom: 1px; }
@@ -187,7 +194,7 @@ table.lines td {
                          style="height:22px; display:block; margin-left:auto;"><br>
                 @endif
                 <b>Fecha:</b> {{ \Carbon\Carbon::parse($invoice->invoice_date)->format('Y/m/d') }}
-                &nbsp;<span style="font-size:5.5pt;">COPIA : OBLIGADO TRIBUTARIO EMISOR</span><br>
+                &nbsp;<span style="font-size:6pt;">COPIA : OBLIGADO TRIBUTARIO EMISOR</span><br>
                 <b>C.A.I</b> {{ $invoice->cai ?? '' }}<br>
                 <b>CAEB</b>
             </td>
@@ -293,9 +300,9 @@ table.lines td {
                 <th style="width:9mm;">CANT</th>
                 <th style="width:17mm;">PRECIO UNIT</th>
                 <th style="width:14mm;">VALOR</th>
-                <th style="width:15mm; font-size:4.8pt; white-space:normal; line-height:1.1;">DESCUENTOS<br>Y REBAJAS<br>OTORGADOS</th>
-                <th style="width:10mm; font-size:5pt; line-height:1.1;">18%<br>ISV</th>
-                <th style="width:12mm; font-size:5pt; line-height:1.1;">15%<br>ISV</th>
+                <th style="width:15mm; font-size:5.4pt; white-space:normal; line-height:1.1;">DESCUENTOS<br>Y REBAJAS<br>OTORGADOS</th>
+                <th style="width:10mm; font-size:5.6pt; line-height:1.1;">18%<br>ISV</th>
+                <th style="width:12mm; font-size:5.6pt; line-height:1.1;">15%<br>ISV</th>
                 <th style="width:18mm;">VALOR TOTAL</th>
             </tr>
         </thead>
