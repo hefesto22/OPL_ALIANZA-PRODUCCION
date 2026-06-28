@@ -16,13 +16,25 @@ class WarehouseFactory extends Factory
 {
     protected $model = Warehouse::class;
 
+    /**
+     * Secuencia global para el código por defecto.
+     *
+     * Antes el default usaba fake()->unique()->bothify('???') (3 letras al
+     * azar), que PODÍA generar 'OAC'/'OAS'/'OAO'/'OAI' y chocar con el unique
+     * constraint cuando un test creaba esas bodegas canónicas vía ->oac() etc.
+     * (eran strings fijos, fuera del pool de unique() de faker). Resultado:
+     * UniqueConstraintViolation intermitente bajo cierto orden/volumen de
+     * tests. Un contador con prefijo 'WH' es único de por vida del proceso y
+     * NUNCA coincide con un código canónico.
+     */
+    protected static int $codeSequence = 0;
+
     public function definition(): array
     {
-        // Default genérico: código aleatorio de 3 letras. Los tests que
-        // necesiten una bodega concreta deben llamar a ->oac(), ->oas() o
-        // ->oao() para evitar colisiones con el unique constraint del code.
+        // Código único y NO canónico (cabe en string(10)). Los tests que
+        // necesiten una bodega concreta usan ->oac(), ->oas(), ->oao().
         return [
-            'code' => strtoupper(fake()->unique()->bothify('???')),
+            'code' => 'WH'.str_pad((string) (++static::$codeSequence), 4, '0', STR_PAD_LEFT),
             'name' => 'Bodega '.fake()->city(),
             'city' => fake()->city(),
             'department' => fake()->state(),
