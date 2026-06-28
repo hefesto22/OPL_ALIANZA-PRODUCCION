@@ -3,6 +3,7 @@
 use App\Http\Controllers\DepositReceiptController;
 use App\Http\Controllers\ExportDownloadController;
 use App\Http\Controllers\PrintInvoicesController;
+use App\Http\Controllers\PrintInvoicesEscpController;
 use App\Http\Controllers\PrintReportsController;
 use Illuminate\Support\Facades\Route;
 
@@ -28,6 +29,17 @@ Route::get('/depositos/{deposit}/comprobante', [DepositReceiptController::class,
 Route::get('/imprimir/facturas', [PrintInvoicesController::class, 'show'])
     ->middleware(['web', 'auth', 'throttle:print-invoices'])
     ->name('invoices.print');
+
+// ── Impresión matriz de punto ESC/P (Epson LX-350) ────────────────────────
+// Vista con preview WYSIWYG + botón que envía el flujo ESC/P crudo a la
+// impresora vía QZ Tray (puente local). `prn` descarga el .prn como respaldo.
+Route::get('/imprimir/facturas/matriz', [PrintInvoicesEscpController::class, 'show'])
+    ->middleware(['web', 'auth', 'throttle:print-invoices'])
+    ->name('invoices.print.escp');
+
+Route::get('/imprimir/facturas/matriz/prn', [PrintInvoicesEscpController::class, 'download'])
+    ->middleware(['web', 'auth', 'throttle:print-invoices'])
+    ->name('invoices.print.escp.prn');
 
 // ── Confirmación de impresión (callback desde JS post-window.afterprint) ──
 // Marca las facturas como físicamente impresas. WarehouseScope aísla por

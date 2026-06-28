@@ -178,6 +178,24 @@ class InvoicesRelationManager extends RelationManager
                         })
                         ->deselectRecordsAfterCompletion(),
 
+                    BulkAction::make('imprimir_matriz_lx350')
+                        ->label('Imprimir matriz (LX-350)')
+                        ->icon('heroicon-o-printer')
+                        ->color('success')
+                        ->action(function (Collection $records): void {
+                            /** @var \App\Models\Manifest $manifest */
+                            $manifest = $this->getOwnerRecord();
+
+                            $payload = Crypt::encryptString(json_encode([
+                                'manifest_id' => $manifest->id,
+                                'invoice_ids' => $records->pluck('id')->toArray(),
+                            ]));
+
+                            $url = route('invoices.print.escp', ['payload' => $payload]);
+                            $this->js("window.open('{$url}', '_blank')");
+                        })
+                        ->deselectRecordsAfterCompletion(),
+
                     BulkAction::make('sublista_productos_seleccionadas')
                         ->label('Sublista Productos')
                         ->icon('heroicon-o-cube')
