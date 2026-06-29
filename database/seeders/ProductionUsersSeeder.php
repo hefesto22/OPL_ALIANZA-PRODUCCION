@@ -180,6 +180,16 @@ class ProductionUsersSeeder extends Seeder
             ],
         );
 
+        // Idempotencia robusta: si el usuario YA existía (p.ej. creado a mano
+        // antes), igual forzamos la jerarquía (created_by) y que esté activo,
+        // para que el seeder sea la fuente de verdad. NO pisamos el password.
+        if ($user->created_by !== $createdBy || ! $user->is_active) {
+            $user->update([
+                'created_by' => $createdBy,
+                'is_active' => true,
+            ]);
+        }
+
         $user->syncRoles($roles);
         $user->warehouses()->sync($warehouseIds);
 

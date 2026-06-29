@@ -174,6 +174,33 @@ class ProductionUsersSeederTest extends TestCase
         $this->assertNotNull(User::query()->where('email', 'admin@gmail.com')->first());
     }
 
+    public function test_preexisting_user_with_wrong_created_by_is_corrected(): void
+    {
+        // Regresión (caso real de Sophia en prod): si el usuario ya existía
+        // creado por el super_admin (no por Mayra), quedaba como "hermana" de
+        // Mayra y ella no lo veía. El seeder debe FORZAR created_by = Mayra.
+        $superAdmin = $this->seedDependencies();
+
+        $stray = User::factory()->create([
+            'email' => 'sophia@gmail.com',
+            'created_by' => $superAdmin->id,   // jerarquía equivocada
+            'is_active' => false,
+        ]);
+
+        $this->seed(ProductionUsersSeeder::class);
+
+        $mayra = User::query()->where('email', 'mayra@gmail.com')->first();
+        $stray->refresh();
+
+        $this->assertSame($mayra->id, $stray->created_by, 'Sophia debe pasar a ser hija de Mayra.');
+        $this->assertTrue($stray->is_active, 'El seeder debe reactivarla.');
+
+        // Y ahora Mayra sí la ve.
+        $this->assertTrue(
+            User::query()->visibleTo($mayra)->pluck('id')->contains($stray->id)
+        );
+    }
+
     public function test_password_is_12345678(): void
     {
         $this->seedDependencies();
