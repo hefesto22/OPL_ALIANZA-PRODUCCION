@@ -178,8 +178,8 @@ class InvoicesRelationManager extends RelationManager
                         })
                         ->deselectRecordsAfterCompletion(),
 
-                    BulkAction::make('imprimir_matriz_lx350')
-                        ->label('Imprimir matriz (LX-350)')
+                    BulkAction::make('imprimir_formato_hosana')
+                        ->label('Imprimir (Formato Hosana)')
                         ->icon('heroicon-o-printer')
                         ->color('success')
                         ->action(function (Collection $records): void {
@@ -191,7 +191,7 @@ class InvoicesRelationManager extends RelationManager
                                 'invoice_ids' => $records->pluck('id')->toArray(),
                             ]));
 
-                            $url = route('invoices.print.escp', ['payload' => $payload]);
+                            $url = route('invoices.print.hosana', ['payload' => $payload]);
                             $this->js("window.open('{$url}', '_blank')");
                         })
                         ->deselectRecordsAfterCompletion(),

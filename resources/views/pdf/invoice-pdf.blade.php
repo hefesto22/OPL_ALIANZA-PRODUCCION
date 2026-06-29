@@ -98,9 +98,9 @@
 
 .invoice-page {
     font-family: 'Courier New', Courier, monospace;
-    font-size: 7pt;
+    font-size: 8pt;
     color: #000;
-    line-height: 1.2;
+    line-height: 1.25;
     /* Negrita global para impresión en matriz de punto (Epson LX-350).
        En monoespaciada la negrita NO cambia el ancho del carácter, así
        que oscurece los trazos sin romper el calce de columnas AS400.
@@ -123,7 +123,7 @@ table.lines {
     margin-top: 3px;
 }
 table.lines th {
-    font-size: 5.8pt;
+    font-size: 6.8pt;
     font-weight: bold;
     text-align: center;
     padding: 1px 0px;
@@ -133,7 +133,7 @@ table.lines th {
     white-space: nowrap;
 }
 table.lines td {
-    font-size: 6.2pt;
+    font-size: 7pt;
     font-weight: bold;
     padding: 1px 0px;
     overflow: hidden;
@@ -143,7 +143,7 @@ table.lines td {
     margin-top: 3px;
     border-top: 1px solid #000;
     padding-top: 2px;
-    font-size: 6.2pt;
+    font-size: 7pt;
     line-height: 1.25;
 }
 .notas p { margin-bottom: 1px; }
@@ -175,46 +175,46 @@ table.lines td {
     ──────────────────────────────────────────────────────────── --}}
     <table style="margin-bottom:2px;">
         <tr>
-            <td style="width:54%; font-size:6.5pt;">
+            <td style="width:54%; font-size:7.5pt;">
                 <b>RTN: 08019017952895</b>
             </td>
-            <td style="width:46%; text-align:right; font-size:6.5pt;">
+            <td style="width:46%; text-align:right; font-size:7.5pt;">
                 <span style="font-size:9pt; font-weight:bold; letter-spacing:2px;">FACTURA</span>
                 &nbsp;
                 <b style="font-size:7pt;">NT {{ $invoice->invoice_number }}</b>
             </td>
         </tr>
         <tr>
-            <td style="font-size:6.5pt;">
+            <td style="font-size:7.5pt;">
                 BO:LA GUADALUPE CL:LAS ACACIAS APTO:13 EDIF: ITALIA M.D.C. F.M. HONDURAS
             </td>
-            <td rowspan="5" style="text-align:right; vertical-align:top; font-size:6.5pt;">
+            <td rowspan="5" style="text-align:right; vertical-align:top; font-size:7.5pt;">
                 @if(!empty($invoice->barcode_base64))
                     <img src="data:image/png;base64,{{ $invoice->barcode_base64 }}"
                          style="height:22px; display:block; margin-left:auto;"><br>
                 @endif
                 <b>Fecha:</b> {{ \Carbon\Carbon::parse($invoice->invoice_date)->format('Y/m/d') }}
-                &nbsp;<span style="font-size:6pt;">COPIA : OBLIGADO TRIBUTARIO EMISOR</span><br>
+                &nbsp;<span style="font-size:6.8pt;">COPIA : OBLIGADO TRIBUTARIO EMISOR</span><br>
                 <b>C.A.I</b> {{ $invoice->cai ?? '' }}<br>
                 <b>CAEB</b>
             </td>
         </tr>
         <tr>
-            <td style="font-size:6.5pt;">TEL: 2238-2484  2561-7410 &nbsp;&nbsp; MATRIZ</td>
+            <td style="font-size:7.5pt;">TEL: 2238-2484  2561-7410 &nbsp;&nbsp; MATRIZ</td>
         </tr>
         <tr>
-            <td style="font-size:6.5pt;">KM 15 CARRETERA A BUFALO &nbsp;&nbsp; VILLANUEVA CORTES HONDURAS</td>
+            <td style="font-size:7.5pt;">KM 15 CARRETERA A BUFALO &nbsp;&nbsp; VILLANUEVA CORTES HONDURAS</td>
         </tr>
         <tr>
-            <td style="font-size:6.5pt;">TEL: TEL: 2561-7410 2561-7411 &nbsp;&nbsp; SUCURSAL</td>
+            <td style="font-size:7.5pt;">TEL: TEL: 2561-7410 2561-7411 &nbsp;&nbsp; SUCURSAL</td>
         </tr>
         <tr>
-            <td style="font-size:6.5pt;">finanzas@jaremar.com</td>
+            <td style="font-size:7.5pt;">finanzas@jaremar.com</td>
         </tr>
     </table>
 
     {{-- ══ GUÍA ═══════════════════════════════════════════════════ --}}
-    <table style="margin-top:2px; font-size:6.5pt;">
+    <table style="margin-top:2px; font-size:7.5pt;">
         <tr>
             <td style="width:50%;">
                 <b>No. Guia de Remision</b> {{ $invoice->manifest->number ?? '' }}
@@ -228,7 +228,7 @@ table.lines td {
     </table>
 
     {{-- ══ CLIENTE ════════════════════════════════════════════════ --}}
-    <table style="margin-top:2px; font-size:6.5pt;">
+    <table style="margin-top:2px; font-size:7.5pt;">
         <tr>
             <td style="width:48%; vertical-align:top;">
                 <b>Facturado</b> {{ $invoice->client_name }}<br>
@@ -300,9 +300,9 @@ table.lines td {
                 <th style="width:9mm;">CANT</th>
                 <th style="width:17mm;">PRECIO UNIT</th>
                 <th style="width:14mm;">VALOR</th>
-                <th style="width:15mm; font-size:5.4pt; white-space:normal; line-height:1.1;">DESCUENTOS<br>Y REBAJAS<br>OTORGADOS</th>
-                <th style="width:10mm; font-size:5.6pt; line-height:1.1;">18%<br>ISV</th>
-                <th style="width:12mm; font-size:5.6pt; line-height:1.1;">15%<br>ISV</th>
+                <th style="width:15mm; font-size:7pt; white-space:normal; line-height:1.1;">DESCUENTOS<br>Y REBAJAS<br>OTORGADOS</th>
+                <th style="width:10mm; font-size:6.2pt; line-height:1.1;">18%<br>ISV</th>
+                <th style="width:12mm; font-size:6.2pt; line-height:1.1;">15%<br>ISV</th>
                 <th style="width:18mm;">VALOR TOTAL</th>
             </tr>
         </thead>
@@ -357,10 +357,10 @@ table.lines td {
          formato COBOL/AS400: .00 sin cero entero, signo "-" trailing en
          descuentos. Ver memory project_invoice_pdf_jaremar_format.
     ──────────────────────────────────────────────────────────── --}}
-    <table style="margin-top:10mm; font-size:6.5pt;">
+    <table style="margin-top:10mm; font-size:7.5pt;">
         <tr>
             <td style="width:42%; vertical-align:bottom;">
-                <table style="font-size:6pt; width:100%;">
+                <table style="font-size:7pt; width:100%;">
                     <tr>
                         <td style="width:36%; border-top:1px solid #000;">&nbsp;</td>
                         <td style="width:4%;">&nbsp;</td>
@@ -474,7 +474,7 @@ table.lines td {
                     $gravadoIsv15 = (float) ($invoice->importe_gravado_isv15 ?? 0);
                     $gravadoTotal = (float) ($invoice->importe_gravado_total ?? 0);
                 @endphp
-                <table style="width:100%; font-size:6.5pt;">
+                <table style="width:100%; font-size:7.5pt;">
                     <tr>
                         <td style="width:30%;">{!! $rowExento['label'] !!}</td>
                         <td style="width:14%; text-align:right;">{{ $rowExento['cells'][0] }}</td>
@@ -513,7 +513,7 @@ table.lines td {
     </table>
 
     {{-- SON LEMPIRAS --}}
-    <table style="margin-top:2px; font-size:6.5pt;">
+    <table style="margin-top:2px; font-size:7.5pt;">
         <tr>
             <td style="width:15%; font-weight:bold;">SON LEMPIRAS:</td>
             <td>{{ strtoupper(\App\Helpers\NumberHelper::toWords($invoice->total)) }}</td>
@@ -521,7 +521,7 @@ table.lines td {
     </table>
 
     {{-- RANGO + COPIA + JAMERARI --}}
-    <table style="margin-top:1px; font-size:6pt;">
+    <table style="margin-top:1px; font-size:7pt;">
         <tr>
             <td style="width:48%;">
                 <b>Rango Autorizado:</b> {{ $invoice->range_start }} Al {{ $invoice->range_end }}
@@ -531,7 +531,7 @@ table.lines td {
             </td>
         </tr>
     </table>
-    <div style="font-size:6pt; margin-top:1px;">
+    <div style="font-size:7pt; margin-top:1px;">
         JAMERARI &nbsp; MERTRO1 &nbsp;&nbsp;
         {{ \Carbon\Carbon::parse($invoice->invoice_date)->format('H:i:s') }}
     </div>

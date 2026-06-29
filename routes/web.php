@@ -3,7 +3,6 @@
 use App\Http\Controllers\DepositReceiptController;
 use App\Http\Controllers\ExportDownloadController;
 use App\Http\Controllers\PrintInvoicesController;
-use App\Http\Controllers\PrintInvoicesEscpController;
 use App\Http\Controllers\PrintReportsController;
 use Illuminate\Support\Facades\Route;
 
@@ -30,16 +29,15 @@ Route::get('/imprimir/facturas', [PrintInvoicesController::class, 'show'])
     ->middleware(['web', 'auth', 'throttle:print-invoices'])
     ->name('invoices.print');
 
-// ── Impresión matriz de punto ESC/P (Epson LX-350) ────────────────────────
-// Vista con preview WYSIWYG + botón que envía el flujo ESC/P crudo a la
-// impresora vía QZ Tray (puente local). `prn` descarga el .prn como respaldo.
-Route::get('/imprimir/facturas/matriz', [PrintInvoicesEscpController::class, 'show'])
+// Formato Hosana (réplica de la factura de texto Jaremar, fuente grande).
+Route::get('/imprimir/facturas/hosana', [PrintInvoicesController::class, 'showHosana'])
     ->middleware(['web', 'auth', 'throttle:print-invoices'])
-    ->name('invoices.print.escp');
+    ->name('invoices.print.hosana');
 
-Route::get('/imprimir/facturas/matriz/prn', [PrintInvoicesEscpController::class, 'download'])
+// Descarga .prn (ESC/P) del Formato Hosana — respaldo sin QZ Tray.
+Route::get('/imprimir/facturas/hosana/prn', [PrintInvoicesController::class, 'downloadHosanaPrn'])
     ->middleware(['web', 'auth', 'throttle:print-invoices'])
-    ->name('invoices.print.escp.prn');
+    ->name('invoices.print.hosana.prn');
 
 // ── Confirmación de impresión (callback desde JS post-window.afterprint) ──
 // Marca las facturas como físicamente impresas. WarehouseScope aísla por

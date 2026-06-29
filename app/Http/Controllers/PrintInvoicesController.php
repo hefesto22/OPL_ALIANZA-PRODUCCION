@@ -112,6 +112,122 @@ class PrintInvoicesController extends Controller
     }
 
     /**
+     * GET /imprimir/facturas/hosana?payload={encrypted}
+     *
+     * Formato "Hosana" — réplica de la factura de texto que imprimía el
+     * sistema viejo de Jaremar: layout simple (8 columnas), fuente
+     * monoespaciada grande (~10pt) y legible. No lleva código de barras.
+     * Misma carga y guards que show(); solo cambia la vista.
+     */
+    public function showHosana(Request $request): Response
+    {
+        try {
+            $payload = Crypt::decryptString($request->query('payload', ''));
+            $data = json_decode($payload, true, 512, JSON_THROW_ON_ERROR);
+            $manifestId = (int) ($data['manifest_id'] ?? 0);
+            $invoiceIds = $data['invoice_ids'] ?? [];
+        } catch (\Throwable) {
+            abort(403, 'Enlace de impresión inválido o expirado.');
+        }
+
+        if ($manifestId === 0) {
+            abort(400, 'Manifiesto no especificado.');
+        }
+
+        $maxInvoices = (int) config('api.print_max_invoices_per_request', 1000);
+        if (! empty($invoiceIds) && count($invoiceIds) > $maxInvoices) {
+            abort(422, "Demasiadas facturas en una sola impresión (máx {$maxInvoices}).");
+        }
+
+        $manifest = Manifest::findOrFail($manifestId);
+
+        $query = $manifest->invoices()
+            ->with(['lines', 'manifest'])
+            ->whereNotNull('warehouse_id')
+            ->where('status', '!=', 'rejected');
+
+        if (! empty($invoiceIds)) {
+            $query->whereIn('id', $invoiceIds);
+        }
+
+        if ((clone $query)->count() > $maxInvoices) {
+            abort(422, "El manifiesto tiene demasiadas facturas elegibles (máx {$maxInvoices}).");
+        }
+
+        $invoices = $query->orderBy('route_number')->orderBy('invoice_number')->get();
+
+        if ($invoices->isEmpty()) {
+            abort(404, 'No hay facturas para imprimir.');
+        }
+
+        $escp = app(\App\Services\Escp\EscpInvoiceService::class);
+
+        $html = view('pdf.invoice-hosana', [
+            'invoices' => $invoices,
+            'manifest' => $manifest,
+            'supplier' => Supplier::first(),
+            'escpBase64' => base64_encode($escp->build($invoices)),
+            'printerHint' => (string) config('escp.printer_name_hint', ''),
+            'invoiceIds' => $invoices->pluck('id')->all(),
+        ])->render();
+
+        return response($html, 200, ['Content-Type' => 'text/html; charset=UTF-8']);
+    }
+
+    /**
+     * GET /imprimir/facturas/hosana/prn?payload={encrypted}
+     *
+     * Descarga el flujo ESC/P del Formato Hosana como archivo .prn (respaldo
+     * si QZ Tray no está). Mismo cargado/guards que showHosana().
+     */
+    public function downloadHosanaPrn(Request $request): Response
+    {
+        try {
+            $payload = Crypt::decryptString($request->query('payload', ''));
+            $data = json_decode($payload, true, 512, JSON_THROW_ON_ERROR);
+            $manifestId = (int) ($data['manifest_id'] ?? 0);
+            $invoiceIds = $data['invoice_ids'] ?? [];
+        } catch (\Throwable) {
+            abort(403, 'Enlace de impresión inválido o expirado.');
+        }
+
+        if ($manifestId === 0) {
+            abort(400, 'Manifiesto no especificado.');
+        }
+
+        $maxInvoices = (int) config('api.print_max_invoices_per_request', 1000);
+        if (! empty($invoiceIds) && count($invoiceIds) > $maxInvoices) {
+            abort(422, "Demasiadas facturas en una sola impresión (máx {$maxInvoices}).");
+        }
+
+        $manifest = Manifest::findOrFail($manifestId);
+
+        $query = $manifest->invoices()
+            ->with(['lines', 'manifest'])
+            ->whereNotNull('warehouse_id')
+            ->where('status', '!=', 'rejected');
+
+        if (! empty($invoiceIds)) {
+            $query->whereIn('id', $invoiceIds);
+        }
+
+        $invoices = $query->orderBy('route_number')->orderBy('invoice_number')->get();
+
+        if ($invoices->isEmpty()) {
+            abort(404, 'No hay facturas para imprimir.');
+        }
+
+        $bytes = app(\App\Services\Escp\EscpInvoiceService::class)->build($invoices);
+        $filename = 'facturas_hosana_'.$manifest->number.'_'.now()->format('Ymd_His').'.prn';
+
+        return response($bytes, 200, [
+            'Content-Type' => 'application/octet-stream',
+            'Content-Disposition' => 'attachment; filename="'.$filename.'"',
+            'Content-Length' => (string) strlen($bytes),
+        ]);
+    }
+
+    /**
      * POST /imprimir/facturas/confirmar
      *
      * Endpoint invocado por JS en la vista imprimible cuando el navegador
