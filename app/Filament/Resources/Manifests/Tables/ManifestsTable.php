@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Manifests\Tables;
 use App\Filament\Resources\Manifests\ManifestResource;
 use App\Models\Manifest;
 use App\Models\User;
+use App\Models\Warehouse;
 use Carbon\Carbon;
 use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
@@ -373,9 +374,26 @@ class ManifestsTable
                     }),
 
                 // ── Filtro de bodega (solo usuarios globales) ─────────────
+                // El manifiesto agrupa facturas de varias bodegas, así que la
+                // columna directa `manifests.warehouse_id` es NULL (la bodega
+                // real vive en warehouseTotals, igual que la columna "Bodegas").
+                // Por eso filtramos vía whereHas sobre warehouseTotals, NO sobre
+                // la relación belongsTo `warehouse` (que daría siempre cero).
                 SelectFilter::make('warehouse_id')
                     ->label('Bodega')
-                    ->relationship('warehouse', 'code')
+                    ->options(fn (): array => Warehouse::query()
+                        ->orderBy('code')
+                        ->pluck('code', 'id')
+                        ->all())
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query->when(
+                            $data['value'] ?? null,
+                            fn (Builder $q, $warehouseId): Builder => $q->whereHas(
+                                'warehouseTotals',
+                                fn (Builder $wt): Builder => $wt->where('warehouse_id', $warehouseId)
+                            )
+                        );
+                    })
                     ->visible(function (): bool {
                         /** @var User $user */
                         $user = Auth::user();

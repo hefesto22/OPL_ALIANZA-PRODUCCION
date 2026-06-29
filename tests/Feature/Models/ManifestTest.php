@@ -494,4 +494,61 @@ class ManifestTest extends TestCase
         $this->assertSame($oac->id, $row->warehouse_id);
         $this->assertEqualsWithDelta(500.0, (float) $row->total_invoices, 0.01);
     }
+
+    // ── Filtro de bodega del listado (whereHas warehouseTotals) ─────────
+
+    public function test_warehouse_filter_finds_manifest_by_warehouse_totals_not_direct_column(): void
+    {
+        // Regresión protegida: el manifiesto agrupa facturas de varias
+        // bodegas, así que manifests.warehouse_id queda NULL y la bodega
+        // real vive en warehouseTotals. El filtro "Bodega" del listado debe
+        // consultar vía whereHas sobre warehouseTotals; filtrar por la
+        // columna directa daba SIEMPRE cero resultados (bug reportado:
+        // "Bodega: OAC" + fecha no mostraba ningún manifiesto).
+        $oac = Warehouse::factory()->oac()->create();
+        $oas = Warehouse::factory()->oas()->create();
+        $oao = Warehouse::factory()->oao()->create();
+
+        $manifest = Manifest::factory()->create(['warehouse_id' => null]);
+
+        Invoice::factory()->create([
+            'manifest_id' => $manifest->id,
+            'warehouse_id' => $oac->id,
+            'total' => 1000,
+            'client_id' => 'CLI001',
+        ]);
+        Invoice::factory()->create([
+            'manifest_id' => $manifest->id,
+            'warehouse_id' => $oas->id,
+            'total' => 2000,
+            'client_id' => 'CLI002',
+        ]);
+
+        $manifest->recalculateTotals();
+
+        // El mecanismo del filtro nuevo SÍ encuentra el manifiesto por su
+        // bodega real (OAC y OAS), aunque warehouse_id directo sea NULL.
+        $this->assertTrue(
+            Manifest::whereHas('warehouseTotals', fn ($q) => $q->where('warehouse_id', $oac->id))
+                ->pluck('id')->contains($manifest->id)
+        );
+        $this->assertTrue(
+            Manifest::whereHas('warehouseTotals', fn ($q) => $q->where('warehouse_id', $oas->id))
+                ->pluck('id')->contains($manifest->id)
+        );
+
+        // Una bodega sin facturas en este manifiesto NO lo devuelve.
+        $this->assertFalse(
+            Manifest::whereHas('warehouseTotals', fn ($q) => $q->where('warehouse_id', $oao->id))
+                ->pluck('id')->contains($manifest->id)
+        );
+
+        // Demostración del bug viejo: filtrar por la columna directa
+        // warehouse_id (lo que hacía ->relationship('warehouse')) NO lo
+        // encuentra porque es NULL → cero resultados.
+        $this->assertFalse(
+            Manifest::where('warehouse_id', $oac->id)
+                ->pluck('id')->contains($manifest->id)
+        );
+    }
 }
