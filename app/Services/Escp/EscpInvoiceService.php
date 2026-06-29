@@ -50,20 +50,25 @@ class EscpInvoiceService
     public function build(Collection $invoices): string
     {
         $out = $this->preamble();
+        $fixed = config('escp.form_mode', 'fixed') === 'fixed';
         $margin = max(0, (int) config('escp.bottom_margin_lines', 2));
 
         foreach ($invoices->values() as $invoice) {
             $lines = $this->layoutInvoice($invoice);
 
-            // Largo de página = líneas de ESTA factura + margen, tope 127.
-            $pageLen = min(127, max(1, count($lines) + $margin));
-            $out .= self::ESC.'C'.chr($pageLen);
+            // Modo dynamic (papel blanco): largo de página = lo que ocupa la
+            // factura. Modo fixed (papel perforado): el largo ya quedó fijado
+            // en el preamble = la forma, así el FF cae en la perforación.
+            if (! $fixed) {
+                $pageLen = min(127, max(1, count($lines) + $margin));
+                $out .= self::ESC.'C'.chr($pageLen);
+            }
 
             foreach ($lines as $line) {
                 $out .= $this->encode($line)."\r\n";
             }
 
-            // Avanza al final del form (= final del texto) → la auto tear-off corta.
+            // FF avanza al final de la forma → la auto tear-off corta ahí.
             $out .= self::FF;
         }
 
@@ -98,7 +103,7 @@ class EscpInvoiceService
         $s .= self::ESC.'x'.(config('escp.quality', 'lq') === 'draft' ? "\x00" : "\x01");
         $s .= self::ESC.'k'.chr(max(0, (int) config('escp.font', 0)));
 
-        $pitch = config('escp.pitch', '10cpi');
+        $pitch = config('escp.pitch', '12cpi');
         if ($pitch === '12cpi') {
             $s .= self::ESC.'M';
         } else {
@@ -115,7 +120,14 @@ class EscpInvoiceService
             $s .= self::ESC.'G';
         }
 
-        $s .= self::ESC.'2'; // interlineado 1/6"
+        // Interlineado: 8 lpi (ESC 0, compacto) o 6 lpi (ESC 2).
+        $s .= config('escp.line_spacing', '8lpi') === '6lpi' ? self::ESC.'2' : self::ESC.'0';
+
+        // Modo forma fija (papel perforado): largo de página = la forma.
+        if (config('escp.form_mode', 'fixed') === 'fixed') {
+            $len = max(1, min(127, (int) config('escp.page_length_lines', 38)));
+            $s .= self::ESC.'C'.chr($len);
+        }
 
         $left = max(0, (int) config('escp.left_margin', 0));
         if ($left > 0) {

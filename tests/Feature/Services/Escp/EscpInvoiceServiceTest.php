@@ -60,8 +60,12 @@ class EscpInvoiceServiceTest extends TestCase
         $this->assertStringContainsString('TOTAL:', $out);
     }
 
-    public function test_sets_dynamic_page_length_and_form_feed_per_invoice(): void
+    public function test_fixed_mode_uses_one_page_length_and_form_feed_per_invoice(): void
     {
+        // Modo fixed (papel perforado, default): el largo de página se fija
+        // UNA vez (en el preamble) y hay un form feed por factura.
+        config(['escp.form_mode' => 'fixed']);
+
         $manifest = Manifest::factory()->create(['number' => '770002']);
         $invoices = Invoice::factory()->count(3)->for($manifest)->create();
         $invoices->each(fn (Invoice $i) => InvoiceLine::factory()->count(1)->for($i)->create());
@@ -69,14 +73,14 @@ class EscpInvoiceServiceTest extends TestCase
 
         $out = app(EscpInvoiceService::class)->build($invoices);
 
-        // Un ESC C (set page length) y un form feed por cada factura.
-        $this->assertSame(3, substr_count($out, "\x1BC"));
-        $this->assertSame(3, substr_count($out, "\x0C"));
+        $this->assertSame(1, substr_count($out, "\x1BC")); // un solo ESC C
+        $this->assertSame(3, substr_count($out, "\x0C"));  // un FF por factura
     }
 
-    public function test_page_length_matches_invoice_line_count(): void
+    public function test_dynamic_mode_page_length_matches_invoice_line_count(): void
     {
-        // Una factura con más líneas debe declarar un largo de página mayor.
+        config(['escp.form_mode' => 'dynamic']);
+
         $short = app(EscpInvoiceService::class)->build(collect([$this->invoiceWithLines([], 1)]));
         $long = app(EscpInvoiceService::class)->build(collect([$this->invoiceWithLines(['invoice_number' => 'F77000002'], 12)]));
 
