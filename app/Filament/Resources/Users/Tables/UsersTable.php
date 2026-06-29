@@ -56,6 +56,19 @@ class UsersTable
                     ->color('primary')
                     ->separator(',')
                     ->placeholder('Sin rol'),
+                TextColumn::make('warehouses.code')
+                    ->label('Bodegas')
+                    ->badge()
+                    ->separator(',')
+                    ->color(fn (string $state): string => match ($state) {
+                        'OAC' => 'info',
+                        'OAO' => 'success',
+                        'OAS' => 'warning',
+                        'OAI' => 'danger',
+                        default => 'gray',
+                    })
+                    // Usuario sin bodega = global (admin/super_admin ven todo).
+                    ->placeholder('Global'),
                 ToggleColumn::make('is_active')
                     ->label('Activo')
                     ->onColor('success')
@@ -128,7 +141,7 @@ class UsersTable
                 ]),
             ])
             ->modifyQueryUsing(fn (Builder $query) => $query
-                ->with(['roles', 'createdBy:id,name'])
+                ->with(['roles', 'createdBy:id,name', 'warehouses:id,code'])
                 ->withoutGlobalScopes([
                     SoftDeletingScope::class,
                 ]));
