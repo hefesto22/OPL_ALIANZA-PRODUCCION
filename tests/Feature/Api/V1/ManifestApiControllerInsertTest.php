@@ -291,8 +291,67 @@ class ManifestApiControllerInsertTest extends TestCase
         $this->assertSame(1, $man2->invoices_count);
 
         // El endpoint devuelve la lista de manifiestos tocados para que
-        // Jaremar pueda hacer seguimiento.
-        $response->assertJson(['manifiestos' => ['MAN001', 'MAN002']]);
+        // Jaremar pueda hacer seguimiento. Forma canónica unificada:
+        // array de {manifiesto, total_facturas}.
+        $response->assertJsonPath('manifiestos.0.manifiesto', 'MAN001');
+        $response->assertJsonPath('manifiestos.0.total_facturas', 2);
+        $response->assertJsonPath('manifiestos.1.manifiesto', 'MAN002');
+        $response->assertJsonPath('manifiestos.1.total_facturas', 1);
+    }
+
+    /**
+     * Contrato unificado solicitado por SAP/Jaremar: la etiqueta
+     * `manifiestos` debe aparecer con la MISMA forma —array de
+     * {manifiesto, total_facturas}— tanto en la respuesta de éxito (200)
+     * como en las de rechazo (422). Antes el éxito usaba `manifiestos`
+     * (lista de strings) y los errores `manifiestos_validos` /
+     * `manifiestos_no_afectados` (listas de objetos): SAP no podía
+     * deserializar un mismo campo con estructuras distintas.
+     */
+    public function test_manifiestos_label_has_uniform_shape_in_success_and_rejection(): void
+    {
+        $uniformShape = [
+            'manifiestos' => [
+                '*' => ['manifiesto', 'total_facturas'],
+            ],
+        ];
+
+        // ── Éxito (200) ────────────────────────────────────────────────
+        $ok = $this->postInsertar([$this->invoicePayload([
+            'Nfactura' => 'FUNIF0001',
+            'NumeroManifiesto' => 'MANUNIF-OK',
+        ])]);
+
+        $ok->assertStatus(200);
+        $ok->assertJsonStructure($uniformShape);
+        $ok->assertJsonPath('manifiestos.0.manifiesto', 'MANUNIF-OK');
+        $ok->assertJsonPath('manifiestos.0.total_facturas', 1);
+
+        // ── Rechazo por fecha (422) ────────────────────────────────────
+        // Mezcla un manifiesto válido con uno de fecha futura (V2): el
+        // batch se rechaza completo pero el válido viaja en manifiestos[]
+        // con la misma forma que en el éxito.
+        $rejected = $this->postInsertar([
+            $this->invoicePayload([
+                'Nfactura' => 'FUNIF0002',
+                'NumeroManifiesto' => 'MANUNIF-VALIDO',
+                'FechaFactura' => now()->toIso8601String(),
+            ]),
+            $this->invoicePayload([
+                'Nfactura' => 'FUNIF0003',
+                'NumeroManifiesto' => 'MANUNIF-FUTURO',
+                'FechaFactura' => now()->addDays(5)->toIso8601String(),
+            ]),
+        ]);
+
+        $rejected->assertStatus(422);
+        $rejected->assertJsonStructure($uniformShape);
+        $rejected->assertJsonPath('manifiestos.0.manifiesto', 'MANUNIF-VALIDO');
+        $rejected->assertJsonPath('manifiestos.0.total_facturas', 1);
+
+        // La etiqueta vieja ya no debe existir en ninguna respuesta.
+        $this->assertNull($rejected->json('manifiestos_validos'));
+        $this->assertNull($rejected->json('manifiestos_no_afectados'));
     }
 
     public function test_insert_is_idempotent_for_identical_batch_same_day(): void
@@ -614,10 +673,11 @@ class ManifestApiControllerInsertTest extends TestCase
                 'insertadas' => 0,
             ],
         ]);
-        $this->assertNotEmpty($response->json('manifiestos_no_afectados'));
+        // Etiqueta unificada: los válidos no insertados viajan en manifiestos[].
+        $this->assertNotEmpty($response->json('manifiestos'));
         $this->assertSame(
             'MANNUEVO',
-            $response->json('manifiestos_no_afectados.0.manifiesto')
+            $response->json('manifiestos.0.manifiesto')
         );
     }
 

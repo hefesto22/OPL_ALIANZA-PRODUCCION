@@ -428,7 +428,9 @@ class ManifestApiControllerDateValidationTest extends TestCase
         ]);
 
         // El controller reporta ambos para que Jaremar pueda reenviar el válido.
-        $response->assertJsonPath('manifiestos_validos.0.manifiesto', 'MANVAL001');
+        // Etiqueta unificada: los válidos viajan en manifiestos[].
+        $response->assertJsonPath('manifiestos.0.manifiesto', 'MANVAL001');
+        $response->assertJsonPath('manifiestos.0.total_facturas', 1);
         $response->assertJsonPath('manifiestos_rechazados.0.manifiesto', 'MANINV001');
 
         // Nada se persistió.
