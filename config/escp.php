@@ -59,7 +59,8 @@ return [
     // Margen izquierdo en columnas → CENTRA el contenido en la forma.
     // Contenido ~80 col; forma ~102 col útiles a 12 cpi.
     // Subir = más a la derecha; bajar = más a la izquierda (cada col ≈ 0.21 cm).
-    'left_margin' => (int) env('ESCP_LEFT_MARGIN', 16),
+    // 16 se pasaba a la derecha (se salía); 10 es el valor estable previo.
+    'left_margin' => (int) env('ESCP_LEFT_MARGIN', 10),
 
     // Transliterar a ASCII (quita acentos/ñ) para no depender del code page.
     'ascii_transliterate' => (bool) env('ESCP_ASCII', true),
