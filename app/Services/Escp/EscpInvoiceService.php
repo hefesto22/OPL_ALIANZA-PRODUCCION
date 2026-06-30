@@ -78,6 +78,44 @@ class EscpInvoiceService
     }
 
     /**
+     * Igual que build() pero con preámbulo ENDURECIDO: fuerza explícitamente
+     * todos los parámetros que pueden variar entre unidades LX-350 (espaciado
+     * extra, tabla de caracteres, margen derecho, dirección de impresión), de
+     * modo que dos impresoras del mismo modelo con defaults distintos impriman
+     * idéntico SIN tocar el panel. Lo único que NO se puede forzar por software
+     * es la emulación (ESC/P vs IBM) — eso es del panel.
+     *
+     * Botón de PRUEBA separado: no reemplaza a build() hasta validar en físico.
+     *
+     * @param  Collection<int, Invoice>  $invoices  Con 'lines' precargadas.
+     */
+    public function buildHardened(Collection $invoices): string
+    {
+        $out = $this->preambleHardened();
+        $fixed = config('escp.form_mode', 'fixed') === 'fixed';
+        $margin = max(0, (int) config('escp.bottom_margin_lines', 2));
+
+        foreach ($invoices->values() as $invoice) {
+            $lines = $this->layoutInvoice($invoice);
+
+            if (! $fixed) {
+                $pageLen = min(127, max(1, count($lines) + $margin));
+                $out .= self::ESC.'C'.chr($pageLen);
+            }
+
+            foreach ($lines as $line) {
+                $out .= $this->encode($line)."\r\n";
+            }
+
+            $out .= self::FF;
+        }
+
+        $out .= self::ESC.'@';
+
+        return $out;
+    }
+
+    /**
      * Texto plano del MISMO layout para la vista previa.
      *
      * @param  Collection<int, Invoice>  $invoices
@@ -133,6 +171,61 @@ class EscpInvoiceService
         if ($left > 0) {
             $s .= self::ESC.'l'.chr($left);
         }
+
+        return $s;
+    }
+
+    /**
+     * Preámbulo ENDURECIDO: fuerza todo lo que puede diferir entre unidades.
+     * Mismos parámetros base que preamble() + comandos extra que igualan el
+     * resultado aunque cada impresora traiga defaults propios.
+     */
+    private function preambleHardened(): string
+    {
+        $s = self::ESC.'@';                  // reset a defaults de la unidad
+        $s .= self::ESC.'U'.chr(1);          // impresión unidireccional → columnas alineadas igual
+
+        $s .= self::ESC.'x'.(config('escp.quality', 'lq') === 'draft' ? "\x00" : "\x01");
+        $s .= self::ESC.'k'.chr(max(0, (int) config('escp.font', 0)));
+
+        $pitch = config('escp.pitch', '12cpi');
+        if ($pitch === '12cpi') {
+            $s .= self::ESC.'M';
+        } else {
+            $s .= self::ESC.'P';
+            if ($pitch === 'condensed') {
+                $s .= self::SI;
+            }
+        }
+
+        $s .= self::ESC.' '.chr(0);          // ESC SP 0: cero espaciado extra entre caracteres (evita texto "más ancho")
+        $s .= self::ESC.'R'.chr(0);          // juego internacional = USA (fijo)
+        $s .= self::ESC.'t'.chr(1);          // tabla de caracteres gráfica (fija)
+
+        if (config('escp.emphasized', true)) {
+            $s .= self::ESC.'E';
+        }
+        if (config('escp.double_strike', true)) {
+            $s .= self::ESC.'G';
+        }
+
+        $s .= config('escp.line_spacing', '8lpi') === '6lpi' ? self::ESC.'2' : self::ESC.'0';
+
+        if (config('escp.form_mode', 'fixed') === 'fixed') {
+            $len = max(1, min(127, (int) config('escp.page_length_lines', 38)));
+            $s .= self::ESC.'C'.chr($len);
+        }
+
+        $left = max(0, (int) config('escp.left_margin', 0));
+        if ($left > 0) {
+            $s .= self::ESC.'l'.chr($left);
+        }
+
+        // Margen derecho fijo = margen izq + ancho de línea. Si una unidad trae
+        // un margen derecho propio más angosto, sin esto envolvería/cortaría el
+        // texto. Lo fijamos para que el ancho de línea sea idéntico en todas.
+        $right = min(255, $left + $this->cpl + 1);
+        $s .= self::ESC.'Q'.chr($right);
 
         return $s;
     }

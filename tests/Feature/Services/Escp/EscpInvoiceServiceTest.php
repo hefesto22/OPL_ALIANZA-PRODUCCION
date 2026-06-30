@@ -50,6 +50,35 @@ class EscpInvoiceServiceTest extends TestCase
         $this->assertStringContainsString("\x1BG", $out);      // double-strike
     }
 
+    public function test_hardened_build_forces_unit_independent_commands(): void
+    {
+        // El flujo endurecido debe forzar explícitamente los parámetros que
+        // varían entre unidades LX-350, para que todas impriman idéntico.
+        $out = app(EscpInvoiceService::class)->buildHardened(collect([$this->invoiceWithLines()]));
+
+        $this->assertStringContainsString("\x1B@", $out);        // reset
+        $this->assertStringContainsString("\x1BU\x01", $out);    // unidireccional
+        $this->assertStringContainsString("\x1B \x00", $out);    // ESC SP 0: cero espaciado extra
+        $this->assertStringContainsString("\x1BR\x00", $out);    // juego internacional fijo
+        $this->assertStringContainsString("\x1Bt\x01", $out);    // tabla de caracteres fija
+        $this->assertStringContainsString("\x1BQ", $out);        // margen derecho fijo
+        // No rompe el contenido ni el ASCII puro.
+        $this->assertStringContainsString('GRUPO JAREMAR', $out);
+    }
+
+    public function test_hardened_build_stays_pure_ascii(): void
+    {
+        $out = app(EscpInvoiceService::class)->buildHardened(
+            collect([$this->invoiceWithLines(['client_name' => 'PULPERIA EL ÑANDU'])])
+        );
+
+        $maxOrd = 0;
+        foreach (str_split($out) as $ch) {
+            $maxOrd = max($maxOrd, ord($ch));
+        }
+        $this->assertLessThanOrEqual(0x7E, $maxOrd);
+    }
+
     public function test_contains_invoice_data(): void
     {
         $out = app(EscpInvoiceService::class)->build(collect([$this->invoiceWithLines()]));

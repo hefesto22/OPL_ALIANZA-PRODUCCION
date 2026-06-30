@@ -77,6 +77,7 @@ table.lines th { border-top:1px solid #000; border-bottom:1px solid #000; text-a
     <div style="display:flex; align-items:center; gap:10px;">
         <button class="btn-print" style="background:#16a34a;color:#fff;" id="btnNavegador" onclick="imprimirNavegador()">🖨️ Imprimir (navegador · sin QZ)</button>
         <button class="btn-print" id="btnMatriz" onclick="imprimirMatriz()">🖨️ Imprimir en LX-350 (sin desperdicio)</button>
+        <button class="btn-print" style="background:#7c3aed;color:#fff;" id="btnMatrizForzado" onclick="imprimirMatrizForzado()">🖨️ LX-350 (forzado · prueba)</button>
         <a class="btn-print" style="background:#475569;color:#fff;text-decoration:none;padding:8px 16px;border-radius:6px;font-weight:bold;" href="{{ route('invoices.print.hosana.prn', ['payload' => request('payload')]) }}">⬇ .prn</a>
     </div>
 </div>
@@ -196,6 +197,7 @@ table.lines th { border-top:1px solid #000; border-bottom:1px solid #000; text-a
 <script src="https://cdn.jsdelivr.net/npm/qz-tray@2.2.4/qz-tray.js"></script>
 <script>
     const ESCP_B64     = @json($escpBase64);
+    const ESCP_HARD_B64 = @json($escpHardenedBase64);
     const PRINTER_HINT = @json($printerHint);
     const CONFIRM_URL  = @json(route('invoices.print.confirm'));
     const CSRF         = @json(csrf_token());
@@ -256,6 +258,33 @@ table.lines th { border-top:1px solid #000; border-bottom:1px solid #000; text-a
                   '\n\nVerificá que QZ Tray esté abierto, o usá "⬇ .prn".');
         } finally {
             btn.disabled = false;
+        }
+    }
+
+    // ── Impresión ENDURECIDA (forzado · prueba) vía QZ ─────────────
+    // Mismo envío crudo que el botón naranja, pero con el flujo ESC/P que
+    // fuerza todos los parámetros (para que todas las LX-350 salgan iguales
+    // sin tocar el panel). Botón separado para comparar contra el actual.
+    async function imprimirMatrizForzado() {
+        const b = document.getElementById('btnMatrizForzado');
+        b.disabled = true;
+        try {
+            setStatus('Conectando con QZ Tray…', true);
+            await ensureConnected();
+            const printer = await resolvePrinter();
+            if (!printer) throw new Error('No se encontró ninguna impresora.');
+            setStatus('Enviando (forzado) a: ' + printer, true);
+            const cfg = qz.configs.create(printer);
+            await qz.print(cfg, [{ type: 'raw', format: 'base64', data: ESCP_HARD_B64 }]);
+            await marcarImpresas();
+            setStatus('✓ Enviado (forzado) a ' + printer, true);
+        } catch (e) {
+            console.error(e);
+            setStatus('✗ ' + (e && e.message ? e.message : e), false);
+            alert('No se pudo imprimir vía QZ Tray (forzado):\n' + (e && e.message ? e.message : e) +
+                  '\n\nVerificá que QZ Tray esté abierto.');
+        } finally {
+            b.disabled = false;
         }
     }
 

@@ -167,6 +167,7 @@ class PrintInvoicesController extends Controller
             'manifest' => $manifest,
             'supplier' => Supplier::first(),
             'escpBase64' => base64_encode($escp->build($invoices)),
+            'escpHardenedBase64' => base64_encode($escp->buildHardened($invoices)),
             'printerHint' => (string) config('escp.printer_name_hint', ''),
             'invoiceIds' => $invoices->pluck('id')->all(),
         ])->render();
