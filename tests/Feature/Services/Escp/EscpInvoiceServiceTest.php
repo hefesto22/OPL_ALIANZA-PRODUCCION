@@ -91,6 +91,28 @@ class EscpInvoiceServiceTest extends TestCase
         $this->assertGreaterThan($shortLen, $longLen);
     }
 
+    public function test_large_amounts_are_not_truncated(): void
+    {
+        // Regresión: con columnas de 8 caracteres, un monto como 121,050.00
+        // (10 caracteres) se cortaba a "121,050." y desalineaba la fila.
+        // Las columnas anchas deben mostrarlo completo.
+        $manifest = Manifest::factory()->create(['number' => (string) (++static::$manifestSeq)]);
+        $invoice = Invoice::factory()->for($manifest)->create(['invoice_number' => 'F77000099']);
+
+        InvoiceLine::factory()->for($invoice)->create([
+            'price' => 807.00,
+            'subtotal' => 121050.00,
+            'tax' => 0,
+            'tax18' => 0,
+            'total' => 121050.00,
+        ]);
+        $invoice->load('lines');
+
+        $out = app(EscpInvoiceService::class)->build(collect([$invoice]));
+
+        $this->assertStringContainsString('121,050.00', $out);
+    }
+
     public function test_output_is_pure_ascii(): void
     {
         $out = app(EscpInvoiceService::class)->build(

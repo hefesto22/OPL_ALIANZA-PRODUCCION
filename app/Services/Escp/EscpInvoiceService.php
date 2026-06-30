@@ -182,9 +182,12 @@ class EscpInvoiceService
 
         // ── Tabla ──────────────────────────────────────────────────────
         $L[] = str_repeat('-', $w);
+        // Anchos pensados para que montos grandes (hasta 9,999,999.99) NO se
+        // trunquen: las columnas de dinero son anchas; Descripcion cede espacio
+        // (el Codigo identifica el producto). La fila suma exactamente 80 col.
         $L[] = $this->row([
-            ['Cj', 2, 'L'], ['Und', 3, 'L'], ['Codigo', 9, 'L'], ['Descripcion', 28, 'L'],
-            ['P.Unit', 8, 'R'], ['SubT', 8, 'R'], ['Imp', 6, 'R'], ['Total', 8, 'R'],
+            ['Cj', 2, 'L'], ['Und', 3, 'L'], ['Codigo', 8, 'L'], ['Descripcion', 20, 'L'],
+            ['P.Unit', 9, 'R'], ['SubT', 11, 'R'], ['Imp', 9, 'R'], ['Total', 11, 'R'],
         ]);
         $L[] = str_repeat('-', $w);
 
@@ -193,12 +196,12 @@ class EscpInvoiceService
             $L[] = $this->row([
                 [number_format((float) $line->quantity_box, 0), 2, 'L'],
                 [number_format((float) $line->quantity_fractions, 0), 3, 'L'],
-                [(string) $line->product_id, 9, 'L'],
-                [(string) $line->product_description, 28, 'L'],
-                [number_format((float) $line->price, 2), 8, 'R'],
-                [number_format((float) $line->subtotal, 2), 8, 'R'],
-                [number_format($imp, 2), 6, 'R'],
-                [number_format((float) $line->total, 2), 8, 'R'],
+                [(string) $line->product_id, 8, 'L'],
+                [(string) $line->product_description, 20, 'L'],
+                [number_format((float) $line->price, 2), 9, 'R'],
+                [number_format((float) $line->subtotal, 2), 11, 'R'],
+                [number_format($imp, 2), 9, 'R'],
+                [number_format((float) $line->total, 2), 11, 'R'],
             ]);
         }
         $L[] = str_repeat('-', $w);
