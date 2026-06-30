@@ -5,7 +5,6 @@ namespace App\Filament\Resources\Deposits\Pages;
 use App\Exports\DepositsExport;
 use App\Filament\Resources\Deposits\DepositResource;
 use App\Jobs\NotifyExportReady;
-use App\Support\WarehouseScope;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Actions\CreateAction;
@@ -105,15 +104,21 @@ class ListDeposits extends ListRecords
                         $fileName = 'depositos_'.now()->format('Y-m-d').'.xlsx';
                         $filePath = "exports/{$fileName}";
 
+                        // Visibilidad por jerarquía: capturamos los IDs de usuarios
+                        // visibles acá (donde Auth existe) — dentro del job worker
+                        // `Auth::user()` es null. super_admin → null = sin filtro.
+                        $user = Auth::user();
+                        $visibleUserIds = $user->hasRole(\BezhanSalleh\FilamentShield\Support\Utils::getSuperAdminName())
+                            ? null
+                            : $user->getVisibleUserIds();
+
                         // Export despachado a cola `reports` (ver DepositsExport::$queue).
                         // El chain encadena NotifyExportReady con cola `high` para que
                         // la notificación no quede bloqueada detrás de otros exports.
-                        // WarehouseScope: capturamos las bodegas acá (donde Auth
-                        // existe) — dentro del job worker `Auth::user()` es null.
                         (new DepositsExport(
                             dateFrom: $data['date_from'] ?? null,
                             dateTo: $data['date_to'] ?? null,
-                            warehouseIds: WarehouseScope::getWarehouseIds(),
+                            visibleUserIds: $visibleUserIds,
                         ))->queue($filePath, 'local')->chain([
                             (new NotifyExportReady(
                                 userId: Auth::id(),

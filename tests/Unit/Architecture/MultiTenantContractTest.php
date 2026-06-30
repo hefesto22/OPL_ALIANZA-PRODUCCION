@@ -30,6 +30,9 @@ use Tests\TestCase;
  *   5. `isWarehouseUser()` / `isGlobalUser()` — check manual en la clase
  *   6. `canView()` — restringe el widget a usuarios globales
  *   7. `Resource::getEloquentQuery()` — delega al método de un Resource ya validado
+ *   8. `visibleTo(` — aislamiento por jerarquía de creación (created_by),
+ *      más estricto que el de bodega (ej. DepositResource, depósitos visibles
+ *      solo al creador y su subárbol). Ver Deposit/User::scopeVisibleTo.
  *
  * Si ninguno de esos patrones aparece en el código de la clase, el test falla
  * con un mensaje claro indicando qué hay que agregar.
@@ -75,6 +78,7 @@ class MultiTenantContractTest extends TestCase
         '|isWarehouseUser\(\)'.
         '|isGlobalUser\(\)'.
         '|function\s+canView'.
+        '|visibleTo\('.
         '|Resource::getEloquentQuery\(\)/';
 
     public function test_every_filament_resource_applies_warehouse_filter(): void

@@ -43,10 +43,11 @@ Schedule::call(function () {
     }
 })->hourly()->name('limpiar-pdf-preview')->withoutOverlapping()->onOneServer();
 
-// ── Limpieza mensual de comprobantes de depósito ──────────────────────────
+// ── Limpieza de comprobantes de depósito (retención 40 días) ──────────────
 // Las imágenes de comprobantes se guardan en storage/app/public/deposits/receipts/.
-// Después de 2 meses de subidas ya no tienen valor operativo, así que se
-// eliminan para liberar espacio en el VPS.
+// Después de 40 días de subidas ya no tienen valor operativo, así que se
+// eliminan para liberar espacio en el VPS. El registro del depósito se
+// conserva (solo se borra la imagen + se limpian sus columnas).
 //
 // Estrategia: comparamos receipt_image_uploaded_at (no created_at del depósito)
 // para no borrar imágenes que se adjuntaron recientemente a depósitos viejos.
@@ -58,7 +59,7 @@ Schedule::call(function () {
 //   3. Correr: php artisan storage:delete-directory public/deposits/receipts
 //   El código del modelo y este task no cambiarían.
 Schedule::call(function () {
-    $cutoff = now()->subDays(60);
+    $cutoff = now()->subDays(40);
     $deleted = 0;
     $nulled = 0;
 
@@ -81,7 +82,7 @@ Schedule::call(function () {
         });
 
     if ($deleted > 0) {
-        Log::info("Cleanup comprobantes: {$deleted} imagen(es) de depósito eliminada(s) (> 60 días), {$nulled} registro(s) actualizado(s).");
+        Log::info("Cleanup comprobantes: {$deleted} imagen(es) de depósito eliminada(s) (> 40 días), {$nulled} registro(s) actualizado(s).");
     }
 })->dailyAt('03:00')->name('limpiar-comprobantes-deposito')->withoutOverlapping()->onOneServer();
 

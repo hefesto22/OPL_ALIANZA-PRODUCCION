@@ -7,6 +7,7 @@ use App\Services\DepositService;
 use Filament\Actions\Action;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\FileUpload;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Resources\RelationManagers\RelationManager;
@@ -36,7 +37,14 @@ class DepositsRelationManager extends RelationManager
     public function table(Table $table): Table
     {
         return $table
-            ->modifyQueryUsing(fn ($query) => $query->with(['createdBy:id,name']))
+            // Visibilidad por jerarquía: dentro del manifiesto cada usuario
+            // ve solo los depósitos que registró él o sus descendientes; el
+            // superior (su creador) sí los ve. super_admin ve todos. Así un
+            // encargado de OAO no ve los depósitos del de OAI en un manifiesto
+            // compartido, pero ambos ven el avance global del pago.
+            ->modifyQueryUsing(fn ($query) => $query
+                ->with(['createdBy:id,name'])
+                ->visibleTo(Auth::user()))
             ->columns([
                 TextColumn::make('deposit_date')
                     ->label('Fecha de Depósito')
@@ -234,10 +242,12 @@ class DepositsRelationManager extends RelationManager
                 ->default(today())
                 ->maxDate(today()),
 
-            TextInput::make('bank')
+            Select::make('bank')
                 ->label('Banco')
-                ->maxLength(100)
-                ->placeholder('Ej. Banco Atlántida'),
+                ->options(Deposit::bankOptions())
+                ->native(false)
+                ->searchable()
+                ->placeholder('Seleccioná el banco'),
 
             TextInput::make('reference')
                 ->label('Referencia / No. Boleta')

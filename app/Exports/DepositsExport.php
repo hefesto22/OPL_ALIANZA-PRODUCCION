@@ -31,15 +31,18 @@ class DepositsExport implements FromQuery, ShouldAutoSize, ShouldQueue, WithChun
     public string $queue = 'reports';
 
     /**
-     * @param  array<int, int>  $warehouseIds  Filtro de bodega(s) vía
-     *                                         manifest.warehouse_id. `[]` = todas.
-     *                                         Los depósitos no tienen warehouse_id
-     *                                         propio; filtramos via whereHas('manifest').
+     * @param  array<int, int>|null  $visibleUserIds  IDs de usuarios cuyos
+     *                                                depósitos puede ver quien exporta
+     *                                                (él + su subárbol created_by).
+     *                                                `null` = sin filtro (super_admin).
+     *                                                Se capturan en el request (donde
+     *                                                existe Auth) porque dentro del job
+     *                                                worker Auth::user() es null.
      */
     public function __construct(
         private readonly ?string $dateFrom = null,
         private readonly ?string $dateTo = null,
-        private readonly array $warehouseIds = [],
+        private readonly ?array $visibleUserIds = null,
     ) {}
 
     public function chunkSize(): int
@@ -69,12 +72,11 @@ class DepositsExport implements FromQuery, ShouldAutoSize, ShouldQueue, WithChun
             $query->whereDate('deposit_date', '<=', $this->dateTo);
         }
 
-        // Multi-tenant: usuarios de bodega solo ven depósitos de manifiestos
-        // de su bodega. Via whereHas porque Deposit no tiene warehouse_id.
-        if ($this->warehouseIds !== []) {
-            $query->whereHas('manifest', function (Builder $q): void {
-                $q->whereIn('warehouse_id', $this->warehouseIds);
-            });
+        // Visibilidad por jerarquía: el export refleja lo que el usuario ve en
+        // pantalla — solo los depósitos que registró él o su subárbol. `null`
+        // (super_admin) = sin filtro. Coherente con Deposit::scopeVisibleTo.
+        if ($this->visibleUserIds !== null) {
+            $query->whereIn('created_by', $this->visibleUserIds);
         }
 
         return $query->orderBy('deposit_date', 'desc');

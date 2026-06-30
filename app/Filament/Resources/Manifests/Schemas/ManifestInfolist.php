@@ -231,20 +231,14 @@ class ManifestInfolist
                                 ->label('Progreso de Depósito')
                                 ->columnSpanFull()
                                 ->hidden(fn (): bool => Auth::user()->hasRole('operador'))
+                                // Avance GLOBAL del pago para todos los usuarios.
+                                // El depósito es un pago agrupado contra el manifiesto
+                                // completo (no es atribuible por bodega sin warehouse_id),
+                                // así que el avance se muestra global — ver nota en la
+                                // sección "Resumen Financiero".
                                 ->state(function ($record): string {
-                                    /** @var User $user */
-                                    $user = Auth::user();
-                                    if ($user->isWarehouseUser()) {
-                                        $toDeposit = (float) $record->warehouseTotals
-                                            ->whereIn('warehouse_id', $user->warehouseIds())
-                                            ->sum('total_to_deposit');
-                                        $deposited = (float) $record->warehouseTotals
-                                            ->whereIn('warehouse_id', $user->warehouseIds())
-                                            ->sum('total_deposited');
-                                    } else {
-                                        $toDeposit = (float) $record->total_to_deposit;
-                                        $deposited = (float) $record->total_deposited;
-                                    }
+                                    $toDeposit = (float) $record->total_to_deposit;
+                                    $deposited = (float) $record->total_deposited;
                                     if ($toDeposit <= 0) {
                                         return 'Sin monto a depositar';
                                     }
@@ -253,19 +247,8 @@ class ManifestInfolist
                                     return "{$pct}%";
                                 })
                                 ->color(function ($record): string {
-                                    /** @var User $user */
-                                    $user = Auth::user();
-                                    if ($user->isWarehouseUser()) {
-                                        $toDeposit = (float) $record->warehouseTotals
-                                            ->whereIn('warehouse_id', $user->warehouseIds())
-                                            ->sum('total_to_deposit');
-                                        $deposited = (float) $record->warehouseTotals
-                                            ->whereIn('warehouse_id', $user->warehouseIds())
-                                            ->sum('total_deposited');
-                                    } else {
-                                        $toDeposit = (float) $record->total_to_deposit;
-                                        $deposited = (float) $record->total_deposited;
-                                    }
+                                    $toDeposit = (float) $record->total_to_deposit;
+                                    $deposited = (float) $record->total_deposited;
                                     if ($toDeposit <= 0) {
                                         return 'gray';
                                     }
@@ -293,87 +276,45 @@ class ManifestInfolist
                 ->columns(5)
                 ->columnSpanFull()
                 ->hidden(fn (): bool => Auth::user()->hasRole('operador'))
+                // Resumen financiero GLOBAL del manifiesto para todos los usuarios
+                // (incluidos los de bodega). El pago es una obligación agrupada
+                // contra el manifiesto completo y los depósitos NO son atribuibles
+                // por bodega (deposits no tiene warehouse_id), por lo que mostrar
+                // "Depositado" por bodega es imposible. Para que la ecuación
+                // Total − Devoluciones = A Depositar − Depositado = Diferencia sea
+                // coherente, TODO el resumen se muestra global. El desglose por
+                // usuario/bodega vive en la lista de depósitos (visibleTo).
                 ->schema([
                     TextEntry::make('total_invoices')
                         ->label('Total Manifiesto')
                         ->money('HNL')
                         ->weight('bold')
-                        ->state(function ($record): float {
-                            /** @var User $user */
-                            $user = Auth::user();
-                            if ($user->isWarehouseUser()) {
-                                return (float) $record->warehouseTotals
-                                    ->whereIn('warehouse_id', $user->warehouseIds())
-                                    ->sum('total_invoices');
-                            }
-
-                            return (float) $record->total_invoices;
-                        }),
+                        ->state(fn ($record): float => (float) $record->total_invoices),
 
                     TextEntry::make('total_returns')
                         ->label('(−) Devoluciones')
                         ->money('HNL')
                         ->color('danger')
-                        ->state(function ($record): float {
-                            /** @var User $user */
-                            $user = Auth::user();
-                            if ($user->isWarehouseUser()) {
-                                return (float) $record->warehouseTotals
-                                    ->whereIn('warehouse_id', $user->warehouseIds())
-                                    ->sum('total_returns');
-                            }
-
-                            return (float) $record->total_returns;
-                        }),
+                        ->state(fn ($record): float => (float) $record->total_returns),
 
                     TextEntry::make('total_to_deposit')
                         ->label('(=) A Depositar')
                         ->money('HNL')
                         ->color('warning')
                         ->weight('bold')
-                        ->state(function ($record): float {
-                            /** @var User $user */
-                            $user = Auth::user();
-                            if ($user->isWarehouseUser()) {
-                                return (float) $record->warehouseTotals
-                                    ->whereIn('warehouse_id', $user->warehouseIds())
-                                    ->sum('total_to_deposit');
-                            }
-
-                            return (float) $record->total_to_deposit;
-                        }),
+                        ->state(fn ($record): float => (float) $record->total_to_deposit),
 
                     TextEntry::make('total_deposited')
                         ->label('(−) Depositado')
                         ->money('HNL')
                         ->color('success')
-                        ->state(function ($record): float {
-                            /** @var User $user */
-                            $user = Auth::user();
-                            if ($user->isWarehouseUser()) {
-                                return (float) $record->warehouseTotals
-                                    ->whereIn('warehouse_id', $user->warehouseIds())
-                                    ->sum('total_deposited');
-                            }
-
-                            return (float) $record->total_deposited;
-                        }),
+                        ->state(fn ($record): float => (float) $record->total_deposited),
 
                     TextEntry::make('difference')
                         ->label('(=) Diferencia')
                         ->money('HNL')
                         ->weight('bold')
-                        ->state(function ($record): float {
-                            /** @var User $user */
-                            $user = Auth::user();
-                            if ($user->isWarehouseUser()) {
-                                return (float) $record->warehouseTotals
-                                    ->whereIn('warehouse_id', $user->warehouseIds())
-                                    ->sum('difference');
-                            }
-
-                            return (float) $record->difference;
-                        })
+                        ->state(fn ($record): float => (float) $record->difference)
                         ->color(fn ($state): string => ($state ?? 1) == 0 ? 'success' : 'danger')
                         ->icon(fn ($state): string => ($state ?? 1) == 0
                             ? 'heroicon-o-check-circle'

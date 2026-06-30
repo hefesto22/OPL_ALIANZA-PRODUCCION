@@ -152,10 +152,12 @@ class DepositForm
                             ->default(today())
                             ->maxDate(today()),
 
-                        TextInput::make('bank')
+                        Select::make('bank')
                             ->label('Banco')
-                            ->maxLength(100)
-                            ->placeholder('Ej. Banco Atlántida'),
+                            ->options(\App\Models\Deposit::bankOptions())
+                            ->native(false)
+                            ->searchable()
+                            ->placeholder('Seleccioná el banco'),
 
                         TextInput::make('reference')
                             ->label('Referencia / No. Boleta')

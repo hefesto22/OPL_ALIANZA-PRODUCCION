@@ -144,10 +144,12 @@ class ViewManifest extends ViewRecord
                             ->default(today())
                             ->maxDate(today()),
 
-                        TextInput::make('bank')
+                        Select::make('bank')
                             ->label('Banco')
-                            ->maxLength(100)
-                            ->placeholder('Ej. Banco Atlántida'),
+                            ->options(\App\Models\Deposit::bankOptions())
+                            ->native(false)
+                            ->searchable()
+                            ->placeholder('Seleccioná el banco'),
 
                         TextInput::make('reference')
                             ->label('Referencia / No. Boleta')
@@ -161,17 +163,20 @@ class ViewManifest extends ViewRecord
 
                         FileUpload::make('receipt_image')
                             ->label('Comprobante (foto/imagen)')
-                            ->helperText('Opcional. JPG, PNG, WEBP. Máx. 8 MB.')
+                            ->helperText('Opcional. Cualquier formato (JPG, PNG, WEBP) se convierte automáticamente a WebP optimizado. Máx. 8 MB.')
                             ->image()
                             ->imageEditor()
-                            ->imageResizeMode('contain')
-                            ->imageResizeTargetWidth('1400')
-                            ->imageResizeTargetHeight('1400')
                             ->disk('local')
                             ->directory('deposits/receipts')
                             ->visibility('private')
                             ->maxSize(8192)
                             ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp'])
+                            // Conversión a WebP (resize 1400 + calidad 85) vía el
+                            // Service — igual que DepositForm y el RelationManager,
+                            // para que TODA imagen subida quede en WebP optimizado.
+                            ->saveUploadedFileUsing(
+                                fn ($file): string => app(\App\Services\ReceiptImageService::class)->convertToWebp($file)
+                            )
                             ->nullable()
                             ->columnSpanFull(),
                     ];

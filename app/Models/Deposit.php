@@ -15,6 +15,26 @@ class Deposit extends Model
 {
     use HasFactory, LogsActivity, SoftDeletes;
 
+    /**
+     * Bancos disponibles para registrar un depósito. Fuente única de verdad
+     * para los selects de los 3 formularios (DepositForm, registrar desde el
+     * manifiesto, y edición en el RelationManager). Para agregar/quitar un
+     * banco, editar solo esta lista.
+     *
+     * @var array<int, string>
+     */
+    public const BANKS = ['OCCIDENTE', 'BAC', 'FICOHSA', 'ATLANTIDA', 'BANPAIS'];
+
+    /**
+     * Opciones value=>label para los Select de Filament.
+     *
+     * @return array<string, string>
+     */
+    public static function bankOptions(): array
+    {
+        return array_combine(self::BANKS, self::BANKS);
+    }
+
     protected $fillable = [
         'manifest_id', 'amount', 'deposit_date',
         'bank', 'reference', 'observations',
@@ -48,6 +68,29 @@ class Deposit extends Model
     public function scopeCancelled($query)
     {
         return $query->whereNotNull('cancelled_at');
+    }
+
+    /**
+     * Limita los depósitos a los visibles para el usuario según la jerarquía
+     * de creación (created_by): cada quien ve los depósitos que registró él
+     * y los registrados por sus usuarios descendientes (subárbol completo,
+     * vía CTE recursivo en User::getVisibleUserIds()). super_admin ve todos.
+     *
+     * Espeja App\Models\User::scopeVisibleTo, pero filtrando por la columna
+     * created_by del depósito en vez del id del usuario.
+     *
+     * Resuelve el bug donde un depósito hecho por el encargado de una bodega
+     * NO le aparecía: el filtro anterior iba por manifest.warehouse_id (la
+     * bodega "principal" del manifiesto), que en un manifiesto multi-bodega
+     * no coincide con la bodega del usuario que registró el depósito.
+     */
+    public function scopeVisibleTo($query, User $user)
+    {
+        if ($user->hasRole(\BezhanSalleh\FilamentShield\Support\Utils::getSuperAdminName())) {
+            return $query;
+        }
+
+        return $query->whereIn('created_by', $user->getVisibleUserIds());
     }
 
     public function isCancelled(): bool

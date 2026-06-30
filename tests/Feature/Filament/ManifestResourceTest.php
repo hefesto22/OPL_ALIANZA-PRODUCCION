@@ -141,6 +141,31 @@ class ManifestResourceTest extends TestCase
         $this->assertNotContains($hidden->id, $visibleIds);
     }
 
+    public function test_warehouse_user_still_sees_manifest_when_its_invoice_has_a_return(): void
+    {
+        // Regresión: al registrar una devolución, la factura pasa de 'imported'
+        // a 'partial_return'/'returned'. El manifiesto NO debe desaparecer de la
+        // lista del operador de su bodega — la pertenencia es por warehouse_id,
+        // no por el estado de la factura. (Bug previo: el whereHas filtraba
+        // status='imported' y escondía el manifiesto apenas se devolvía algo.)
+        $this->actingAs($this->warehouseUser);
+
+        $manifest = Manifest::factory()->create(['number' => 'MAN-RET']);
+        Invoice::factory()->create([
+            'manifest_id' => $manifest->id,
+            'warehouse_id' => $this->warehouseOAC->id,
+            'status' => 'partial_return',
+        ]);
+
+        $visibleIds = ManifestResource::getEloquentQuery()->pluck('id')->toArray();
+
+        $this->assertContains(
+            $manifest->id,
+            $visibleIds,
+            'El operador debe seguir viendo su manifiesto aunque su factura tenga una devolución.'
+        );
+    }
+
     public function test_super_admin_query_returns_all_manifests(): void
     {
         $this->actingAs($this->superAdmin);

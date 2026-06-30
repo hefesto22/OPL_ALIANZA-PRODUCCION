@@ -341,8 +341,12 @@ class PrintReportsController extends Controller
         // active() excluye cancelados — un reporte de depósitos por banco
         // no debe sumar montos que ya no son operativos. Los cancelados
         // se auditan desde el tab "Cancelados" del listado.
+        // Visibilidad por jerarquía: el reporte refleja solo los depósitos que
+        // el usuario puede ver (él + su subárbol created_by); super_admin todos.
+        // Antes no filtraba nada → exponía depósitos de todas las bodegas.
         $query = Deposit::query()
             ->active()
+            ->visibleTo($request->user())
             ->with(['manifest', 'createdBy'])
             ->orderBy('deposit_date', 'desc');
 

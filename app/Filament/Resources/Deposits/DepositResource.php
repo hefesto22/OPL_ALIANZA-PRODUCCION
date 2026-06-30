@@ -9,7 +9,6 @@ use App\Filament\Resources\Deposits\Pages\ViewDeposit;
 use App\Filament\Resources\Deposits\Schemas\DepositForm;
 use App\Models\Deposit;
 use App\Services\DepositService;
-use App\Support\WarehouseScope;
 use Filament\Actions\Action;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
@@ -36,14 +35,17 @@ class DepositResource extends Resource
     protected static ?string $pluralModelLabel = 'Depósitos';
 
     /**
-     * Los depósitos no tienen warehouse_id directo; se filtran a través
-     * del manifiesto al que pertenecen.
+     * Visibilidad por jerarquía de creación (created_by): cada usuario ve
+     * los depósitos que registró él y los de sus usuarios descendientes;
+     * super_admin ve todos. Reemplaza el filtro anterior por bodega del
+     * manifiesto, que ocultaba el depósito propio en manifiestos
+     * multi-bodega. Ver Deposit::scopeVisibleTo.
      */
     public static function getEloquentQuery(): Builder
     {
         $query = parent::getEloquentQuery()->with(['manifest', 'createdBy']);
 
-        return WarehouseScope::applyViaRelation($query, 'manifest');
+        return $query->visibleTo(Auth::user());
     }
 
     public static function form(Schema $schema): Schema

@@ -123,11 +123,16 @@ class ManifestResource extends Resource
 
         /** @var \App\Models\User $user */
         $user = Auth::user();
-        // Usuario de bodega: solo ve manifiestos que tengan facturas de su bodega
+        // Usuario de bodega: solo ve manifiestos que tengan facturas de su bodega.
+        // La pertenencia se define por warehouse_id, NO por el estado de la
+        // factura: una factura con devolución pasa a 'partial_return'/'returned'
+        // y antes ese ->where('status','imported') ocultaba el manifiesto completo
+        // de la lista del operador (bug — perdía de vista su manifiesto justo al
+        // registrar una devolución). El estado del MANIFIESTO (Activo/Cerrado) ya
+        // lo filtran las pestañas; el de la factura no debe esconder el manifiesto.
         if ($user && $user->isWarehouseUser()) {
             $query->whereHas('invoices', function (Builder $q) use ($user) {
-                $q->whereIn('warehouse_id', $user->warehouseIds())
-                    ->where('status', 'imported');
+                $q->whereIn('warehouse_id', $user->warehouseIds());
             });
         }
 

@@ -22,10 +22,12 @@ use Tests\TestCase;
  *
  *  1. Permisos Shield × rol (super_admin / admin / finance / encargado).
  *     Finance es el rol específico de depósitos (memoria deploy_status).
- *  2. Scoping vía WarehouseScope::applyViaRelation('manifest') — Deposit
- *     no tiene warehouse_id directo; se filtra a través del manifiesto.
- *     Un encargado de OAC NO ve depósitos de manifiestos de OAS, aunque
- *     no haya warehouse_id en la tabla deposits.
+ *  2. Visibilidad por JERARQUÍA de creación (created_by) — Deposit::scopeVisibleTo.
+ *     Cada usuario ve los depósitos que registró él y los de su subárbol
+ *     (usuarios que creó, transitivamente); su superior (quien lo creó) los
+ *     ve, pero un par de otra bodega NO. super_admin ve todos. Reemplaza el
+ *     scoping anterior por manifest.warehouse_id, que ocultaba el depósito
+ *     propio del encargado en manifiestos multi-bodega.
  *  3. Eager loading congelado — getEagerLoads() debe traer manifest y
  *     createdBy porque las columnas de la tabla los usan.
  *
@@ -125,61 +127,110 @@ class DepositResourceTest extends TestCase
     }
 
     // ═══════════════════════════════════════════════════════════════
-    //  Scoping vía WarehouseScope::applyViaRelation('manifest')
+    //  Visibilidad por jerarquía de creación (created_by)
     // ═══════════════════════════════════════════════════════════════
 
-    public function test_warehouse_user_query_filters_deposits_via_manifest_warehouse(): void
+    public function test_user_sees_own_deposits_but_not_a_siblings(): void
     {
-        // Aunque la tabla deposits no tiene warehouse_id, el filtro debe
-        // aplicar a través de manifest.warehouse_id usando whereHas.
-        // Para este test damos al encargado permiso ViewAny:Deposit ad-hoc;
-        // lo que importa es el contrato del query, no la matriz de roles.
-        $this->warehouseUser->givePermissionTo('ViewAny:Deposit');
-        $this->actingAs($this->warehouseUser);
+        // Jerarquía: un admin (M) creó a dos encargados de bodegas distintas.
+        // Cada encargado registra un depósito en el MISMO manifiesto (multi-bodega).
+        // Un encargado ve el suyo pero NO el del otro — aunque compartan manifiesto.
+        $manager = User::factory()->create();
+        $manager->assignRole('admin');
 
-        $manifestOAC = Manifest::factory()->create(['warehouse_id' => $this->warehouseOAC->id]);
-        $manifestOAS = Manifest::factory()->create(['warehouse_id' => $this->warehouseOAS->id]);
+        $encOAC = User::factory()->forWarehouse($this->warehouseOAC)->create(['created_by' => $manager->id]);
+        $encOAC->givePermissionTo('ViewAny:Deposit');
+        $encOAS = User::factory()->forWarehouse($this->warehouseOAS)->create(['created_by' => $manager->id]);
+        $encOAS->givePermissionTo('ViewAny:Deposit');
 
-        $visible = Deposit::factory()->create(['manifest_id' => $manifestOAC->id]);
-        $hidden = Deposit::factory()->create(['manifest_id' => $manifestOAS->id]);
+        $manifest = Manifest::factory()->create(['warehouse_id' => $this->warehouseOAC->id]);
+        $depositOAC = Deposit::factory()->create(['manifest_id' => $manifest->id, 'created_by' => $encOAC->id]);
+        $depositOAS = Deposit::factory()->create(['manifest_id' => $manifest->id, 'created_by' => $encOAS->id]);
 
+        $this->actingAs($encOAC);
         $visibleIds = DepositResource::getEloquentQuery()->pluck('id')->toArray();
 
-        $this->assertContains($visible->id, $visibleIds);
-        $this->assertNotContains($hidden->id, $visibleIds);
+        $this->assertContains($depositOAC->id, $visibleIds);
+        $this->assertNotContains($depositOAS->id, $visibleIds);
     }
 
-    public function test_super_admin_query_returns_all_deposits_across_warehouses(): void
+    public function test_supervisor_sees_deposits_created_by_their_descendants(): void
     {
+        // El usuario que creó al encargado (su superior) SÍ ve sus depósitos —
+        // está arriba en la cadena created_by.
+        $manager = User::factory()->create();
+        $manager->assignRole('admin');
+        $manager->givePermissionTo('ViewAny:Deposit');
+
+        $encargado = User::factory()->forWarehouse($this->warehouseOAC)->create(['created_by' => $manager->id]);
+
+        $manifest = Manifest::factory()->create(['warehouse_id' => $this->warehouseOAC->id]);
+        $deposit = Deposit::factory()->create(['manifest_id' => $manifest->id, 'created_by' => $encargado->id]);
+
+        $this->actingAs($manager);
+        $visibleIds = DepositResource::getEloquentQuery()->pluck('id')->toArray();
+
+        $this->assertContains($deposit->id, $visibleIds);
+    }
+
+    public function test_super_admin_query_returns_all_deposits(): void
+    {
+        // super_admin no se filtra por jerarquía — ve todo, sin importar quién creó.
+        $other = User::factory()->create();
+        $manifest = Manifest::factory()->create(['warehouse_id' => $this->warehouseOAC->id]);
+        $d1 = Deposit::factory()->create(['manifest_id' => $manifest->id, 'created_by' => $other->id]);
+        $d2 = Deposit::factory()->create(['manifest_id' => $manifest->id, 'created_by' => $this->admin->id]);
+
         $this->actingAs($this->superAdmin);
-
-        $manifestOAC = Manifest::factory()->create(['warehouse_id' => $this->warehouseOAC->id]);
-        $manifestOAS = Manifest::factory()->create(['warehouse_id' => $this->warehouseOAS->id]);
-
-        $oac = Deposit::factory()->create(['manifest_id' => $manifestOAC->id]);
-        $oas = Deposit::factory()->create(['manifest_id' => $manifestOAS->id]);
-
         $visibleIds = DepositResource::getEloquentQuery()->pluck('id')->toArray();
 
-        $this->assertContains($oac->id, $visibleIds);
-        $this->assertContains($oas->id, $visibleIds);
+        $this->assertContains($d1->id, $visibleIds);
+        $this->assertContains($d2->id, $visibleIds);
     }
 
-    public function test_finance_user_without_warehouse_sees_all_deposits(): void
+    public function test_non_super_admin_does_not_see_deposits_outside_their_subtree(): void
     {
-        // Finance no tiene warehouse_id → no es scoped → ve todo.
+        // finance (global pero NO super_admin) se filtra por jerarquía: un
+        // depósito hecho por alguien que NO está en su subárbol no le aparece.
+        $other = User::factory()->create();
+        $manifest = Manifest::factory()->create(['warehouse_id' => $this->warehouseOAC->id]);
+        $foreign = Deposit::factory()->create(['manifest_id' => $manifest->id, 'created_by' => $other->id]);
+
         $this->actingAs($this->finance);
-
-        $manifestOAC = Manifest::factory()->create(['warehouse_id' => $this->warehouseOAC->id]);
-        $manifestOAS = Manifest::factory()->create(['warehouse_id' => $this->warehouseOAS->id]);
-
-        $oac = Deposit::factory()->create(['manifest_id' => $manifestOAC->id]);
-        $oas = Deposit::factory()->create(['manifest_id' => $manifestOAS->id]);
-
         $visibleIds = DepositResource::getEloquentQuery()->pluck('id')->toArray();
 
-        $this->assertContains($oac->id, $visibleIds);
-        $this->assertContains($oas->id, $visibleIds);
+        $this->assertNotContains($foreign->id, $visibleIds);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  Export Excel — consistente con la visibilidad por jerarquía
+    // ═══════════════════════════════════════════════════════════════
+
+    public function test_deposit_export_filters_by_visible_user_ids(): void
+    {
+        $other = User::factory()->create();
+        $manifest = Manifest::factory()->create(['warehouse_id' => $this->warehouseOAC->id]);
+        $mine = Deposit::factory()->create(['manifest_id' => $manifest->id, 'created_by' => $this->admin->id]);
+        $foreign = Deposit::factory()->create(['manifest_id' => $manifest->id, 'created_by' => $other->id]);
+
+        $export = new \App\Exports\DepositsExport(visibleUserIds: [$this->admin->id]);
+        $ids = $export->query()->pluck('id')->toArray();
+
+        $this->assertContains($mine->id, $ids);
+        $this->assertNotContains($foreign->id, $ids);
+    }
+
+    public function test_deposit_export_with_null_visible_ids_returns_all(): void
+    {
+        // null = super_admin → sin filtro.
+        $other = User::factory()->create();
+        $manifest = Manifest::factory()->create(['warehouse_id' => $this->warehouseOAC->id]);
+        $deposit = Deposit::factory()->create(['manifest_id' => $manifest->id, 'created_by' => $other->id]);
+
+        $export = new \App\Exports\DepositsExport(visibleUserIds: null);
+        $ids = $export->query()->pluck('id')->toArray();
+
+        $this->assertContains($deposit->id, $ids);
     }
 
     // ═══════════════════════════════════════════════════════════════

@@ -11,6 +11,7 @@ use App\Models\InvoiceReturn;
 use App\Models\Manifest;
 use App\Models\ReturnLine;
 use App\Models\Supplier;
+use App\Models\User;
 use App\Models\Warehouse;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -76,33 +77,41 @@ class ExportMultiTenantTest extends TestCase
         $this->assertCount(2, $export->query()->get());
     }
 
-    public function test_deposits_export_filters_by_warehouse_via_manifest(): void
+    public function test_deposits_export_filters_by_visible_user_ids(): void
     {
-        $oacManifest = Manifest::factory()->create(['warehouse_id' => $this->oac->id]);
-        $oasManifest = Manifest::factory()->create(['warehouse_id' => $this->oas->id]);
+        // Los depósitos ya no se filtran por bodega del manifiesto, sino por
+        // la JERARQUÍA de creación (created_by): el export refleja solo los
+        // depósitos registrados por los usuarios visibles (el que exporta +
+        // su subárbol). Ver Deposit::scopeVisibleTo.
+        $manifest = Manifest::factory()->create(['warehouse_id' => $this->oac->id]);
 
-        $oacDeposit = Deposit::create([
-            'manifest_id' => $oacManifest->id,
+        $userA = User::factory()->create();
+        $userB = User::factory()->create();
+
+        $depositA = Deposit::create([
+            'manifest_id' => $manifest->id,
             'amount' => 1000.00,
             'deposit_date' => now(),
             'bank' => 'BANPAIS',
+            'created_by' => $userA->id,
         ]);
-        $oasDeposit = Deposit::create([
-            'manifest_id' => $oasManifest->id,
+        $depositB = Deposit::create([
+            'manifest_id' => $manifest->id,
             'amount' => 2000.00,
             'deposit_date' => now(),
             'bank' => 'FICOHSA',
+            'created_by' => $userB->id,
         ]);
 
-        $export = new DepositsExport(warehouseIds: [$this->oac->id]);
+        $export = new DepositsExport(visibleUserIds: [$userA->id]);
         $ids = $export->query()->pluck('id')->toArray();
 
-        $this->assertContains($oacDeposit->id, $ids);
+        $this->assertContains($depositA->id, $ids);
         $this->assertNotContains(
-            $oasDeposit->id,
+            $depositB->id,
             $ids,
-            'Un depósito de un manifiesto de OAS NO debe aparecer cuando se ".
-            "filtra por warehouseId=OAC.'
+            'Un depósito creado por un usuario fuera del subárbol NO debe '.
+            'aparecer en el export.'
         );
     }
 
