@@ -160,6 +160,156 @@ class ReturnServiceTest extends TestCase
         $this->assertSame('returned', $invoice->status);
     }
 
+    // ═══════════════════════════════════════════════════════════════════
+    // ISV en el importe devuelto
+    //  ─────────────────────────────────────────────────────────────────
+    //  La devolución debe acreditar EXACTAMENTE lo que el cliente pagó,
+    //  impuesto incluido. El precio base (price_min_sale) es SIN ISV; el
+    //  importe correcto se deriva de InvoiceLine::unitPriceWithTax()
+    //  (= total ÷ quantity_fractions). Regresión del bug donde las
+    //  devoluciones de productos gravados acreditaban de menos el ISV.
+    // ═══════════════════════════════════════════════════════════════════
+
+    /**
+     * Construye una factura de UNA línea gravada al 15%.
+     * 10 cajas × 12 × Q10 = subtotal 1200, ISV 180, total 1380.
+     * unitPriceWithTax = 1380 / 120 = Q11.50/fracción (vs price_min_sale Q10).
+     */
+    private function makeTaxedInvoice(): Invoice
+    {
+        $manifest = Manifest::factory()->create();
+        $invoice = Invoice::factory()
+            ->for($manifest, 'manifest')
+            ->for($manifest->warehouse, 'warehouse')
+            ->create(['total' => 1380.00]);
+
+        InvoiceLine::factory()
+            ->for($invoice, 'invoice')
+            ->withQuantity(10, 10.0)
+            ->taxed()
+            ->create();
+
+        return $invoice->load('lines');
+    }
+
+    public function test_return_of_taxed_line_credits_proportional_isv(): void
+    {
+        $invoice = $this->makeTaxedInvoice();
+
+        // Devolver 5 cajas = 60 fracciones × Q11.50 = Q690 (incluye ISV).
+        // Con el bug viejo (price_min_sale Q10) habría dado Q600.
+        $return = $this->service->createReturn($this->returnPayload($invoice, boxesToReturn: 5));
+
+        $this->assertEqualsWithDelta(690.00, (float) $return->total, 0.01);
+        $this->assertEqualsWithDelta(690.00, (float) $return->lines->first()->line_total, 0.01);
+    }
+
+    public function test_full_return_of_taxed_line_credits_full_invoiced_amount(): void
+    {
+        $invoice = $this->makeTaxedInvoice();
+
+        // Devolver TODA la línea acredita 1380 = total facturado (con ISV),
+        // dejando la factura sin saldo disponible.
+        $return = $this->service->createReturn($this->returnPayload($invoice, boxesToReturn: 10));
+
+        $this->assertEqualsWithDelta(1380.00, (float) $return->total, 0.01);
+        $this->assertSame('total', $return->type);
+
+        $invoice->refresh();
+        $this->assertSame('returned', $invoice->status);
+        $this->assertEqualsWithDelta(1380.00, (float) $invoice->total_returns, 0.01);
+    }
+
+    public function test_return_of_exempt_line_credits_without_isv(): void
+    {
+        // Línea EXENTA (factory default, tax=0): unitPriceWithTax == price_min_sale.
+        $invoice = $this->makeInvoiceWithLines();
+
+        $return = $this->service->createReturn($this->returnPayload($invoice, boxesToReturn: 5));
+
+        // 5 cajas × 12 × Q10 = Q600, sin impuesto agregado.
+        $this->assertEqualsWithDelta(600.00, (float) $return->total, 0.01);
+    }
+
+    public function test_return_of_mixed_invoice_credits_isv_only_on_taxed_line(): void
+    {
+        // Réplica del caso real de producción: una línea gravada (margarina)
+        // y una exenta (harina) en la misma factura.
+        $manifest = Manifest::factory()->create();
+        $invoice = Invoice::factory()
+            ->for($manifest, 'manifest')
+            ->for($manifest->warehouse, 'warehouse')
+            ->create(['total' => 1380.00 + 1200.00]); // gravada 1380 + exenta 1200
+
+        $taxedLine = InvoiceLine::factory()
+            ->for($invoice, 'invoice')
+            ->withQuantity(10, 10.0)
+            ->taxed()
+            ->create();
+        $exemptLine = InvoiceLine::factory()
+            ->for($invoice, 'invoice')
+            ->withQuantity(10, 10.0)
+            ->create();
+        $invoice->load('lines');
+
+        $reason = ReturnReason::factory()->create();
+        $user = User::factory()->create();
+
+        // Devolver 1 caja de cada línea.
+        $data = [
+            'invoice_id' => $invoice->id,
+            'return_reason_id' => $reason->id,
+            'return_date' => now()->toDateString(),
+            'created_by' => $user->id,
+            'lines' => [
+                [
+                    'invoice_line_id' => $taxedLine->id,
+                    'line_number' => $taxedLine->line_number,
+                    'product_id' => $taxedLine->product_id,
+                    'product_description' => $taxedLine->product_description,
+                    'quantity_box' => 1,
+                    'quantity' => 0,
+                ],
+                [
+                    'invoice_line_id' => $exemptLine->id,
+                    'line_number' => $exemptLine->line_number,
+                    'product_id' => $exemptLine->product_id,
+                    'product_description' => $exemptLine->product_description,
+                    'quantity_box' => 1,
+                    'quantity' => 0,
+                ],
+            ],
+        ];
+
+        $return = $this->service->createReturn($data);
+
+        // Gravada: 12 fracciones × Q11.50 = Q138.00 (con ISV).
+        // Exenta:  12 fracciones × Q10.00 = Q120.00 (sin ISV).
+        // Total = Q258.00.
+        $this->assertEqualsWithDelta(258.00, (float) $return->total, 0.01);
+
+        $lineByInvoiceLine = $return->lines->keyBy('invoice_line_id');
+        $this->assertEqualsWithDelta(138.00, (float) $lineByInvoiceLine[$taxedLine->id]->line_total, 0.01);
+        $this->assertEqualsWithDelta(120.00, (float) $lineByInvoiceLine[$exemptLine->id]->line_total, 0.01);
+    }
+
+    public function test_update_of_taxed_line_recalculates_total_with_isv(): void
+    {
+        $invoice = $this->makeTaxedInvoice();
+
+        // Inicial: 3 cajas = 36 fracciones × Q11.50 = Q414.
+        $return = $this->service->createReturn($this->returnPayload($invoice, boxesToReturn: 3));
+        $this->assertEqualsWithDelta(414.00, (float) $return->total, 0.01);
+
+        // Editar a 6 cajas = 72 fracciones × Q11.50 = Q828.
+        $updated = $this->service->updateReturn(
+            $return->fresh('lines'),
+            $this->updatePayload($invoice->fresh('lines'), [6])
+        );
+
+        $this->assertEqualsWithDelta(828.00, (float) $updated->total, 0.01);
+    }
+
     public function test_updates_invoice_status_to_partial_return(): void
     {
         $invoice = $this->makeInvoiceWithLines();

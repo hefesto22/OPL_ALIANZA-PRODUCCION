@@ -48,8 +48,10 @@ class RegistrarDevolucionAction
                     $available = max(0, (float) $line->quantity_fractions - $alreadyReturned);
                     $convFactor = max(1, (int) ($line->conversion_factor ?? 1));
                     $unitSale = strtoupper($line->unit_sale ?? 'UN');
-                    // Null → usar price; 0 → bonificación (gratis). No usar ?: porque 0 es falsy.
-                    $unitPrice = $line->price_min_sale !== null ? (float) $line->price_min_sale : (float) $line->price;
+                    // Precio CON ISV (lo realmente facturado al cliente), no la base
+                    // sin impuesto. Mantiene el modal consistente con el total que
+                    // ReturnService persiste. Ver InvoiceLine::unitPriceWithTax.
+                    $unitPrice = $line->unitPriceWithTax();
 
                     $availableBoxes = ($unitSale === 'CJ')
                         ? (int) floor($available / $convFactor)

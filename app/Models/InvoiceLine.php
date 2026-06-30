@@ -62,4 +62,31 @@ class InvoiceLine extends Model
     {
         return (float) $this->quantity_fractions - (float) $this->returned_quantity;
     }
+
+    /**
+     * Precio unitario (por fracción) realmente facturado, CON impuesto.
+     *
+     * Se deriva del total de la línea (subtotal − descuento + ISV) entre las
+     * fracciones facturadas. Es la base correcta para calcular el importe a
+     * devolver: reproduce EXACTAMENTE lo que el cliente pagó por unidad y
+     * funciona sin casos especiales para gravado 15%/18%, exento (ISV=0),
+     * descuentos y bonificaciones (total=0).
+     *
+     * IMPORTANTE: `price_min_sale` es la base gravable SIN ISV y NO debe usarse
+     * para devoluciones — dejaría fuera el impuesto en productos gravados (la
+     * devolución acreditaría de menos lo que el cliente realmente pagó).
+     *
+     * Guard de división por cero: una línea sin fracciones (dato corrupto o
+     * bonificación con cantidad 0) devuelve 0.0 en vez de lanzar.
+     */
+    public function unitPriceWithTax(): float
+    {
+        $fractions = (float) $this->quantity_fractions;
+
+        if ($fractions <= 0.0) {
+            return 0.0;
+        }
+
+        return (float) $this->total / $fractions;
+    }
 }

@@ -306,17 +306,17 @@ table.lines th { border-top:1px solid #000; border-bottom:1px solid #000; text-a
             const css =
                 '* { margin:0; padding:0; box-sizing:border-box; }' +
                 'body { background:#fff; }' +
-                '.invoice-page { background:#fff; width:203mm; margin:0 auto; padding:3mm 4mm;' +
-                ' font-family:"Courier New",Courier,monospace; font-size:9pt; line-height:1.15;' +
+                '.invoice-page { background:#fff; width:203mm; margin:0 auto; padding:2mm 4mm;' +
+                ' font-family:"Courier New",Courier,monospace; font-size:8pt; line-height:1.05;' +
                 ' color:#000; font-weight:bold; page-break-after:always; page-break-inside:avoid; }' +
                 '.invoice-page:last-child { page-break-after:auto; }' +
-                '.center { text-align:center; } .r { text-align:right; } .title { font-size:10pt; }' +
-                'table.lines { width:100%; border-collapse:collapse; table-layout:fixed; margin-top:2px; }' +
+                '.center { text-align:center; } .r { text-align:right; } .title { font-size:9pt; }' +
+                'table.lines { width:100%; border-collapse:collapse; table-layout:fixed; margin-top:1px; }' +
                 'table.lines th, table.lines td { padding:0 2px; overflow:hidden; white-space:nowrap; }' +
                 'table.lines th { border-top:1px solid #000; border-bottom:1px solid #000; text-align:left; }' +
-                '.hr { border-top:1px solid #000; margin:2px 0; }' +
+                '.hr { border-top:1px solid #000; margin:1px 0; }' +
                 '.totales td { padding:0 2px; }' +
-                '.firmas { margin-top:4mm !important; }';
+                '.firmas { margin-top:2mm !important; }';
 
             const body = document.getElementById('invoices').innerHTML;
             const html = '<!DOCTYPE html><html><head><meta charset="utf-8"><style>' + css +

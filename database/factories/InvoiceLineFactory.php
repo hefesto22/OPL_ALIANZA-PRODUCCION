@@ -95,4 +95,27 @@ class InvoiceLineFactory extends Factory
             'total' => $lineTotal,
         ]);
     }
+
+    /**
+     * Convierte la línea en GRAVADA: agrega ISV sobre el subtotal y ajusta el
+     * total (total = subtotal + ISV). Componer DESPUÉS de withQuantity():
+     * withQuantity(10, 10.0)->taxed() → subtotal 1200, ISV 180, total 1380.
+     *
+     * Permite probar que las devoluciones acreditan el impuesto: con esta línea
+     * unitPriceWithTax() > price_min_sale (la base sin ISV).
+     */
+    public function taxed(float $rate = 0.15): static
+    {
+        return $this->state(function (array $attributes) use ($rate) {
+            $subtotal = (float) ($attributes['subtotal'] ?? 0);
+            $tax = round($subtotal * $rate, 2);
+
+            return [
+                'tax' => $tax,
+                'tax_percent' => $rate * 100,
+                'tax18' => 0,
+                'total' => round($subtotal + $tax, 2),
+            ];
+        });
+    }
 }

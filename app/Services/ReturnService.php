@@ -87,6 +87,10 @@ class ReturnService
 
             // Total calculado server-side: suma de (cajas×factor + unidades) × precio_unitario
             // por cada línea con cantidad > 0. No depende de line_total del frontend.
+            //
+            // El precio unitario es el CON ISV (InvoiceLine::unitPriceWithTax),
+            // no price_min_sale: la devolución debe acreditar exactamente lo que
+            // el cliente pagó, impuesto incluido. Ver el método en el modelo.
             $total = 0.0;
             foreach ($linesData as $lineData) {
                 $lid = $lineData['invoice_line_id'] ?? null;
@@ -97,7 +101,7 @@ class ReturnService
                 }
                 $ol = $linesByOriginalId[$lid] ?? null;
                 $cf = max(1, (float) ($ol?->conversion_factor ?? 1));
-                $up = (float) ($ol?->price_min_sale ?: $ol?->price ?? 0);
+                $up = $ol?->unitPriceWithTax() ?? 0.0;
                 $total += round(($b * $cf + $u) * $up, 2);
             }
 
@@ -135,10 +139,10 @@ class ReturnService
                 // Calcular line_total server-side para evitar depender del valor
                 // enviado por el frontend (campos disabled en Repeaters de Filament v4
                 // no siempre envían su valor reactivo correctamente al submit).
-                // Fuente de verdad: invoice_lines de la BD.
+                // Fuente de verdad: invoice_lines de la BD. Precio CON ISV.
                 $originalLine = $lineId ? ($linesByOriginalId[$lineId] ?? null) : null;
                 $convFactor = max(1, (float) ($originalLine?->conversion_factor ?? 1));
-                $unitPrice = (float) ($originalLine?->price_min_sale ?: $originalLine?->price ?? 0);
+                $unitPrice = $originalLine?->unitPriceWithTax() ?? 0.0;
                 $lineTotal = round(($boxes * $convFactor + $units) * $unitPrice, 2);
 
                 ReturnLine::create([
@@ -295,10 +299,8 @@ class ReturnService
 
                 $originalLine = $lineId ? ($linesByOriginalId[$lineId] ?? null) : null;
                 $convFactor = max(1, (float) ($originalLine?->conversion_factor ?? 1));
-                // Null → usar price; 0 → bonificación (gratis). Evitar ?: porque 0 es falsy.
-                $unitPrice = $originalLine?->price_min_sale !== null
-                    ? (float) $originalLine->price_min_sale
-                    : (float) ($originalLine?->price ?? 0);
+                // Precio CON ISV (lo facturado al cliente), no la base sin impuesto.
+                $unitPrice = $originalLine?->unitPriceWithTax() ?? 0.0;
                 $lineTotal = round(($boxes * $convFactor + $units) * $unitPrice, 2);
 
                 ReturnLine::create([
@@ -442,10 +444,10 @@ class ReturnService
      * (no queda nada por devolver) — el mismo criterio con el que la factura pasa
      * a estado 'returned' (ver hasAvailableLines/updateInvoiceStatus).
      *
-     * Se compara en cantidad (fracciones), NO en importe: el total de la
-     * devolución se calcula con price_min_sale (SIN ISV) mientras invoice.total
-     * lo INCLUYE, así que comparar importes hacía que las facturas gravadas casi
-     * nunca se marcaran 'total'.
+     * Se compara en CANTIDAD (fracciones), NO en importe. Aunque el total de la
+     * devolución ya incluye ISV (ver InvoiceLine::unitPriceWithTax), comparar
+     * importes seguiría siendo frágil ante redondeo y facturas que mezclan
+     * líneas gravadas y exentas. La cantidad disponible es el criterio robusto.
      *
      * @param  \Illuminate\Support\Collection<int, \App\Models\InvoiceLine>  $invoiceLines
      * @param  array<int, float>  $returnedByLine  [invoice_line_id => fracciones ya devueltas por otras devoluciones]
