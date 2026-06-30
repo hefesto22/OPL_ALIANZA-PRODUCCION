@@ -44,12 +44,8 @@
 .title { font-size:11pt; }
 
 @media print {
-    @page { size: 215.9mm 279.4mm portrait; margin: 0; }
     #toolbar { display:none !important; }
     #invoices { margin-top:0; padding:0; background:none; }
-    .invoice-page { width:215.9mm; min-height:279.4mm; margin:0; box-shadow:none;
-                    page-break-after: always; page-break-inside: avoid; }
-    .invoice-page:last-child { page-break-after: avoid; }
 }
 
 table.lines { width:100%; border-collapse:collapse; table-layout:fixed; margin-top:2px; }
@@ -57,6 +53,18 @@ table.lines th, table.lines td { padding:1px 2px; overflow:hidden; white-space:n
 table.lines th { border-top:1px solid #000; border-bottom:1px solid #000; text-align:left; }
 .hr { border-top:1px solid #000; margin:3px 0; }
 .totales td { padding:0 2px; }
+</style>
+
+{{-- Estilo de impresión por defecto (Carta vertical). Se DESACTIVA por JS
+     cuando se imprime con el botón verde (forma 9.5x5.5 sin QZ), para que
+     mande solo el @page de la forma y no se peleen los tamaños. --}}
+<style id="printLetter">
+@media print {
+    @page { size: 215.9mm 279.4mm portrait; margin: 0; }
+    .invoice-page { width:215.9mm; min-height:279.4mm; margin:0; box-shadow:none;
+                    page-break-after: always; page-break-inside: avoid; }
+    .invoice-page:last-child { page-break-after: avoid; }
+}
 </style>
 </head>
 <body>
@@ -171,7 +179,7 @@ table.lines th { border-top:1px solid #000; border-bottom:1px solid #000; text-a
     <div style="margin-top:6px;">SON: {{ strtoupper(\App\Helpers\NumberHelper::toWords((float) $invoice->total)) }}</div>
 
     {{-- ══ Firmas ══ --}}
-    <table style="width:100%; margin-top:18mm; text-align:center;">
+    <table class="firmas" style="width:100%; margin-top:18mm; text-align:center;">
         <tr>
             <td style="width:33%; border-top:1px solid #000;">Nombre Completo</td>
             <td style="width:4%;">&nbsp;</td>
@@ -256,17 +264,25 @@ table.lines th { border-top:1px solid #000; border-bottom:1px solid #000; text-a
     // con márgenes cero; el alineado fino se hace moviendo el papel en la
     // LX-350. Al terminar, limpia el estilo para no afectar al flujo de QZ.
     function imprimirNavegador() {
+        // Desactiva el @page Carta para que mande SOLO la forma 9.5x5.5".
+        var letterEl = document.getElementById('printLetter');
+        if (letterEl && letterEl.sheet) letterEl.sheet.disabled = true;
+
         var style = document.createElement('style');
         style.id = 'formPrintStyle';
         style.textContent =
             '@media print {' +
             '  @page { size: 241.3mm 139.7mm; margin: 0; }' +
-            '  body.printing-form #invoices { margin:0; padding:0; }' +
+            '  html, body { margin:0; padding:0; }' +
+            '  body.printing-form #invoices { margin:0; padding:0; background:none; }' +
             '  body.printing-form .invoice-page {' +
-            '    width:241.3mm; min-height:139.7mm; padding:0; margin:0;' +
+            '    width:241.3mm; min-height:139.7mm; margin:0; padding:4mm 6mm;' +
             '    box-shadow:none; page-break-after:always; page-break-inside:avoid;' +
+            '    font-size:8.5pt; line-height:1.12;' +
             '  }' +
             '  body.printing-form .invoice-page:last-child { page-break-after:avoid; }' +
+            '  body.printing-form .title { font-size:9.5pt; }' +
+            '  body.printing-form .firmas { margin-top:5mm !important; }' +
             '}';
         document.head.appendChild(style);
         document.body.classList.add('printing-form');
@@ -275,6 +291,8 @@ table.lines th { border-top:1px solid #000; border-bottom:1px solid #000; text-a
             document.body.classList.remove('printing-form');
             var s = document.getElementById('formPrintStyle');
             if (s) s.remove();
+            var l = document.getElementById('printLetter');
+            if (l && l.sheet) l.sheet.disabled = false;
             window.removeEventListener('afterprint', onAfter);
         }
         function onAfter() { marcarImpresas(); cleanup(); }
