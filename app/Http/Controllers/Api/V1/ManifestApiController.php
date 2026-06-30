@@ -128,8 +128,9 @@ class ManifestApiController extends Controller
                     'insertadas' => 0,
                 ],
                 'manifiestos_rechazados' => $batchDateValidation['invalid_manifests'],
-                // Etiqueta unificada de manifiestos válidos (forma canónica).
-                'manifiestos' => $this->shapeValidManifests($batchDateValidation['valid_manifests']),
+                // Etiqueta unificada: misma forma que el OK (lista de números
+                // de manifiesto), sólo se unificó el nombre por pedido de SAP.
+                'manifiestos' => array_values(array_column($batchDateValidation['valid_manifests'], 'manifiesto')),
             ], 422);
         }
 
@@ -185,11 +186,10 @@ class ManifestApiController extends Controller
                     'insertadas' => 0,
                 ],
                 'manifiestos_rechazados' => $invalidos,
-                // Etiqueta unificada de manifiestos válidos (forma canónica).
-                // Aquí son válidos pero NO insertados: el batch es todo-o-nada.
-                // success=false + resumen.insertadas=0 lo desambiguan. Jaremar
-                // debe reenviar estos manifiestos en un batch independiente.
-                'manifiestos' => $this->shapeValidManifests($validos),
+                // Etiqueta unificada: lista de números de manifiesto válidos,
+                // misma forma que el OK. Aquí son válidos pero NO insertados
+                // (batch todo-o-nada); deben reenviarse en un batch aparte.
+                'manifiestos' => array_values(array_column($validos, 'manifiesto')),
             ];
 
             return new JsonResponse($response, 422);
@@ -273,15 +273,12 @@ class ManifestApiController extends Controller
             }
 
             // ── 8. Construir respuesta para Jaremar ────────────────────
-            // Forma canónica de manifiestos[]: lista uniforme de
-            // {manifiesto, total_facturas}, idéntica a la de las respuestas
-            // de rechazo. Un solo contrato deserializable para SAP.
+            // Lista de números de manifiesto tocados (forma original, lista
+            // de strings). Misma etiqueta `manifiestos` que las respuestas
+            // de rechazo tras la unificación de nombre pedida por SAP.
             $manifiestos = collect($invoices)
-                ->groupBy('NumeroManifiesto')
-                ->map(fn ($facturas, $numero) => [
-                    'manifiesto' => (string) $numero,
-                    'total_facturas' => $facturas->count(),
-                ])
+                ->pluck('NumeroManifiesto')
+                ->unique()
                 ->values()
                 ->all();
 
@@ -337,19 +334,6 @@ class ManifestApiController extends Controller
                     fn ($r) => $this->shapeRejectedManifestEntry($r),
                     $summary['manifiestos_rechazados']
                 );
-
-                // manifiestos[] queda solo con los válidos: excluimos los
-                // rechazados para que la etiqueta signifique lo mismo en toda
-                // respuesta (manifiestos válidos), coherente con que el batch
-                // es todo-o-nada (resumen.insertadas = 0).
-                $rechazadosNumeros = array_map(
-                    fn ($r) => (string) $r['manifiesto'],
-                    $summary['manifiestos_rechazados']
-                );
-                $response['manifiestos'] = array_values(array_filter(
-                    $manifiestos,
-                    fn ($m) => ! in_array($m['manifiesto'], $rechazadosNumeros, true)
-                ));
             }
 
             if (! empty($summary['warnings'])) {
@@ -392,23 +376,10 @@ class ManifestApiController extends Controller
      */
     private function duplicateBatchResponse(ApiInvoiceImport $import): JsonResponse
     {
-        // Mantener la etiqueta manifiestos[] también en la respuesta
-        // idempotente, con la misma forma canónica, reconstruida desde el
-        // payload original almacenado (raw_payload casteado a array).
-        $manifiestos = collect($import->raw_payload ?? [])
-            ->groupBy('NumeroManifiesto')
-            ->map(fn ($facturas, $numero) => [
-                'manifiesto' => (string) $numero,
-                'total_facturas' => $facturas->count(),
-            ])
-            ->values()
-            ->all();
-
         return new JsonResponse([
             'success' => true,
             'message' => 'Este batch ya fue procesado anteriormente.',
             'batch_uuid' => $import->batch_uuid,
-            'manifiestos' => $manifiestos,
             'resumen' => [
                 'recibidas' => $import->total_received,
                 'insertadas' => $import->invoices_inserted,
@@ -501,27 +472,6 @@ class ManifestApiController extends Controller
 
             default => $base,
         };
-    }
-
-    /**
-     * Forma canónica de la etiqueta manifiestos[] en TODA respuesta del API.
-     *
-     * Unifica las antiguas etiquetas divergentes (manifiestos como lista de
-     * strings, manifiestos_validos y manifiestos_no_afectados como listas de
-     * objetos con campos extra) en una sola etiqueta `manifiestos` con forma
-     * estable: lista de {manifiesto, total_facturas}. Esto permite a SAP
-     * deserializar el mismo campo con la misma estructura en éxito y rechazo,
-     * que es exactamente lo que solicitó el equipo de Jaremar.
-     *
-     * @param  array<int, array<string, mixed>>  $entries
-     * @return array<int, array{manifiesto: string, total_facturas: int}>
-     */
-    private function shapeValidManifests(array $entries): array
-    {
-        return array_map(fn ($entry) => [
-            'manifiesto' => (string) $entry['manifiesto'],
-            'total_facturas' => (int) ($entry['total_facturas'] ?? 0),
-        ], $entries);
     }
 
     private function notifyAdminsForDateValidation(array $invalidManifests): void
