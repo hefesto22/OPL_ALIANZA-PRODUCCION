@@ -67,6 +67,7 @@ table.lines th { border-top:1px solid #000; border-bottom:1px solid #000; text-a
         <span id="status">QZ Tray: verificando…</span>
     </div>
     <div style="display:flex; align-items:center; gap:10px;">
+        <button class="btn-print" style="background:#16a34a;color:#fff;" id="btnNavegador" onclick="imprimirNavegador()">🖨️ Imprimir (navegador · sin QZ)</button>
         <button class="btn-print" id="btnMatriz" onclick="imprimirMatriz()">🖨️ Imprimir en LX-350 (sin desperdicio)</button>
         <a class="btn-print" style="background:#475569;color:#fff;text-decoration:none;padding:8px 16px;border-radius:6px;font-weight:bold;" href="{{ route('invoices.print.hosana.prn', ['payload' => request('payload')]) }}">⬇ .prn</a>
     </div>
@@ -248,6 +249,38 @@ table.lines th { border-top:1px solid #000; border-bottom:1px solid #000; text-a
         } finally {
             btn.disabled = false;
         }
+    }
+
+    // ── Impresión por navegador (window.print) SIN QZ ──────────────
+    // Inyecta al vuelo el tamaño de la forma real (9.5"x5.5" = 241.3x139.7mm)
+    // con márgenes cero; el alineado fino se hace moviendo el papel en la
+    // LX-350. Al terminar, limpia el estilo para no afectar al flujo de QZ.
+    function imprimirNavegador() {
+        var style = document.createElement('style');
+        style.id = 'formPrintStyle';
+        style.textContent =
+            '@media print {' +
+            '  @page { size: 241.3mm 139.7mm; margin: 0; }' +
+            '  body.printing-form #invoices { margin:0; padding:0; }' +
+            '  body.printing-form .invoice-page {' +
+            '    width:241.3mm; min-height:139.7mm; padding:0; margin:0;' +
+            '    box-shadow:none; page-break-after:always; page-break-inside:avoid;' +
+            '  }' +
+            '  body.printing-form .invoice-page:last-child { page-break-after:avoid; }' +
+            '}';
+        document.head.appendChild(style);
+        document.body.classList.add('printing-form');
+
+        function cleanup() {
+            document.body.classList.remove('printing-form');
+            var s = document.getElementById('formPrintStyle');
+            if (s) s.remove();
+            window.removeEventListener('afterprint', onAfter);
+        }
+        function onAfter() { marcarImpresas(); cleanup(); }
+
+        window.addEventListener('afterprint', onAfter);
+        window.print();
     }
 
     (async function () {
