@@ -78,6 +78,7 @@ table.lines th { border-top:1px solid #000; border-bottom:1px solid #000; text-a
         <button class="btn-print" style="background:#16a34a;color:#fff;" id="btnNavegador" onclick="imprimirNavegador()">🖨️ Imprimir (navegador · sin QZ)</button>
         <button class="btn-print" id="btnMatriz" onclick="imprimirMatriz()">🖨️ Imprimir en LX-350 (sin desperdicio)</button>
         <button class="btn-print" style="background:#7c3aed;color:#fff;" id="btnMatrizForzado" onclick="imprimirMatrizForzado()">🖨️ LX-350 (forzado · prueba)</button>
+        <button class="btn-print" style="background:#0d9488;color:#fff;" id="btnDriver" onclick="imprimirDriver()">🖨️ LX-350 (driver · prueba)</button>
         <a class="btn-print" style="background:#475569;color:#fff;text-decoration:none;padding:8px 16px;border-radius:6px;font-weight:bold;" href="{{ route('invoices.print.hosana.prn', ['payload' => request('payload')]) }}">⬇ .prn</a>
     </div>
 </div>
@@ -282,6 +283,60 @@ table.lines th { border-top:1px solid #000; border-bottom:1px solid #000; text-a
             console.error(e);
             setStatus('✗ ' + (e && e.message ? e.message : e), false);
             alert('No se pudo imprimir vía QZ Tray (forzado):\n' + (e && e.message ? e.message : e) +
+                  '\n\nVerificá que QZ Tray esté abierto.');
+        } finally {
+            b.disabled = false;
+        }
+    }
+
+    // ── Impresión vía DRIVER de EPSON (gráfico) por QZ — como el sistema viejo
+    // QZ rasteriza el HTML y lo manda al driver "EPSON LX-350 ESC/P", igual que
+    // el sistema anterior. Al ser gráfico (bitmap) NO depende de la emulación de
+    // cada unidad → sale idéntico en todas las bodegas sin tocar el panel.
+    async function imprimirDriver() {
+        const b = document.getElementById('btnDriver');
+        b.disabled = true;
+        try {
+            setStatus('Conectando con QZ Tray…', true);
+            await ensureConnected();
+            const printer = await resolvePrinter();
+            if (!printer) throw new Error('No se encontró ninguna impresora.');
+            setStatus('Enviando (driver) a: ' + printer, true);
+
+            const css =
+                '* { margin:0; padding:0; box-sizing:border-box; }' +
+                'body { background:#fff; }' +
+                '.invoice-page { background:#fff; width:241mm; padding:4mm 6mm;' +
+                ' font-family:"Courier New",Courier,monospace; font-size:10pt; line-height:1.25;' +
+                ' color:#000; font-weight:bold; page-break-after:always; }' +
+                '.invoice-page:last-child { page-break-after:auto; }' +
+                '.center { text-align:center; } .r { text-align:right; } .title { font-size:11pt; }' +
+                'table.lines { width:100%; border-collapse:collapse; table-layout:fixed; margin-top:2px; }' +
+                'table.lines th, table.lines td { padding:1px 2px; overflow:hidden; white-space:nowrap; }' +
+                'table.lines th { border-top:1px solid #000; border-bottom:1px solid #000; text-align:left; }' +
+                '.hr { border-top:1px solid #000; margin:3px 0; }' +
+                '.totales td { padding:0 2px; }';
+
+            const body = document.getElementById('invoices').innerHTML;
+            const html = '<!DOCTYPE html><html><head><meta charset="utf-8"><style>' + css +
+                '</style></head><body>' + body + '</body></html>';
+
+            const cfg = qz.configs.create(printer, {
+                size: { width: 9.5, height: 5.5 },
+                units: 'in',
+                margins: 0,
+                colorType: 'grayscale',
+                scaleContent: false,
+                rasterize: true,
+            });
+
+            await qz.print(cfg, [{ type: 'pixel', format: 'html', flavor: 'plain', data: html }]);
+            await marcarImpresas();
+            setStatus('✓ Enviado (driver) a ' + printer, true);
+        } catch (e) {
+            console.error(e);
+            setStatus('✗ ' + (e && e.message ? e.message : e), false);
+            alert('No se pudo imprimir vía driver/QZ:\n' + (e && e.message ? e.message : e) +
                   '\n\nVerificá que QZ Tray esté abierto.');
         } finally {
             b.disabled = false;
