@@ -518,7 +518,23 @@ class PrintReportsController extends Controller
                 DB::raw('MIN(product_description) as product_description'),
                 DB::raw('MIN(unit_sale) as unit_sale'),
                 DB::raw('SUM(quantity_box) as total_boxes'),
-                DB::raw('SUM(quantity_fractions) as total_units'),
+                // Total REAL de unidades por línea. quantity_fractions tiene dos
+                // semánticas históricas según cómo entró la línea:
+                //   a) Normalizada (import API, caso CJ puro): fractions YA
+                //      incluye las cajas (cajas × factor).
+                //   b) Cruda (línea mixta de Jaremar con CantidadCaja>0 Y
+                //      CantidadFracciones>0, o import manual sin normalizar):
+                //      fractions trae SOLO las sueltas y las cajas van aparte
+                //      en quantity_box.
+                // La distinción es matemática, no heurística: si fractions <
+                // cajas × factor, es IMPOSIBLE que las cajas estén incluidas
+                // (una caja completa nunca suma menos que sí misma) → se
+                // agregan. Así ningún formato de línea pierde mercadería.
+                DB::raw('SUM(CASE
+                    WHEN quantity_fractions < quantity_box * conversion_factor
+                    THEN quantity_box * conversion_factor + quantity_fractions
+                    ELSE quantity_fractions
+                END) as total_units'),
                 DB::raw('SUM(total) as total_amount'),
                 // Unidades por caja del producto. MAX (no AVG) porque alguna
                 // línea suelta podría traer factor 1 por error de origen;

@@ -117,6 +117,139 @@ class ProductsReportCajasEquivTest extends TestCase
         $response->assertSee('12,345.67', false);
     }
 
+    /**
+     * Extrae el valor de una summary card del HTML renderizado.
+     */
+    private function assertSummaryCard(string $content, string $label, string $expectedValue): void
+    {
+        $pattern = '/'.preg_quote($label, '/').'<\/div>\s*<div class="value">'.preg_quote($expectedValue, '/').'<\/div>/';
+
+        $this->assertMatchesRegularExpression(
+            $pattern,
+            $content,
+            "La summary card '{$label}' no muestra el valor esperado '{$expectedValue}'."
+        );
+    }
+
+    public function test_mixed_line_does_not_lose_boxes(): void
+    {
+        // REGRESIÓN (bug reportado 2026-07-01): línea MIXTA de Jaremar
+        // (CantidadCaja>0 Y CantidadFracciones>0). El importador API solo
+        // normalizaba fractions cuando fracciones==0, así que en líneas mixtas
+        // quantity_fractions trae SOLO las sueltas y las cajas viven aparte en
+        // quantity_box. El reporte sumaba solo fractions → perdía las cajas.
+        //
+        // Caso del usuario: 2 CJ (factor 96) + 100 sueltas = 292 unidades
+        //   → debe mostrar 3 cajas y 4 unidades. (Antes: 1 caja y 4.)
+        $manifest = $this->makeManifestWithLines([
+            [
+                'product_id' => '01020031',
+                'product_description' => 'MANTECA DOMESTICA DORAL 25X908GR',
+                'unit_sale' => 'CJ',
+                'quantity_box' => 2,
+                'quantity_fractions' => 100, // solo sueltas: cajas NO incluidas
+                'conversion_factor' => 96,
+                'total' => 4000.00,
+            ],
+        ]);
+
+        $response = $this->renderReport($manifest);
+
+        $response->assertOk();
+        $content = $response->getContent();
+        $this->assertSame(1, substr_count($content, '01020031'));
+        $this->assertSummaryCard($content, 'Total Cajas', '3');
+        $this->assertSummaryCard($content, 'Total Unidades', '4');
+    }
+
+    public function test_raw_cj_line_from_manual_import_does_not_lose_boxes(): void
+    {
+        // REGRESIÓN: el import manual (ManifestImporterService) guarda
+        // CantidadFracciones crudo. Una línea CJ pura llega con fractions=0 y
+        // las cajas solo en quantity_box → el reporte mostraba 0 cajas 0 unid.
+        $manifest = $this->makeManifestWithLines([
+            [
+                'product_id' => '30010015',
+                'product_description' => 'ACEITE.DOMEST.CB.DP. 410 mL X24SPOUT',
+                'unit_sale' => 'CJ',
+                'quantity_box' => 3,
+                'quantity_fractions' => 0, // crudo: cajas NO incluidas
+                'conversion_factor' => 24,
+                'total' => 2293.91,
+            ],
+        ]);
+
+        $response = $this->renderReport($manifest);
+
+        $response->assertOk();
+        $this->assertSummaryCard($response->getContent(), 'Total Cajas', '3');
+        $this->assertSummaryCard($response->getContent(), 'Total Unidades', '0');
+    }
+
+    public function test_normalized_line_is_not_double_counted(): void
+    {
+        // Guarda de NO-regresión del fix: una línea ya normalizada (import API
+        // caso CJ puro: fractions == cajas × factor) NO debe sumar las cajas
+        // dos veces. 5 cajas factor 24, fractions=120 → 5 cajas 0 unid (no 10).
+        $manifest = $this->makeManifestWithLines([
+            [
+                'product_id' => '30010065',
+                'product_description' => 'ACEITE DOMESTICO C.B. 2.750 L X6',
+                'unit_sale' => 'CJ',
+                'quantity_box' => 5,
+                'quantity_fractions' => 120, // normalizada: cajas YA incluidas
+                'conversion_factor' => 24,
+                'total' => 6736.30,
+            ],
+        ]);
+
+        $response = $this->renderReport($manifest);
+
+        $response->assertOk();
+        $this->assertSummaryCard($response->getContent(), 'Total Cajas', '5');
+        $this->assertSummaryCard($response->getContent(), 'Total Unidades', '0');
+    }
+
+    public function test_mixed_and_un_lines_of_same_product_consolidate_with_real_totals(): void
+    {
+        // Escenario completo del bug real: mismo producto en línea mixta
+        // (2 cajas + 10 sueltas, crudo) y línea UN (30 sueltas, factor 25).
+        // Total real: 2×25 + 10 + 30 = 90 unidades → 3 cajas y 15 unidades,
+        // en UNA sola fila, con los totales en lempiras sumados.
+        $manifest = $this->makeManifestWithLines([
+            [
+                'product_id' => '01020031',
+                'product_description' => 'MANTECA DOMESTICA DORAL 25X908GR',
+                'unit_sale' => 'CJ',
+                'quantity_box' => 2,
+                'quantity_fractions' => 10, // mixta cruda: solo sueltas
+                'conversion_factor' => 25,
+                'total' => 2124.20,
+            ],
+            [
+                'product_id' => '01020031',
+                'product_description' => 'MANTECA DOMESTICA DORAL 25X908GR',
+                'unit_sale' => 'UN',
+                'quantity_box' => 0,
+                'quantity_fractions' => 30,
+                'conversion_factor' => 25,
+                'total' => 1878.24,
+            ],
+        ]);
+
+        $response = $this->renderReport($manifest);
+
+        $response->assertOk();
+        $content = $response->getContent();
+        // Una sola fila consolidada
+        $this->assertSame(1, substr_count($content, '01020031'));
+        // 3 cajas y 15 unidades reales
+        $this->assertSummaryCard($content, 'Total Cajas', '3');
+        $this->assertSummaryCard($content, 'Total Unidades', '15');
+        // Total en lempiras: suma de ambas líneas (2,124.20 + 1,878.24)
+        $response->assertSee('4,002.44', false);
+    }
+
     public function test_report_renders_when_factor_is_missing(): void
     {
         // Producto sin factor útil (1): no debe romper, queda todo en unidades.
