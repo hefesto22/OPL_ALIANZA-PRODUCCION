@@ -514,6 +514,10 @@ class PrintReportsController extends Controller
                 DB::raw('SUM(quantity_box) as total_boxes'),
                 DB::raw('SUM(quantity_fractions) as total_units'),
                 DB::raw('SUM(total) as total_amount'),
+                // Unidades por caja del producto. MAX (no AVG) porque alguna
+                // línea suelta podría traer factor 1 por error de origen;
+                // así tomamos el factor real para convertir unidades→cajas en UN.
+                DB::raw('MAX(conversion_factor) as conversion_factor'),
             )
             ->groupBy('product_id', 'product_description', 'unit_sale')
             ->orderBy('product_id');
