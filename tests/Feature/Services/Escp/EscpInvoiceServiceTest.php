@@ -201,6 +201,48 @@ class EscpInvoiceServiceTest extends TestCase
         $this->assertSame(1, substr_count($out, 'GRUPO JAREMAR'));
     }
 
+    public function test_un_line_shows_box_equivalence(): void
+    {
+        // Una línea vendida en UN se muestra en cajas equivalentes + sueltas,
+        // igual que la Sublista: 64 unidades con factor 60 → 1 caja y 4 unidades.
+        $manifest = Manifest::factory()->create(['number' => (string) (++static::$manifestSeq)]);
+        $invoice = Invoice::factory()->for($manifest)->create(['invoice_number' => 'F77000300']);
+        InvoiceLine::factory()->for($invoice)->create([
+            'product_id' => 'ZZ99',
+            'unit_sale' => 'UN',
+            'quantity_fractions' => 64,
+            'quantity_box' => 0,
+            'conversion_factor' => 60,
+        ]);
+        $invoice->load('lines');
+
+        $out = app(EscpInvoiceService::class)->build(collect([$invoice]));
+
+        // Cj=1 (ancho 2, izq) + sep + Und=4 (ancho 3, izq) + sep + Codigo → "1  4   ZZ99"
+        $this->assertStringContainsString('1  4   ZZ99', $out);
+    }
+
+    public function test_cj_line_shows_boxes_without_loose_units(): void
+    {
+        // Una línea vendida en CJ muestra las cajas reales y 0 sueltas, aunque
+        // quantity_fractions traiga el total (cajas × factor).
+        $manifest = Manifest::factory()->create(['number' => (string) (++static::$manifestSeq)]);
+        $invoice = Invoice::factory()->for($manifest)->create(['invoice_number' => 'F77000301']);
+        InvoiceLine::factory()->for($invoice)->create([
+            'product_id' => 'CJ01',
+            'unit_sale' => 'CJ',
+            'quantity_box' => 2,
+            'quantity_fractions' => 50,   // 2 cajas × 25
+            'conversion_factor' => 25,
+        ]);
+        $invoice->load('lines');
+
+        $out = app(EscpInvoiceService::class)->build(collect([$invoice]));
+
+        // Cj=2 + Und=0 → "2  0   CJ01"
+        $this->assertStringContainsString('2  0   CJ01', $out);
+    }
+
     public function test_output_is_pure_ascii(): void
     {
         $out = app(EscpInvoiceService::class)->build(

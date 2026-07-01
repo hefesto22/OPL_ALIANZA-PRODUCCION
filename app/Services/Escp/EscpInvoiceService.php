@@ -4,6 +4,8 @@ namespace App\Services\Escp;
 
 use App\Helpers\NumberHelper;
 use App\Models\Invoice;
+use App\Models\InvoiceLine;
+use App\Support\BoxEquivalence;
 use Illuminate\Support\Collection;
 
 /**
@@ -444,10 +446,11 @@ class EscpInvoiceService
         $rows = [];
 
         foreach ($invoice->lines as $line) {
+            [$cajas, $sueltas] = $this->boxBreakdown($line);
             $imp = (float) ($line->tax ?? 0) + (float) ($line->tax18 ?? 0);
             $rows[] = $this->row([
-                [number_format((float) $line->quantity_box, 0), $wCj, 'L'],
-                [number_format((float) $line->quantity_fractions, 0), $wUnd, 'L'],
+                [number_format($cajas, 0), $wCj, 'L'],
+                [number_format($sueltas, 0), $wUnd, 'L'],
                 [(string) $line->product_id, $wCod, 'L'],
                 [(string) $line->product_description, $wDesc, 'L'],
                 [number_format((float) $line->price, 2), $wPU, 'R'],
@@ -458,6 +461,34 @@ class EscpInvoiceService
         }
 
         return $rows;
+    }
+
+    /**
+     * Descompone la cantidad de la línea en cajas + unidades sueltas, IGUAL que
+     * la Sublista de Productos (App\Support\BoxEquivalence):
+     *   - Vendida en CJ  → las cajas son quantity_box; sin sueltas (quantity_fractions
+     *     es solo cajas × factor).
+     *   - Vendida en UN  → se parten las fracciones por el factor de conversión.
+     *     Ej.: 64 unidades con factor 60 → 1 caja y 4 unidades.
+     *
+     * Así el bodeguero ve la factura con la misma lógica de cajas equivalentes
+     * que la sublista. Solo cambia la PRESENTACIÓN de las columnas Cj/Und; los
+     * importes (P.Unit/SubT/Imp/Total) no se tocan.
+     *
+     * @return array{0:int,1:int} [cajas, sueltas]
+     */
+    private function boxBreakdown(InvoiceLine $line): array
+    {
+        if (strtoupper((string) $line->unit_sale) === 'CJ') {
+            return [(int) round((float) $line->quantity_box), 0];
+        }
+
+        $eq = BoxEquivalence::split(
+            (int) round((float) $line->quantity_fractions),
+            (int) ($line->conversion_factor ?? 0),
+        );
+
+        return [$eq['cajas'], $eq['sueltas']];
     }
 
     /**
