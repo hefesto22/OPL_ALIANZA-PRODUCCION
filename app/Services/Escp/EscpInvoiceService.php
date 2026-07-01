@@ -449,8 +449,10 @@ class EscpInvoiceService
             [$cajas, $sueltas] = $this->boxBreakdown($line);
             $imp = (float) ($line->tax ?? 0) + (float) ($line->tax18 ?? 0);
             $rows[] = $this->row([
-                [number_format($cajas, 0), $wCj, 'L'],
-                [number_format($sueltas, 0), $wUnd, 'L'],
+                // Columna en blanco cuando es cero → "2 cajas" se ve como "2"
+                // (sin el "0" ni las unidades redundantes) para no confundir.
+                [$cajas > 0 ? number_format($cajas, 0) : '', $wCj, 'L'],
+                [$sueltas > 0 ? number_format($sueltas, 0) : '', $wUnd, 'L'],
                 [(string) $line->product_id, $wCod, 'L'],
                 [(string) $line->product_description, $wDesc, 'L'],
                 [number_format((float) $line->price, 2), $wPU, 'R'],

@@ -218,8 +218,8 @@ class EscpInvoiceServiceTest extends TestCase
 
         $out = app(EscpInvoiceService::class)->build(collect([$invoice]));
 
-        // Cj=1 (ancho 2, izq) + sep + Und=4 (ancho 3, izq) + sep + Codigo → "1  4   ZZ99"
-        $this->assertStringContainsString('1  4   ZZ99', $out);
+        // La fila de ZZ99 muestra Cj=1 y Und=4 (64 ÷ 60), sin la fracción cruda 64.
+        $this->assertMatchesRegularExpression('/1\s+4\s+ZZ99/', $out);
     }
 
     public function test_cj_line_shows_boxes_without_loose_units(): void
@@ -239,8 +239,11 @@ class EscpInvoiceServiceTest extends TestCase
 
         $out = app(EscpInvoiceService::class)->build(collect([$invoice]));
 
-        // Cj=2 + Und=0 → "2  0   CJ01"
-        $this->assertStringContainsString('2  0   CJ01', $out);
+        // La fila de CJ01 muestra Cj=2 y Und en blanco (0 sueltas no se imprime):
+        // entre el "2" y el código solo hay espacios, ningún otro dígito.
+        $this->assertMatchesRegularExpression('/2\s+CJ01/', $out);
+        // No debe aparecer la fracción cruda redundante "50".
+        $this->assertStringNotContainsString('2  50', $out);
     }
 
     public function test_output_is_pure_ascii(): void

@@ -138,10 +138,24 @@ table.lines th { border-top:1px solid #000; border-bottom:1px solid #000; text-a
             @foreach($invoice->lines as $line)
             @php
                 $imp = (float) ($line->tax ?? 0) + (float) ($line->tax18 ?? 0);
+                // Cajas equivalentes, IGUAL que la Sublista y la impresión ESC/P:
+                // CJ → cajas reales; UN → descomponer fracciones por el factor.
+                // Columna en blanco cuando es cero (así "2 cajas" se ve como "2").
+                if (strtoupper((string) $line->unit_sale) === 'CJ') {
+                    $cajas = (int) round((float) $line->quantity_box);
+                    $sueltas = 0;
+                } else {
+                    $eq = \App\Support\BoxEquivalence::split(
+                        (int) round((float) $line->quantity_fractions),
+                        (int) ($line->conversion_factor ?? 0),
+                    );
+                    $cajas = $eq['cajas'];
+                    $sueltas = $eq['sueltas'];
+                }
             @endphp
             <tr>
-                <td>{{ number_format((float) $line->quantity_box, 0) }}</td>
-                <td>{{ number_format((float) $line->quantity_fractions, 0) }}</td>
+                <td>{{ $cajas > 0 ? number_format($cajas) : '' }}</td>
+                <td>{{ $sueltas > 0 ? number_format($sueltas) : '' }}</td>
                 <td>{{ $line->product_id }}</td>
                 <td>{{ $line->product_description }}</td>
                 <td class="r">{{ number_format((float) $line->price, 2) }}</td>
