@@ -85,6 +85,38 @@ class ProductsReportCajasEquivTest extends TestCase
         $this->assertSame(1, substr_count($response->getContent(), '80800013'));
     }
 
+    public function test_total_general_uses_invoice_total_not_line_sum(): void
+    {
+        // El total de factura de Jaremar puede no cuadrar exacto con la suma de
+        // sus líneas (redondeo del proveedor). El TOTAL GENERAL de la Sublista
+        // debe reflejar el VALOR FISCAL de la factura —igual que el checklist y
+        // el Total Manifiesto— no la suma de líneas.
+        $warehouse = Warehouse::where('code', 'OAC')->first()
+            ?? Warehouse::factory()->create(['code' => 'OAC', 'name' => 'OAC']);
+        $manifest = Manifest::factory()->create(['warehouse_id' => $warehouse->id]);
+
+        $invoice = Invoice::factory()->create([
+            'manifest_id' => $manifest->id,
+            'warehouse_id' => $warehouse->id,
+            'total' => 12345.67,          // total fiscal de la factura
+        ]);
+        InvoiceLine::factory()->for($invoice, 'invoice')->create([
+            'product_id' => '55550001',
+            'product_description' => 'PRODUCTO REDONDEO',
+            'unit_sale' => 'UN',
+            'quantity_box' => 0,
+            'quantity_fractions' => 10,
+            'conversion_factor' => 1,
+            'total' => 12345.00,          // las líneas suman menos (redondeo)
+        ]);
+
+        $response = $this->renderReport($manifest);
+
+        $response->assertOk();
+        // El TOTAL GENERAL muestra el total de FACTURA (12,345.67), no la de líneas.
+        $response->assertSee('12,345.67', false);
+    }
+
     public function test_report_renders_when_factor_is_missing(): void
     {
         // Producto sin factor útil (1): no debe romper, queda todo en unidades.

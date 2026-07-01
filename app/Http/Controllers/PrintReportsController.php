@@ -548,10 +548,16 @@ class PrintReportsController extends Controller
             $totalLoose += $eq['sueltas'];
         }
 
+        // TOTAL GENERAL = suma de los TOTALES DE FACTURA (valor fiscal real), NO
+        // la suma de las líneas. El total de cada factura de Jaremar no siempre
+        // cuadra exacto con la suma de sus líneas (redondeo del proveedor); el
+        // valor real —el que se deposita y con el que se concilia— es el de la
+        // factura. Así la Sublista, el checklist de facturas y el Total Manifiesto
+        // dan EXACTAMENTE lo mismo.
         $totals = [
             'total_boxes' => $totalBoxes,
             'total_units' => $totalLoose,
-            'total_amount' => $products->sum('total_amount'),
+            'total_amount' => (float) DB::table('invoices')->whereIn('id', $invoiceIds)->sum('total'),
             'count' => $products->count(),
         ];
 
