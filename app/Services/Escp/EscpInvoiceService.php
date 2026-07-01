@@ -257,11 +257,13 @@ class EscpInvoiceService
      * Formato Hosana de una factura, PAGINADO en formas físicas.
      *
      * Si la factura cabe en una sola forma, devuelve UNA página (salida idéntica
-     * a la histórica). Si no cabe (facturas de muchos productos), la parte en
-     * varias formas repitiendo en cada una el encabezado del emisor + los
-     * títulos de columna + "Pagina X de Y", con los totales/firmas solo en la
-     * última. Así una factura larga NO se amontona ni imprime sobre el doblez:
-     * cada forma sale limpia y se corta en su perforación (un FF por página).
+     * a la histórica). Si no cabe (facturas de muchos productos), el encabezado
+     * COMPLETO del emisor va SOLO en la primera forma; las siguientes son
+     * continuación (línea de referencia con factura + "Pagina X de Y", y títulos
+     * de columna solo si llevan productos), con los totales/firmas al final en la
+     * última. Así una factura larga NO se amontona, NO imprime sobre el doblez y
+     * NO reimprime el encabezado completo: cada forma se corta en su perforación
+     * (un FF por página).
      *
      * @return string[][] Lista de páginas; cada página es una lista de líneas.
      */
@@ -286,37 +288,69 @@ class EscpInvoiceService
             return [array_merge($emisor, $meta, $tableHead, $items, $footer)];
         }
 
-        // No cabe: paginar. Cada forma repite emisor + indicador + meta + títulos.
-        $perPageHeader = count($emisor) + 1 + count($meta) + count($tableHead);
-        $bodyCap = max(1, $usable - $perPageHeader);   // items por forma intermedia
-        $footerH = count($footer);
-        $lastCap = max(1, $bodyCap - $footerH);         // items en la forma final (lleva totales)
+        // No cabe. El encabezado COMPLETO (emisor + datos + títulos) va SOLO en
+        // la primera forma. Las siguientes son CONTINUACIÓN: una línea de
+        // referencia (factura + "Pagina X de Y") y, si llevan productos, los
+        // títulos de columna. Los totales/firmas van al final, en la última
+        // forma. Así NO se reimprime el encabezado completo en cada hoja.
         $n = count($items);
+        $footerH = count($footer);
 
-        $pageCount = $n <= $lastCap ? 1 : 1 + (int) ceil(($n - $lastCap) / $bodyCap);
-        $pageCount = max(2, $pageCount);                // llegamos aquí porque NO cabía en 1
+        // Forma 1: encabezado completo + indicador de página (1 línea).
+        $head1 = count($emisor) + 1 + count($meta) + count($tableHead);
+        $cap1 = max(1, $usable - $head1);                 // items en la forma 1 (sin footer)
 
-        // Reparto equilibrado: la última forma hasta lastCap; las previas parejas.
-        $lastItems = min($lastCap, (int) ceil($n / $pageCount));
-        $earlierPages = $pageCount - 1;
-        $earlierPer = $earlierPages > 0 ? (int) ceil(($n - $lastItems) / $earlierPages) : 0;
+        // Continuación: línea de referencia (1) + títulos de columna.
+        $slimHead = 1 + count($tableHead);
+        $capCont = max(1, $usable - $slimHead);           // items por continuación (sin footer)
+        $capContLast = max(1, $capCont - $footerH);       // items en la última (lleva footer)
 
+        // Forma 1 se llena; el resto pasa a continuaciones. La última lleva el
+        // footer; si todos los items entraron en la forma 1 pero el footer no
+        // cabía, se agrega una continuación SOLO para totales/firmas.
+        $perPage = [min($cap1, $n)];
+        $placed = $perPage[0];
+        while ($placed < $n) {
+            $remaining = $n - $placed;
+            $take = $remaining <= $capContLast ? $remaining : $capCont;
+            $perPage[] = $take;
+            $placed += $take;
+        }
+        if (count($perPage) === 1) {
+            $perPage[] = 0;                                // continuación solo con totales/firmas
+        }
+
+        $pageCount = count($perPage);
         $pages = [];
         $idx = 0;
         for ($p = 1; $p <= $pageCount; $p++) {
-            $take = $p < $pageCount ? min($earlierPer, $n - $idx) : ($n - $idx);
-            $slice = array_slice($items, $idx, $take);
-            $idx += $take;
+            $cnt = $perPage[$p - 1];
+            $slice = array_slice($items, $idx, $cnt);
+            $idx += $cnt;
+            $isLast = $p === $pageCount;
 
-            $indicator = $this->lr('', 'Pagina '.$p.' de '.$pageCount, $this->cpl);
-            $pages[] = array_merge(
-                $emisor,
-                [$indicator],
-                $meta,
-                $tableHead,
-                $slice,
-                $p === $pageCount ? $footer : []
+            if ($p === 1) {
+                $indicator = $this->lr('', 'Pagina '.$p.' de '.$pageCount, $this->cpl);
+                // La forma 1 nunca lleva footer aquí (pageCount ≥ 2).
+                $pages[] = array_merge($emisor, [$indicator], $meta, $tableHead, $slice);
+
+                continue;
+            }
+
+            // Continuación: solo línea de referencia (sin reimprimir emisor).
+            $ref = $this->lr(
+                'Factura: '.$invoice->invoice_number.'  (Continuacion)',
+                'Pagina '.$p.' de '.$pageCount,
+                $this->cpl
             );
+            $page = [$ref];
+            if ($cnt > 0) {
+                $page = array_merge($page, $tableHead, $slice);   // títulos solo si hay productos
+            }
+            if ($isLast) {
+                $page = array_merge($page, $footer);
+            }
+            $pages[] = $page;
         }
 
         return $pages;

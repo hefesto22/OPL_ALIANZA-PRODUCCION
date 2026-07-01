@@ -161,11 +161,12 @@ class EscpInvoiceServiceTest extends TestCase
         $this->assertStringContainsString('ORISOL BOLSC/V 700 mL MAYOREO1/20', $out);
     }
 
-    public function test_long_invoice_paginates_into_multiple_forms(): void
+    public function test_long_invoice_paginates_without_repeating_full_header(): void
     {
-        // Una factura de muchos productos NO debe amontonarse ni imprimir sobre
-        // el doblez: se parte en varias formas, repitiendo encabezado + títulos
-        // en cada una y con "Pagina X de Y". Totales/firmas solo en la última.
+        // Una factura de muchos productos se parte en varias formas, pero el
+        // encabezado COMPLETO del emisor va SOLO en la primera; las siguientes
+        // son continuación (línea de referencia + "Pagina X de Y"). Totales/
+        // firmas solo en la última. NO hay reimpresión del encabezado.
         config(['escp.form_mode' => 'fixed', 'escp.page_length_lines' => 44]);
 
         $manifest = Manifest::factory()->create(['number' => (string) (++static::$manifestSeq)]);
@@ -175,9 +176,12 @@ class EscpInvoiceServiceTest extends TestCase
 
         $out = app(EscpInvoiceService::class)->build(collect([$invoice]));
 
-        // Al menos 2 formas → al menos 2 form feeds y el encabezado repetido.
+        // Al menos 2 formas → al menos 2 form feeds.
         $this->assertGreaterThanOrEqual(2, substr_count($out, "\x0C"));
-        $this->assertGreaterThanOrEqual(2, substr_count($out, 'GRUPO JAREMAR'));
+        // El encabezado del emisor aparece UNA sola vez (no se reimprime).
+        $this->assertSame(1, substr_count($out, 'GRUPO JAREMAR'));
+        // Las formas siguientes son continuación.
+        $this->assertStringContainsString('(Continuacion)', $out);
         $this->assertStringContainsString('Pagina 1 de', $out);
         $this->assertStringContainsString('Pagina 2 de', $out);
         // Los totales aparecen UNA sola vez (solo en la última forma).
