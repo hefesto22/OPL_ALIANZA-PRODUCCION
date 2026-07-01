@@ -75,10 +75,7 @@ table.lines th { border-top:1px solid #000; border-bottom:1px solid #000; text-a
         <span id="status">QZ Tray: verificando…</span>
     </div>
     <div style="display:flex; align-items:center; gap:10px;">
-        <button class="btn-print" style="background:#16a34a;color:#fff;" id="btnNavegador" onclick="imprimirNavegador()">🖨️ Imprimir (navegador · sin QZ)</button>
         <button class="btn-print" id="btnMatriz" onclick="imprimirMatriz()">🖨️ Imprimir en LX-350 (sin desperdicio)</button>
-        <button class="btn-print" style="background:#7c3aed;color:#fff;" id="btnMatrizForzado" onclick="imprimirMatrizForzado()">🖨️ LX-350 (forzado · prueba)</button>
-        <button class="btn-print" style="background:#0d9488;color:#fff;" id="btnDriver" onclick="imprimirDriver()">🖨️ LX-350 (driver · prueba)</button>
         <a class="btn-print" style="background:#475569;color:#fff;text-decoration:none;padding:8px 16px;border-radius:6px;font-weight:bold;" href="{{ route('invoices.print.hosana.prn', ['payload' => request('payload')]) }}">⬇ .prn</a>
     </div>
 </div>
@@ -211,12 +208,13 @@ table.lines th { border-top:1px solid #000; border-bottom:1px solid #000; text-a
 
 <script src="https://cdn.jsdelivr.net/npm/qz-tray@2.2.4/qz-tray.js"></script>
 <script>
+    // Defensivo: printerHint/invoiceIds podrían no venir del controlador viejo
+    // de producción → valor por defecto para que la vista NO crashee (500).
     const ESCP_B64     = @json($escpBase64);
-    const ESCP_HARD_B64 = @json($escpHardenedBase64);
-    const PRINTER_HINT = @json($printerHint);
+    const PRINTER_HINT = @json($printerHint ?? '');
     const CONFIRM_URL  = @json(route('invoices.print.confirm'));
     const CSRF         = @json(csrf_token());
-    const INVOICE_IDS  = @json($invoiceIds);
+    const INVOICE_IDS  = @json($invoiceIds ?? $invoices->pluck('id')->all());
 
     const statusEl = document.getElementById('status');
     const btn = document.getElementById('btnMatriz');
@@ -274,130 +272,6 @@ table.lines th { border-top:1px solid #000; border-bottom:1px solid #000; text-a
         } finally {
             btn.disabled = false;
         }
-    }
-
-    // ── Impresión ENDURECIDA (forzado · prueba) vía QZ ─────────────
-    // Mismo envío crudo que el botón naranja, pero con el flujo ESC/P que
-    // fuerza todos los parámetros (para que todas las LX-350 salgan iguales
-    // sin tocar el panel). Botón separado para comparar contra el actual.
-    async function imprimirMatrizForzado() {
-        const b = document.getElementById('btnMatrizForzado');
-        b.disabled = true;
-        try {
-            setStatus('Conectando con QZ Tray…', true);
-            await ensureConnected();
-            const printer = await resolvePrinter();
-            if (!printer) throw new Error('No se encontró ninguna impresora.');
-            setStatus('Enviando (forzado) a: ' + printer, true);
-            const cfg = qz.configs.create(printer);
-            await qz.print(cfg, [{ type: 'raw', format: 'base64', data: ESCP_HARD_B64 }]);
-            await marcarImpresas();
-            setStatus('✓ Enviado (forzado) a ' + printer, true);
-        } catch (e) {
-            console.error(e);
-            setStatus('✗ ' + (e && e.message ? e.message : e), false);
-            alert('No se pudo imprimir vía QZ Tray (forzado):\n' + (e && e.message ? e.message : e) +
-                  '\n\nVerificá que QZ Tray esté abierto.');
-        } finally {
-            b.disabled = false;
-        }
-    }
-
-    // ── Impresión vía DRIVER de EPSON (gráfico) por QZ — como el sistema viejo
-    // QZ rasteriza el HTML y lo manda al driver "EPSON LX-350 ESC/P", igual que
-    // el sistema anterior. Al ser gráfico (bitmap) NO depende de la emulación de
-    // cada unidad → sale idéntico en todas las bodegas sin tocar el panel.
-    async function imprimirDriver() {
-        const b = document.getElementById('btnDriver');
-        b.disabled = true;
-        try {
-            setStatus('Conectando con QZ Tray…', true);
-            await ensureConnected();
-            const printer = await resolvePrinter();
-            if (!printer) throw new Error('No se encontró ninguna impresora.');
-            setStatus('Enviando (driver) a: ' + printer, true);
-
-            const css =
-                '* { margin:0; padding:0; box-sizing:border-box; }' +
-                'body { background:#fff; }' +
-                '.invoice-page { background:#fff; width:203mm; margin:0 auto; padding:2mm 4mm;' +
-                ' font-family:"Courier New",Courier,monospace; font-size:8pt; line-height:1.05;' +
-                ' color:#000; font-weight:bold; page-break-after:always; page-break-inside:avoid; }' +
-                '.invoice-page:last-child { page-break-after:auto; }' +
-                '.center { text-align:center; } .r { text-align:right; } .title { font-size:9pt; }' +
-                'table.lines { width:100%; border-collapse:collapse; table-layout:fixed; margin-top:1px; }' +
-                'table.lines th, table.lines td { padding:0 2px; overflow:hidden; white-space:nowrap; }' +
-                'table.lines th { border-top:1px solid #000; border-bottom:1px solid #000; text-align:left; }' +
-                '.hr { border-top:1px solid #000; margin:1px 0; }' +
-                '.totales td { padding:0 2px; }' +
-                '.firmas { margin-top:2mm !important; }';
-
-            const body = document.getElementById('invoices').innerHTML;
-            const html = '<!DOCTYPE html><html><head><meta charset="utf-8"><style>' + css +
-                '</style></head><body>' + body + '</body></html>';
-
-            const cfg = qz.configs.create(printer, {
-                size: { width: 9.5, height: 5.5 },
-                units: 'in',
-                margins: 0,
-                colorType: 'grayscale',
-                scaleContent: false,
-                rasterize: true,
-            });
-
-            await qz.print(cfg, [{ type: 'pixel', format: 'html', flavor: 'plain', data: html }]);
-            await marcarImpresas();
-            setStatus('✓ Enviado (driver) a ' + printer, true);
-        } catch (e) {
-            console.error(e);
-            setStatus('✗ ' + (e && e.message ? e.message : e), false);
-            alert('No se pudo imprimir vía driver/QZ:\n' + (e && e.message ? e.message : e) +
-                  '\n\nVerificá que QZ Tray esté abierto.');
-        } finally {
-            b.disabled = false;
-        }
-    }
-
-    // ── Impresión por navegador (window.print) SIN QZ ──────────────
-    // Inyecta al vuelo el tamaño de la forma real (9.5"x5.5" = 241.3x139.7mm)
-    // con márgenes cero; el alineado fino se hace moviendo el papel en la
-    // LX-350. Al terminar, limpia el estilo para no afectar al flujo de QZ.
-    function imprimirNavegador() {
-        // Desactiva el @page Carta para que mande SOLO la forma 9.5x5.5".
-        var letterEl = document.getElementById('printLetter');
-        if (letterEl && letterEl.sheet) letterEl.sheet.disabled = true;
-
-        var style = document.createElement('style');
-        style.id = 'formPrintStyle';
-        style.textContent =
-            '@media print {' +
-            '  @page { size: 241.3mm 139.7mm; margin: 0; }' +
-            '  html, body { margin:0; padding:0; }' +
-            '  body.printing-form #invoices { margin:0; padding:0; background:none; }' +
-            '  body.printing-form .invoice-page {' +
-            '    width:241.3mm; min-height:139.7mm; margin:0; padding:4mm 6mm;' +
-            '    box-shadow:none; page-break-after:always; page-break-inside:avoid;' +
-            '    font-size:8.5pt; line-height:1.12;' +
-            '  }' +
-            '  body.printing-form .invoice-page:last-child { page-break-after:avoid; }' +
-            '  body.printing-form .title { font-size:9.5pt; }' +
-            '  body.printing-form .firmas { margin-top:5mm !important; }' +
-            '}';
-        document.head.appendChild(style);
-        document.body.classList.add('printing-form');
-
-        function cleanup() {
-            document.body.classList.remove('printing-form');
-            var s = document.getElementById('formPrintStyle');
-            if (s) s.remove();
-            var l = document.getElementById('printLetter');
-            if (l && l.sheet) l.sheet.disabled = false;
-            window.removeEventListener('afterprint', onAfter);
-        }
-        function onAfter() { marcarImpresas(); cleanup(); }
-
-        window.addEventListener('afterprint', onAfter);
-        window.print();
     }
 
     (async function () {
