@@ -67,22 +67,25 @@ class EscpInvoiceService
         $margin = max(0, (int) config('escp.bottom_margin_lines', 2));
 
         foreach ($invoices->values() as $invoice) {
-            $lines = $this->layoutInvoice($invoice);
+            foreach ($this->layoutInvoicePages($invoice) as $pageLines) {
+                // Modo dynamic (papel blanco): largo de página = lo que ocupa
+                // la página. Modo fixed (papel perforado): el largo ya quedó
+                // fijado en el preamble = la forma, así el FF cae en la
+                // perforación de cada forma.
+                if (! $fixed) {
+                    $pageLen = min(127, max(1, count($pageLines) + $margin));
+                    $out .= self::ESC.'C'.chr($pageLen);
+                }
 
-            // Modo dynamic (papel blanco): largo de página = lo que ocupa la
-            // factura. Modo fixed (papel perforado): el largo ya quedó fijado
-            // en el preamble = la forma, así el FF cae en la perforación.
-            if (! $fixed) {
-                $pageLen = min(127, max(1, count($lines) + $margin));
-                $out .= self::ESC.'C'.chr($pageLen);
+                foreach ($pageLines as $line) {
+                    $out .= $this->encode($line)."\r\n";
+                }
+
+                // FF avanza al final de la forma → la auto tear-off corta ahí.
+                // Ahora hay un FF por PÁGINA: una factura larga ocupa varias
+                // formas, cada una con corte limpio en su perforación.
+                $out .= self::FF;
             }
-
-            foreach ($lines as $line) {
-                $out .= $this->encode($line)."\r\n";
-            }
-
-            // FF avanza al final de la forma → la auto tear-off corta ahí.
-            $out .= self::FF;
         }
 
         $out .= self::ESC.'@';
@@ -109,18 +112,18 @@ class EscpInvoiceService
         $margin = max(0, (int) config('escp.bottom_margin_lines', 2));
 
         foreach ($invoices->values() as $invoice) {
-            $lines = $this->layoutInvoice($invoice);
+            foreach ($this->layoutInvoicePages($invoice) as $pageLines) {
+                if (! $fixed) {
+                    $pageLen = min(127, max(1, count($pageLines) + $margin));
+                    $out .= self::ESC.'C'.chr($pageLen);
+                }
 
-            if (! $fixed) {
-                $pageLen = min(127, max(1, count($lines) + $margin));
-                $out .= self::ESC.'C'.chr($pageLen);
+                foreach ($pageLines as $line) {
+                    $out .= $this->encode($line)."\r\n";
+                }
+
+                $out .= self::FF;
             }
-
-            foreach ($lines as $line) {
-                $out .= $this->encode($line)."\r\n";
-            }
-
-            $out .= self::FF;
         }
 
         $out .= self::ESC.'@';
@@ -135,13 +138,20 @@ class EscpInvoiceService
      */
     public function previewText(Collection $invoices): string
     {
+        $corte = "\n".str_repeat('-', $this->cpl).' ✂ CORTE '.PHP_EOL;
+
         $blocks = [];
         foreach ($invoices->values() as $invoice) {
-            $lines = array_map(fn ($l) => $this->encode($l), $this->layoutInvoice($invoice));
-            $blocks[] = implode("\n", $lines);
+            $pageTexts = [];
+            foreach ($this->layoutInvoicePages($invoice) as $pageLines) {
+                $pageTexts[] = implode("\n", array_map(fn ($l) => $this->encode($l), $pageLines));
+            }
+            // Un ✂ CORTE entre páginas de la MISMA factura (cada forma se corta)
+            // y también entre facturas distintas.
+            $blocks[] = implode($corte, $pageTexts);
         }
 
-        return implode("\n".str_repeat('-', $this->cpl).' ✂ CORTE '.PHP_EOL, $blocks);
+        return implode($corte, $blocks);
     }
 
     /**
@@ -244,30 +254,107 @@ class EscpInvoiceService
     }
 
     /**
-     * Líneas del Formato Hosana de una factura.
+     * Formato Hosana de una factura, PAGINADO en formas físicas.
+     *
+     * Si la factura cabe en una sola forma, devuelve UNA página (salida idéntica
+     * a la histórica). Si no cabe (facturas de muchos productos), la parte en
+     * varias formas repitiendo en cada una el encabezado del emisor + los
+     * títulos de columna + "Pagina X de Y", con los totales/firmas solo en la
+     * última. Así una factura larga NO se amontona ni imprime sobre el doblez:
+     * cada forma sale limpia y se corta en su perforación (un FF por página).
+     *
+     * @return string[][] Lista de páginas; cada página es una lista de líneas.
+     */
+    private function layoutInvoicePages(Invoice $invoice): array
+    {
+        $emisor = $this->emisorLines($invoice);
+        $meta = $this->metaLines($invoice);
+        $tableHead = $this->tableHeaderLines();
+        $items = $this->itemRows($invoice);
+        $footer = $this->footerLines($invoice);
+
+        $fixed = config('escp.form_mode', 'fixed') === 'fixed';
+        $usable = max(
+            1,
+            (int) config('escp.page_length_lines', 44) - (int) config('escp.bottom_margin_lines', 2)
+        );
+
+        // Cabe en una forma (o es papel blanco continuo): una sola página SIN
+        // indicador de página → salida byte-idéntica a la histórica.
+        $single = count($emisor) + count($meta) + count($tableHead) + count($items) + count($footer);
+        if (! $fixed || $single <= $usable) {
+            return [array_merge($emisor, $meta, $tableHead, $items, $footer)];
+        }
+
+        // No cabe: paginar. Cada forma repite emisor + indicador + meta + títulos.
+        $perPageHeader = count($emisor) + 1 + count($meta) + count($tableHead);
+        $bodyCap = max(1, $usable - $perPageHeader);   // items por forma intermedia
+        $footerH = count($footer);
+        $lastCap = max(1, $bodyCap - $footerH);         // items en la forma final (lleva totales)
+        $n = count($items);
+
+        $pageCount = $n <= $lastCap ? 1 : 1 + (int) ceil(($n - $lastCap) / $bodyCap);
+        $pageCount = max(2, $pageCount);                // llegamos aquí porque NO cabía en 1
+
+        // Reparto equilibrado: la última forma hasta lastCap; las previas parejas.
+        $lastItems = min($lastCap, (int) ceil($n / $pageCount));
+        $earlierPages = $pageCount - 1;
+        $earlierPer = $earlierPages > 0 ? (int) ceil(($n - $lastItems) / $earlierPages) : 0;
+
+        $pages = [];
+        $idx = 0;
+        for ($p = 1; $p <= $pageCount; $p++) {
+            $take = $p < $pageCount ? min($earlierPer, $n - $idx) : ($n - $idx);
+            $slice = array_slice($items, $idx, $take);
+            $idx += $take;
+
+            $indicator = $this->lr('', 'Pagina '.$p.' de '.$pageCount, $this->cpl);
+            $pages[] = array_merge(
+                $emisor,
+                [$indicator],
+                $meta,
+                $tableHead,
+                $slice,
+                $p === $pageCount ? $footer : []
+            );
+        }
+
+        return $pages;
+    }
+
+    /**
+     * Encabezado del emisor + fila de correlativos (se repite en cada forma).
      *
      * @return string[]
      */
-    private function layoutInvoice(Invoice $invoice): array
+    private function emisorLines(Invoice $invoice): array
+    {
+        return [
+            $this->center('GRUPO JAREMAR DE HONDURAS S.A. DE C.V.'),
+            $this->center('Bo: La Guadalupe Cl: Las Acacias Apto:13 Edif: Italia M.D.C. F.M. Honduras - Matriz'),
+            $this->center('Tel: 2238-2484/2561-7410   RTN: 08019017952895   No. Guia Remision: '.($invoice->manifest->number ?? '')),
+            $this->center('Correo: finanzas@jaremar.com   Sucursal: KM 15 Carret. a Bufalo Villanueva CTS HN'),
+            $this->center('Tel: 2561-7410/2561-7411   No. G. Rem.: '.($invoice->manifest->number ?? '')),
+            $this->center('CAI: '.($invoice->cai ?? '')),
+            $this->center('Rango autorizado: '.($invoice->range_start ?? '').' Al '.($invoice->range_end ?? '')),
+            $this->row([
+                ['No. Corr. OCE:', 34, 'L'],
+                ['No. Corr. CRE:', 23, 'L'],
+                ['No. Ident. Reg. S.A.G.:', 23, 'L'],
+            ]),
+        ];
+    }
+
+    /**
+     * Datos de factura, cliente y dirección (se repiten en cada forma).
+     *
+     * @return string[]
+     */
+    private function metaLines(Invoice $invoice): array
     {
         $w = $this->cpl;
         $L = [];
 
-        // ── Encabezado emisor (centrado) ───────────────────────────────
-        $L[] = $this->center('GRUPO JAREMAR DE HONDURAS S.A. DE C.V.');
-        $L[] = $this->center('Bo: La Guadalupe Cl: Las Acacias Apto:13 Edif: Italia M.D.C. F.M. Honduras - Matriz');
-        $L[] = $this->center('Tel: 2238-2484/2561-7410   RTN: 08019017952895   No. Guia Remision: '.($invoice->manifest->number ?? ''));
-        $L[] = $this->center('Correo: finanzas@jaremar.com   Sucursal: KM 15 Carret. a Bufalo Villanueva CTS HN');
-        $L[] = $this->center('Tel: 2561-7410/2561-7411   No. G. Rem.: '.($invoice->manifest->number ?? ''));
-        $L[] = $this->center('CAI: '.($invoice->cai ?? ''));
-        $L[] = $this->center('Rango autorizado: '.($invoice->range_start ?? '').' Al '.($invoice->range_end ?? ''));
-        $L[] = $this->row([
-            ['No. Corr. OCE:', 34, 'L'],
-            ['No. Corr. CRE:', 23, 'L'],
-            ['No. Ident. Reg. S.A.G.:', 23, 'L'],
-        ]);
-
-        // ── Factura / Cliente ──────────────────────────────────────────
         $L[] = 'Factura: '.$invoice->invoice_number
             .'   Fecha: '.$this->date($invoice->invoice_date)
             .'   Limite: '.$this->date($invoice->print_limit_date);
@@ -286,26 +373,45 @@ class EscpInvoiceService
             $L[] = $dl;
         }
 
-        // ── Tabla ──────────────────────────────────────────────────────
-        // Anchos FIJOS de cantidad/codigo/dinero; Descripcion ABSORBE el resto
-        // del ancho de linea (cpl). Asi los nombres de producto largos ("ORISOL
-        // BOLSC/V 700 mL MAYOREO1/20", ~33 chars) ya NO se recortan como pasaba
-        // con la columna fija de 20. Al derivarse de cpl, si se afina el ancho
-        // de la forma por env (ESCP_CHARS_PER_LINE / ESCP_LEFT_MARGIN) la
-        // descripcion se auto-ajusta sin tocar codigo.
+        return $L;
+    }
+
+    /**
+     * Encabezado de la tabla (separadores + títulos), se repite en cada forma.
+     * Anchos FIJOS de cantidad/codigo/dinero; Descripcion ABSORBE el resto del
+     * ancho de línea (cpl) → nombres largos ("ORISOL BOLSC/V 700 mL MAYOREO1/20")
+     * ya no se recortan. Al derivarse de cpl, se auto-ajusta por env.
+     *
+     * @return string[]
+     */
+    private function tableHeaderLines(): array
+    {
+        [$wCj, $wUnd, $wCod, $wPU, $wSub, $wImp, $wTot] = self::COL_WIDTHS;
+
+        return [
+            str_repeat('-', $this->cpl),
+            $this->row([
+                ['Cj', $wCj, 'L'], ['Und', $wUnd, 'L'], ['Codigo', $wCod, 'L'], ['Descripcion', $this->descriptionWidth(), 'L'],
+                ['P.Unit', $wPU, 'R'], ['SubT', $wSub, 'R'], ['Imp', $wImp, 'R'], ['Total', $wTot, 'R'],
+            ]),
+            str_repeat('-', $this->cpl),
+        ];
+    }
+
+    /**
+     * Una fila por línea de la factura (sin separadores).
+     *
+     * @return string[]
+     */
+    private function itemRows(Invoice $invoice): array
+    {
         [$wCj, $wUnd, $wCod, $wPU, $wSub, $wImp, $wTot] = self::COL_WIDTHS;
         $wDesc = $this->descriptionWidth();
-
-        $L[] = str_repeat('-', $w);
-        $L[] = $this->row([
-            ['Cj', $wCj, 'L'], ['Und', $wUnd, 'L'], ['Codigo', $wCod, 'L'], ['Descripcion', $wDesc, 'L'],
-            ['P.Unit', $wPU, 'R'], ['SubT', $wSub, 'R'], ['Imp', $wImp, 'R'], ['Total', $wTot, 'R'],
-        ]);
-        $L[] = str_repeat('-', $w);
+        $rows = [];
 
         foreach ($invoice->lines as $line) {
             $imp = (float) ($line->tax ?? 0) + (float) ($line->tax18 ?? 0);
-            $L[] = $this->row([
+            $rows[] = $this->row([
                 [number_format((float) $line->quantity_box, 0), $wCj, 'L'],
                 [number_format((float) $line->quantity_fractions, 0), $wUnd, 'L'],
                 [(string) $line->product_id, $wCod, 'L'],
@@ -316,32 +422,41 @@ class EscpInvoiceService
                 [number_format((float) $line->total, 2), $wTot, 'R'],
             ]);
         }
-        $L[] = str_repeat('-', $w);
 
-        // ── Totales (a la derecha) ─────────────────────────────────────
+        return $rows;
+    }
+
+    /**
+     * Cierre de tabla + totales + SON + firmas (solo en la última forma).
+     *
+     * @return string[]
+     */
+    private function footerLines(Invoice $invoice): array
+    {
+        $w = $this->cpl;
+
         $sub = (float) ($invoice->importe_gravado ?? 0) + (float) ($invoice->importe_excento ?? 0) + (float) ($invoice->importe_exonerado ?? 0);
-        $L[] = $this->lr('', 'SubTotal:      L. '.number_format($sub, 2), $w);
-        $L[] = $this->lr('', 'Impuesto 18%:  L. '.number_format((float) ($invoice->isv18 ?? 0), 2), $w);
-        $L[] = $this->lr('', 'Impuesto 15%:  L. '.number_format((float) ($invoice->isv15 ?? 0), 2), $w);
-        $L[] = $this->lr('', 'TOTAL:         L. '.number_format((float) $invoice->total, 2), $w);
 
-        $L[] = 'SON: '.strtoupper(NumberHelper::toWords((float) $invoice->total));
-
-        // ── Firmas ─────────────────────────────────────────────────────
-        $L[] = '';
-        $L[] = '';
-        $L[] = $this->row([
-            ['______________', 20, 'C'],
-            ['______________', 20, 'C'],
-            ['______________', 20, 'C'],
-        ]);
-        $L[] = $this->row([
-            ['Nombre Completo', 20, 'C'],
-            ['No. Identificacion', 20, 'C'],
-            ['Firma de Recibido', 20, 'C'],
-        ]);
-
-        return $L;
+        return [
+            str_repeat('-', $w),
+            $this->lr('', 'SubTotal:      L. '.number_format($sub, 2), $w),
+            $this->lr('', 'Impuesto 18%:  L. '.number_format((float) ($invoice->isv18 ?? 0), 2), $w),
+            $this->lr('', 'Impuesto 15%:  L. '.number_format((float) ($invoice->isv15 ?? 0), 2), $w),
+            $this->lr('', 'TOTAL:         L. '.number_format((float) $invoice->total, 2), $w),
+            'SON: '.strtoupper(NumberHelper::toWords((float) $invoice->total)),
+            '',
+            '',
+            $this->row([
+                ['______________', 20, 'C'],
+                ['______________', 20, 'C'],
+                ['______________', 20, 'C'],
+            ]),
+            $this->row([
+                ['Nombre Completo', 20, 'C'],
+                ['No. Identificacion', 20, 'C'],
+                ['Firma de Recibido', 20, 'C'],
+            ]),
+        ];
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────

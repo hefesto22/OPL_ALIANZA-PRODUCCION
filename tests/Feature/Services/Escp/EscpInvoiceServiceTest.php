@@ -161,6 +161,42 @@ class EscpInvoiceServiceTest extends TestCase
         $this->assertStringContainsString('ORISOL BOLSC/V 700 mL MAYOREO1/20', $out);
     }
 
+    public function test_long_invoice_paginates_into_multiple_forms(): void
+    {
+        // Una factura de muchos productos NO debe amontonarse ni imprimir sobre
+        // el doblez: se parte en varias formas, repitiendo encabezado + títulos
+        // en cada una y con "Pagina X de Y". Totales/firmas solo en la última.
+        config(['escp.form_mode' => 'fixed', 'escp.page_length_lines' => 44]);
+
+        $manifest = Manifest::factory()->create(['number' => (string) (++static::$manifestSeq)]);
+        $invoice = Invoice::factory()->for($manifest)->create(['invoice_number' => 'F77000200']);
+        InvoiceLine::factory()->count(40)->for($invoice)->create();
+        $invoice->load('lines');
+
+        $out = app(EscpInvoiceService::class)->build(collect([$invoice]));
+
+        // Al menos 2 formas → al menos 2 form feeds y el encabezado repetido.
+        $this->assertGreaterThanOrEqual(2, substr_count($out, "\x0C"));
+        $this->assertGreaterThanOrEqual(2, substr_count($out, 'GRUPO JAREMAR'));
+        $this->assertStringContainsString('Pagina 1 de', $out);
+        $this->assertStringContainsString('Pagina 2 de', $out);
+        // Los totales aparecen UNA sola vez (solo en la última forma).
+        $this->assertSame(1, substr_count($out, 'TOTAL:'));
+    }
+
+    public function test_short_invoice_stays_single_form_without_page_indicator(): void
+    {
+        // Regresión: una factura corta debe seguir en UNA sola forma, sin
+        // indicador de página (salida como la histórica).
+        config(['escp.form_mode' => 'fixed', 'escp.page_length_lines' => 44]);
+
+        $out = app(EscpInvoiceService::class)->build(collect([$this->invoiceWithLines([], 3)]));
+
+        $this->assertSame(1, substr_count($out, "\x0C"));       // un solo form feed
+        $this->assertStringNotContainsString('Pagina 1 de', $out);
+        $this->assertSame(1, substr_count($out, 'GRUPO JAREMAR'));
+    }
+
     public function test_output_is_pure_ascii(): void
     {
         $out = app(EscpInvoiceService::class)->build(
