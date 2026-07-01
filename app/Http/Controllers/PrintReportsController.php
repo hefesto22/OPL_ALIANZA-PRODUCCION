@@ -505,41 +505,41 @@ class PrintReportsController extends Controller
 
         $invoiceIds = $invoiceQuery->pluck('id');
 
-        // Agrupar líneas por producto, sumando cantidades y totales
+        // Agrupar líneas por PRODUCTO (una sola fila por producto), sumando
+        // cantidades y totales. NO se agrupa por unit_sale: un producto vendido
+        // en caja (CJ) y en unidad (UN) a la vez debe salir en UNA fila con sus
+        // cajas + unidades juntas (antes salía partido en dos filas, lo que
+        // confundía a la bodega). unit_sale se toma como MIN → prioriza mostrar
+        // el empaque (CJ < FD < UN) cuando el producto es aboxable.
         $productsQuery = DB::table('invoice_lines')
             ->whereIn('invoice_id', $invoiceIds)
             ->select(
                 'product_id',
-                'product_description',
-                'unit_sale',
+                DB::raw('MIN(product_description) as product_description'),
+                DB::raw('MIN(unit_sale) as unit_sale'),
                 DB::raw('SUM(quantity_box) as total_boxes'),
                 DB::raw('SUM(quantity_fractions) as total_units'),
                 DB::raw('SUM(total) as total_amount'),
                 // Unidades por caja del producto. MAX (no AVG) porque alguna
                 // línea suelta podría traer factor 1 por error de origen;
-                // así tomamos el factor real para convertir unidades→cajas en UN.
+                // así tomamos el factor real para convertir unidades→cajas.
                 DB::raw('MAX(conversion_factor) as conversion_factor'),
             )
-            ->groupBy('product_id', 'product_description', 'unit_sale')
+            ->groupBy('product_id')
             ->orderBy('product_id');
 
         $this->enforceRowLimit($productsQuery, 'productos del manifiesto');
         $products = $productsQuery->get();
 
-        // Totales coherentes con la descomposición de las filas: cada producto
-        // en UN se expresa como cajas equivalentes + unidades sueltas. Así el
-        // pie del reporte suma exactamente lo que muestran las columnas.
-        //   - total_boxes = cajas reales (CJ) + cajas equivalentes (UN)
-        //   - total_units = solo las unidades sueltas sobrantes (UN)
+        // Totales coherentes con la descomposición de las filas. Como cada fila
+        // ya es UN producto consolidado, descomponemos la suma total de fracciones
+        // por el factor: quantity_fractions trae el total en unidades (caja×factor
+        // + sueltas), así cajas = cajas reales + equivalentes y sueltas = sobrante.
+        //   - total_boxes (pie) = cajas reales (CJ/FD) + cajas equivalentes (UN)
+        //   - total_units (pie) = solo las unidades sueltas sobrantes
         $totalBoxes = 0;
         $totalLoose = 0;
         foreach ($products as $product) {
-            if (strtoupper($product->unit_sale) === 'CJ') {
-                $totalBoxes += (int) round((float) $product->total_boxes);
-
-                continue;
-            }
-
             $eq = BoxEquivalence::split(
                 (int) round((float) $product->total_units),
                 (int) ($product->conversion_factor ?? 0),

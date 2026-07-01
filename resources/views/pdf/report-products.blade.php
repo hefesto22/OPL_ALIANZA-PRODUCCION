@@ -298,11 +298,10 @@ table.data tbody tr { page-break-inside: avoid; break-inside: avoid; }
         <tbody>
             @foreach($products as $i => $product)
             @php
-                $isCj = strtoupper($product->unit_sale) === 'CJ';
                 $factor = (int) ($product->conversion_factor ?? 0);
                 $units = (int) round((float) $product->total_units);
-                // Productos en UN: descomponer en cajas equivalentes + sueltas.
-                // Cajas → columna Cajas, sobrante → columna Unid.
+                // Fila consolidada por producto: descomponer el total de unidades
+                // en cajas equivalentes + sueltas. Columna en blanco cuando es 0.
                 $eq = \App\Support\BoxEquivalence::split($units, $factor);
             @endphp
             <tr>
@@ -310,14 +309,8 @@ table.data tbody tr { page-break-inside: avoid; break-inside: avoid; }
                 <td class="code">{{ $product->product_id }}</td>
                 <td>{{ $product->product_description }}</td>
                 <td class="c">{{ $product->unit_sale ?? '—' }}</td>
-                <td class="c">
-                    @if($isCj)
-                        {{ number_format((float) $product->total_boxes, 0) }}
-                    @elseif($eq['cajas'] > 0)
-                        {{ number_format($eq['cajas']) }}
-                    @endif
-                </td>
-                <td class="c">{{ ! $isCj ? number_format($eq['sueltas']) : '' }}</td>
+                <td class="c">{{ $eq['cajas'] > 0 ? number_format($eq['cajas']) : '' }}</td>
+                <td class="c">{{ $eq['sueltas'] > 0 ? number_format($eq['sueltas']) : '' }}</td>
                 <td class="r"><strong>L {{ number_format((float) $product->total_amount, 2) }}</strong></td>
                 <td class="c write-cell"></td>
                 <td class="c"><span class="checkbox"></span></td>

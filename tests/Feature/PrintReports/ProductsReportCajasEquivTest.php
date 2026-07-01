@@ -50,10 +50,13 @@ class ProductsReportCajasEquivTest extends TestCase
             ->get('/imprimir/reportes/productos?payload='.urlencode($payload));
     }
 
-    public function test_report_renders_un_and_cj_lines_without_error(): void
+    public function test_un_and_cj_lines_consolidate_into_a_single_row(): void
     {
+        // Mismo producto vendido en UN y en CJ → debe salir en UNA sola fila
+        // (antes salía partido en dos, lo que confundía a la bodega).
+        // Consolidado: 258 (UN) + 11*96 (CJ) = 1314 unidades, factor 96
+        //   → 13 cajas y 66 sueltas.
         $manifest = $this->makeManifestWithLines([
-            // UN con factor → se descompone (258 = 2 cajas + 66 sueltas).
             [
                 'product_id' => '80800013',
                 'product_description' => 'PASTA NORMAL 8X12X87GR',
@@ -63,7 +66,6 @@ class ProductsReportCajasEquivTest extends TestCase
                 'conversion_factor' => 96,
                 'total' => 2303.98,
             ],
-            // CJ → cajas reales.
             [
                 'product_id' => '80800013',
                 'product_description' => 'PASTA NORMAL 8X12X87GR',
@@ -78,9 +80,9 @@ class ProductsReportCajasEquivTest extends TestCase
         $response = $this->renderReport($manifest);
 
         $response->assertOk();
-        // El producto aparece en el reporte.
-        $response->assertSee('80800013', false);
         $response->assertSee('PASTA NORMAL 8X12X87GR', false);
+        // El código del producto aparece UNA sola vez → una sola fila consolidada.
+        $this->assertSame(1, substr_count($response->getContent(), '80800013'));
     }
 
     public function test_report_renders_when_factor_is_missing(): void
