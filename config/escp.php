@@ -10,9 +10,9 @@ return [
     | Réplica de la factura de texto del sistema viejo de Jaremar. La forma
     | (papel continuo perforado Genial "9 1/2 X 5 1/2") mide 9.5" de ancho
     | (~21 cm útiles) × 5.5" de alto (~14 cm = la perforación), así que:
-    |   - 12 cpi → 80 columnas entran en ~17 cm (caben de sobra).
+    |   - 12 cpi → 92 columnas entran en ~19.5 cm (la forma útil ≈ 20 cm).
     |   - 8 lpi  → 5.5" = 44 líneas por forma.
-    |   - left_margin centra el contenido (~17 cm) en la forma (~21 cm).
+    |   - left_margin centra el contenido (~19.5 cm) en la forma (~21 cm).
     |   - form_mode 'fixed' + page_length_lines = alto de la forma → el form
     |     feed avanza a la perforación y la auto tear-off corta ahí.
     |
@@ -23,8 +23,12 @@ return [
     |
     */
 
-    // Columnas útiles por línea. A 12 cpi, 80 col ≈ 17 cm (cabe en 18).
-    'chars_per_line' => (int) env('ESCP_CHARS_PER_LINE', 80),
+    // Columnas útiles por línea. A 12 cpi, 92 col ≈ 19.5 cm; la forma de 9.5"
+    // da ~8" imprimibles ≈ 96 col, así que 92 + left_margin bajo caben. Este
+    // ancho es el que "absorbe" la columna Descripcion: subirlo da más espacio
+    // al nombre del producto; bajarlo lo recorta. Si el borde derecho se sale
+    // en la impresión física, bajar este número (la descripción se auto-ajusta).
+    'chars_per_line' => (int) env('ESCP_CHARS_PER_LINE', 92),
 
     // Paso de caracteres: '12cpi' (cabe en 18 cm), '10cpi', 'condensed'.
     'pitch' => env('ESCP_PITCH', '12cpi'),
@@ -57,10 +61,11 @@ return [
     'font' => (int) env('ESCP_FONT', 0),
 
     // Margen izquierdo en columnas → CENTRA el contenido en la forma.
-    // Contenido ~80 col; forma ~102 col útiles a 12 cpi.
+    // Contenido ahora ~92 col; forma ~102 col útiles a 12 cpi, así que el margen
+    // debe ser menor que antes para que el borde derecho no se salga.
     // Subir = más a la derecha; bajar = más a la izquierda (cada col ≈ 0.21 cm).
-    // 16 se pasaba a la derecha (se salía); 10 es el valor estable previo.
-    'left_margin' => (int) env('ESCP_LEFT_MARGIN', 10),
+    // Con cpl=80 el estable era 10; con cpl=92 el equivalente es ~4.
+    'left_margin' => (int) env('ESCP_LEFT_MARGIN', 4),
 
     // Transliterar a ASCII (quita acentos/ñ) para no depender del code page.
     'ascii_transliterate' => (bool) env('ESCP_ASCII', true),

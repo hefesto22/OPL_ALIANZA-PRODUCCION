@@ -142,6 +142,25 @@ class EscpInvoiceServiceTest extends TestCase
         $this->assertStringContainsString('121,050.00', $out);
     }
 
+    public function test_long_product_description_is_not_truncated(): void
+    {
+        // Regresión: con la columna Descripcion fija en 20 chars, nombres como
+        // "ORISOL BOLSC/V 700 mL MAYOREO1/20" (33 chars) se "comían" en la
+        // impresión matriz. Ahora la descripción absorbe el ancho de línea (cpl)
+        // y debe salir completa.
+        $manifest = Manifest::factory()->create(['number' => (string) (++static::$manifestSeq)]);
+        $invoice = Invoice::factory()->for($manifest)->create(['invoice_number' => 'F77000100']);
+
+        InvoiceLine::factory()->for($invoice)->create([
+            'product_description' => 'ORISOL BOLSC/V 700 mL MAYOREO1/20',
+        ]);
+        $invoice->load('lines');
+
+        $out = app(EscpInvoiceService::class)->build(collect([$invoice]));
+
+        $this->assertStringContainsString('ORISOL BOLSC/V 700 mL MAYOREO1/20', $out);
+    }
+
     public function test_output_is_pure_ascii(): void
     {
         $out = app(EscpInvoiceService::class)->build(

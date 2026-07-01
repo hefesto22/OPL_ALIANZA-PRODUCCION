@@ -35,6 +35,19 @@ class EscpInvoiceService
 
     private const FF = "\x0C";   // form feed
 
+    /**
+     * Anchos FIJOS de las columnas de cantidad/codigo/dinero de la tabla, en
+     * orden: Cj, Und, Codigo, P.Unit, SubT, Imp, Total. Descripcion NO va aqui:
+     * absorbe el ancho restante de la linea (ver descriptionWidth()).
+     *
+     * SubT y Total = 10 → sostienen montos de hasta 121,050.00 (10 chars) sin
+     * truncar (regresion cubierta por test_large_amounts_are_not_truncated).
+     */
+    private const COL_WIDTHS = [2, 3, 8, 9, 10, 9, 10];
+
+    /** Piso de ancho de la descripcion, aunque cpl sea muy chico. */
+    private const DESC_MIN_WIDTH = 12;
+
     private int $cpl;
 
     public function __construct()
@@ -274,27 +287,33 @@ class EscpInvoiceService
         }
 
         // ── Tabla ──────────────────────────────────────────────────────
+        // Anchos FIJOS de cantidad/codigo/dinero; Descripcion ABSORBE el resto
+        // del ancho de linea (cpl). Asi los nombres de producto largos ("ORISOL
+        // BOLSC/V 700 mL MAYOREO1/20", ~33 chars) ya NO se recortan como pasaba
+        // con la columna fija de 20. Al derivarse de cpl, si se afina el ancho
+        // de la forma por env (ESCP_CHARS_PER_LINE / ESCP_LEFT_MARGIN) la
+        // descripcion se auto-ajusta sin tocar codigo.
+        [$wCj, $wUnd, $wCod, $wPU, $wSub, $wImp, $wTot] = self::COL_WIDTHS;
+        $wDesc = $this->descriptionWidth();
+
         $L[] = str_repeat('-', $w);
-        // Anchos pensados para que montos grandes (hasta 9,999,999.99) NO se
-        // trunquen: las columnas de dinero son anchas; Descripcion cede espacio
-        // (el Codigo identifica el producto). La fila suma exactamente 80 col.
         $L[] = $this->row([
-            ['Cj', 2, 'L'], ['Und', 3, 'L'], ['Codigo', 8, 'L'], ['Descripcion', 20, 'L'],
-            ['P.Unit', 9, 'R'], ['SubT', 11, 'R'], ['Imp', 9, 'R'], ['Total', 11, 'R'],
+            ['Cj', $wCj, 'L'], ['Und', $wUnd, 'L'], ['Codigo', $wCod, 'L'], ['Descripcion', $wDesc, 'L'],
+            ['P.Unit', $wPU, 'R'], ['SubT', $wSub, 'R'], ['Imp', $wImp, 'R'], ['Total', $wTot, 'R'],
         ]);
         $L[] = str_repeat('-', $w);
 
         foreach ($invoice->lines as $line) {
             $imp = (float) ($line->tax ?? 0) + (float) ($line->tax18 ?? 0);
             $L[] = $this->row([
-                [number_format((float) $line->quantity_box, 0), 2, 'L'],
-                [number_format((float) $line->quantity_fractions, 0), 3, 'L'],
-                [(string) $line->product_id, 8, 'L'],
-                [(string) $line->product_description, 20, 'L'],
-                [number_format((float) $line->price, 2), 9, 'R'],
-                [number_format((float) $line->subtotal, 2), 11, 'R'],
-                [number_format($imp, 2), 9, 'R'],
-                [number_format((float) $line->total, 2), 11, 'R'],
+                [number_format((float) $line->quantity_box, 0), $wCj, 'L'],
+                [number_format((float) $line->quantity_fractions, 0), $wUnd, 'L'],
+                [(string) $line->product_id, $wCod, 'L'],
+                [(string) $line->product_description, $wDesc, 'L'],
+                [number_format((float) $line->price, 2), $wPU, 'R'],
+                [number_format((float) $line->subtotal, 2), $wSub, 'R'],
+                [number_format($imp, 2), $wImp, 'R'],
+                [number_format((float) $line->total, 2), $wTot, 'R'],
             ]);
         }
         $L[] = str_repeat('-', $w);
@@ -326,6 +345,19 @@ class EscpInvoiceService
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────
+
+    /**
+     * Ancho de la columna Descripcion = ancho de linea (cpl) menos las columnas
+     * fijas y los espacios que las separan. Las 8 columnas se unen con 1 espacio
+     * (row()), o sea 7 separadores = count(COL_WIDTHS). Con floor de seguridad.
+     */
+    private function descriptionWidth(): int
+    {
+        $fixed = array_sum(self::COL_WIDTHS);
+        $gaps = count(self::COL_WIDTHS);
+
+        return max(self::DESC_MIN_WIDTH, $this->cpl - $fixed - $gaps);
+    }
 
     private function center(string $text): string
     {
