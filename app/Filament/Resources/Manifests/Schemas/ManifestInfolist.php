@@ -230,7 +230,7 @@ class ManifestInfolist
                             TextEntry::make('deposit_progress')
                                 ->label('Progreso de Depósito')
                                 ->columnSpanFull()
-                                ->hidden(fn (): bool => Auth::user()->hasRole('operador'))
+                                ->visible(fn (): bool => Auth::user()->hasAnyRole(['super_admin', 'admin', 'encargado', 'finance']))
                                 // Avance GLOBAL del pago para todos los usuarios.
                                 // El depósito es un pago agrupado contra el manifiesto
                                 // completo (no es atribuible por bodega sin warehouse_id),
@@ -275,7 +275,9 @@ class ManifestInfolist
                 ->description('Total − Devoluciones = A Depositar   ·   A Depositar − Depositado = Diferencia')
                 ->columns(5)
                 ->columnSpanFull()
-                ->hidden(fn (): bool => Auth::user()->hasRole('operador'))
+                // Lista blanca positiva: tener 'finance' basta para verlo, aunque
+                // el usuario también sea 'operador'. El operador puro no lo ve.
+                ->visible(fn (): bool => Auth::user()->hasAnyRole(['super_admin', 'admin', 'encargado', 'finance']))
                 // Resumen financiero GLOBAL del manifiesto para todos los usuarios
                 // (incluidos los de bodega). El pago es una obligación agrupada
                 // contra el manifiesto completo y los depósitos NO son atribuibles
