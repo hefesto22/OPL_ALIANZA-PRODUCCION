@@ -100,7 +100,7 @@ table.data col.col-num     { width: 16px; }
 table.data col.col-code    { width: 46px; }
 table.data col.col-desc    { /* auto fill */ }
 table.data col.col-udc     { width: 22px; }
-table.data col.col-boxes   { width: 52px; }
+table.data col.col-boxes   { width: 30px; }
 table.data col.col-units   { width: 30px; }
 table.data col.col-total   { width: 72px; }
 table.data col.col-recv    { width: 30px; }
@@ -301,18 +301,9 @@ table.data tbody tr { page-break-inside: avoid; break-inside: avoid; }
                 $isCj = strtoupper($product->unit_sale) === 'CJ';
                 $factor = (int) ($product->conversion_factor ?? 0);
                 $units = (int) round((float) $product->total_units);
-                // Equivalencia en cajas para productos vendidos en unidades (UN):
-                // 258 u con factor 96 → "2 cj + 66 u". Múltiplo exacto → "2 cj".
-                // Se arma el string completo en PHP (no @if inline) para que el
-                // texto salga exacto, sin espacios/newlines que mete Blade.
-                $equivCajas = ($factor > 1) ? intdiv($units, $factor) : 0;
-                $equivSueltas = ($factor > 1) ? ($units - $equivCajas * $factor) : $units;
-                $equivText = '';
-                if (! $isCj && $factor > 1 && $equivCajas > 0) {
-                    $equivText = $equivSueltas > 0
-                        ? "{$equivCajas} cj + {$equivSueltas} u"
-                        : "{$equivCajas} cj";
-                }
+                // Productos en UN: descomponer en cajas equivalentes + sueltas.
+                // Cajas → columna Cajas, sobrante → columna Unid.
+                $eq = \App\Support\BoxEquivalence::split($units, $factor);
             @endphp
             <tr>
                 <td class="row-num">{{ $i + 1 }}</td>
@@ -322,11 +313,11 @@ table.data tbody tr { page-break-inside: avoid; break-inside: avoid; }
                 <td class="c">
                     @if($isCj)
                         {{ number_format((float) $product->total_boxes, 0) }}
-                    @elseif($equivText !== '')
-                        <span style="white-space:nowrap;">{{ $equivText }}</span>
+                    @elseif($eq['cajas'] > 0)
+                        {{ number_format($eq['cajas']) }}
                     @endif
                 </td>
-                <td class="c">{{ ! $isCj ? number_format($units) : '' }}</td>
+                <td class="c">{{ ! $isCj ? number_format($eq['sueltas']) : '' }}</td>
                 <td class="r"><strong>L {{ number_format((float) $product->total_amount, 2) }}</strong></td>
                 <td class="c write-cell"></td>
                 <td class="c"><span class="checkbox"></span></td>

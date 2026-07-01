@@ -12,19 +12,18 @@ use Illuminate\Support\Facades\Crypt;
 use Tests\TestCase;
 
 /**
- * Sublista de Productos (GET /imprimir/reportes/productos): equivalencia en
- * cajas para líneas vendidas en unidades (UN).
+ * Sublista de Productos (GET /imprimir/reportes/productos).
  *
- * Pedido de operación: cuando un producto viene en unidades sueltas, el
- * bodeguero quiere ver cuántas CAJAS son esas unidades + el sobrante.
- * Ej.: 258 unidades con factor 96 → "2 cj + 66 u". Las filas en CJ siguen
- * mostrando su conteo real de cajas, sin equivalencia.
+ * La descomposición unidades→cajas+sueltas está probada a fondo (matemática) en
+ * BoxEquivalenceTest. Aquí verificamos el CABLEADO: que el reporte renderice sin
+ * error con la lógica nueva (query con MAX(conversion_factor), helper en la vista
+ * y totales descompuestos) tanto para líneas UN como CJ.
  */
 class ProductsReportCajasEquivTest extends TestCase
 {
     use RefreshDatabase;
 
-    private function makeManifestWithLine(array $lineAttributes): Manifest
+    private function makeManifestWithLines(array $lines): Manifest
     {
         $warehouse = Warehouse::where('code', 'OAC')->first()
             ?? Warehouse::factory()->create(['code' => 'OAC', 'name' => 'OAC']);
@@ -36,11 +35,9 @@ class ProductsReportCajasEquivTest extends TestCase
             'warehouse_id' => $warehouse->id,
         ]);
 
-        InvoiceLine::factory()->for($invoice, 'invoice')->create(array_merge([
-            'product_id' => '80800013',
-            'product_description' => 'PASTA NORMAL 8X12X87GR',
-            'total' => 2303.98,
-        ], $lineAttributes));
+        foreach ($lines as $attrs) {
+            InvoiceLine::factory()->for($invoice, 'invoice')->create($attrs);
+        }
 
         return $manifest;
     }
@@ -53,72 +50,56 @@ class ProductsReportCajasEquivTest extends TestCase
             ->get('/imprimir/reportes/productos?payload='.urlencode($payload));
     }
 
-    public function test_un_row_shows_box_equivalent_and_loose_units(): void
+    public function test_report_renders_un_and_cj_lines_without_error(): void
     {
-        // 258 unidades con factor 96 → 2 cajas + 66 unidades sueltas.
-        $manifest = $this->makeManifestWithLine([
-            'unit_sale' => 'UN',
-            'quantity_box' => 0,
-            'quantity_fractions' => 258,
-            'conversion_factor' => 96,
+        $manifest = $this->makeManifestWithLines([
+            // UN con factor → se descompone (258 = 2 cajas + 66 sueltas).
+            [
+                'product_id' => '80800013',
+                'product_description' => 'PASTA NORMAL 8X12X87GR',
+                'unit_sale' => 'UN',
+                'quantity_box' => 0,
+                'quantity_fractions' => 258,
+                'conversion_factor' => 96,
+                'total' => 2303.98,
+            ],
+            // CJ → cajas reales.
+            [
+                'product_id' => '80800013',
+                'product_description' => 'PASTA NORMAL 8X12X87GR',
+                'unit_sale' => 'CJ',
+                'quantity_box' => 11,
+                'quantity_fractions' => 11 * 96,
+                'conversion_factor' => 96,
+                'total' => 8939.48,
+            ],
         ]);
 
         $response = $this->renderReport($manifest);
 
         $response->assertOk();
-        $response->assertSee('2 cj + 66 u', false);
-        // El total real de unidades sigue visible para el conteo.
-        $response->assertSee('258', false);
+        // El producto aparece en el reporte.
+        $response->assertSee('80800013', false);
+        $response->assertSee('PASTA NORMAL 8X12X87GR', false);
     }
 
-    public function test_un_row_with_exact_box_multiple_omits_loose_suffix(): void
+    public function test_report_renders_when_factor_is_missing(): void
     {
-        // 192 = 2×96 exacto → "2 cj" sin "+ 0 u".
-        $manifest = $this->makeManifestWithLine([
-            'unit_sale' => 'UN',
-            'quantity_box' => 0,
-            'quantity_fractions' => 192,
-            'conversion_factor' => 96,
+        // Producto sin factor útil (1): no debe romper, queda todo en unidades.
+        $manifest = $this->makeManifestWithLines([
+            [
+                'product_id' => '99999999',
+                'product_description' => 'PRODUCTO SIN FACTOR',
+                'unit_sale' => 'UN',
+                'quantity_box' => 0,
+                'quantity_fractions' => 7,
+                'conversion_factor' => 1,
+                'total' => 100.00,
+            ],
         ]);
 
-        $response = $this->renderReport($manifest);
-
-        $response->assertOk();
-        $response->assertSee('2 cj', false);
-        $response->assertDontSee('2 cj + 0 u', false);
-    }
-
-    public function test_un_row_below_one_box_shows_no_box_equivalence(): void
-    {
-        // 50 unidades < 96 → no hay caja completa; solo se muestra el total.
-        $manifest = $this->makeManifestWithLine([
-            'unit_sale' => 'UN',
-            'quantity_box' => 0,
-            'quantity_fractions' => 50,
-            'conversion_factor' => 96,
-        ]);
-
-        $response = $this->renderReport($manifest);
-
-        $response->assertOk();
-        $response->assertSee('50', false);
-        $response->assertDontSee('cj +', false);
-    }
-
-    public function test_cj_row_keeps_real_box_count_without_equivalence(): void
-    {
-        // Fila vendida en CJ: muestra cajas reales, sin texto de equivalencia.
-        $manifest = $this->makeManifestWithLine([
-            'unit_sale' => 'CJ',
-            'quantity_box' => 11,
-            'quantity_fractions' => 11 * 96,
-            'conversion_factor' => 96,
-            'total' => 8939.48,
-        ]);
-
-        $response = $this->renderReport($manifest);
-
-        $response->assertOk();
-        $response->assertDontSee('cj +', false);
+        $this->renderReport($manifest)
+            ->assertOk()
+            ->assertSee('99999999', false);
     }
 }

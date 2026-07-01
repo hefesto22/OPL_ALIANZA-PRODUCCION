@@ -8,6 +8,7 @@ use App\Models\InvoiceReturn;
 use App\Models\Manifest;
 use App\Models\ManifestWarehouseTotal;
 use App\Models\Supplier;
+use App\Support\BoxEquivalence;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Crypt;
@@ -525,9 +526,31 @@ class PrintReportsController extends Controller
         $this->enforceRowLimit($productsQuery, 'productos del manifiesto');
         $products = $productsQuery->get();
 
+        // Totales coherentes con la descomposición de las filas: cada producto
+        // en UN se expresa como cajas equivalentes + unidades sueltas. Así el
+        // pie del reporte suma exactamente lo que muestran las columnas.
+        //   - total_boxes = cajas reales (CJ) + cajas equivalentes (UN)
+        //   - total_units = solo las unidades sueltas sobrantes (UN)
+        $totalBoxes = 0;
+        $totalLoose = 0;
+        foreach ($products as $product) {
+            if (strtoupper($product->unit_sale) === 'CJ') {
+                $totalBoxes += (int) round((float) $product->total_boxes);
+
+                continue;
+            }
+
+            $eq = BoxEquivalence::split(
+                (int) round((float) $product->total_units),
+                (int) ($product->conversion_factor ?? 0),
+            );
+            $totalBoxes += $eq['cajas'];
+            $totalLoose += $eq['sueltas'];
+        }
+
         $totals = [
-            'total_boxes' => $products->sum('total_boxes'),
-            'total_units' => $products->sum('total_units'),
+            'total_boxes' => $totalBoxes,
+            'total_units' => $totalLoose,
             'total_amount' => $products->sum('total_amount'),
             'count' => $products->count(),
         ];
