@@ -144,6 +144,10 @@ class InvoicesRelationManager extends RelationManager
 
                 SelectFilter::make('route_number')
                     ->label('Ruta')
+                    // Multi-selección: la operación arma impresiones de 1 o más
+                    // rutas a la vez (filtran 2 rutas → "Selecciona todos" toma
+                    // solo las facturas de esas rutas → imprimen de un tiro).
+                    ->multiple()
                     ->options(function (): array {
                         /** @var User $user */
                         $user = Auth::user();
@@ -161,11 +165,18 @@ class InvoicesRelationManager extends RelationManager
                     }),
             ])
             ->toolbarActions([
+                // NOTA: ninguna acción usa deselectRecordsAfterCompletion() a
+                // propósito — la operación imprime varias cosas (facturas,
+                // sublistas) con la MISMA selección; deseleccionar tras cada
+                // botón los obligaba a volver a marcar todo (pedido 2026-07-03).
                 BulkActionGroup::make([
                     BulkAction::make('imprimir_seleccionadas')
                         ->label('Imprimir Facturas')
                         ->icon('heroicon-o-printer')
                         ->color('info')
+                        // Solo super_admin por ahora: la operación usa el
+                        // Formato Hosana; este formato quedará para el futuro.
+                        ->visible(fn (): bool => Auth::user()->hasRole('super_admin'))
                         ->action(function (Collection $records): void {
                             /** @var \App\Models\Manifest $manifest */
                             $manifest = $this->getOwnerRecord();
@@ -175,8 +186,7 @@ class InvoicesRelationManager extends RelationManager
                                 ->generatePrintUrl($manifest, $invoiceIds);
 
                             $this->js("window.open('{$url}', '_blank')");
-                        })
-                        ->deselectRecordsAfterCompletion(),
+                        }),
 
                     BulkAction::make('imprimir_formato_hosana')
                         ->label('Imprimir (Formato Hosana)')
@@ -193,8 +203,7 @@ class InvoicesRelationManager extends RelationManager
 
                             $url = route('invoices.print.hosana', ['payload' => $payload]);
                             $this->js("window.open('{$url}', '_blank')");
-                        })
-                        ->deselectRecordsAfterCompletion(),
+                        }),
 
                     BulkAction::make('sublista_productos_seleccionadas')
                         ->label('Sublista Productos')
@@ -211,8 +220,7 @@ class InvoicesRelationManager extends RelationManager
 
                             $payload = Crypt::encryptString(json_encode($payloadData));
                             $this->js("window.open('/imprimir/reportes/productos?payload=".urlencode($payload)."', '_blank')");
-                        })
-                        ->deselectRecordsAfterCompletion(),
+                        }),
 
                     BulkAction::make('sublista_facturas_seleccionadas')
                         ->label('Sublista Facturas')
@@ -229,8 +237,7 @@ class InvoicesRelationManager extends RelationManager
 
                             $payload = Crypt::encryptString(json_encode($payloadData));
                             $this->js("window.open('/imprimir/reportes/facturas-checklist?payload=".urlencode($payload)."', '_blank')");
-                        })
-                        ->deselectRecordsAfterCompletion(),
+                        }),
                 ]),
             ])
             ->recordActions([
