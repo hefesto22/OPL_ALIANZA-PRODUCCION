@@ -83,6 +83,8 @@ class ProductsReportCajasEquivTest extends TestCase
         $response->assertSee('PASTA NORMAL 8X12X87GR', false);
         // El código del producto aparece UNA sola vez → una sola fila consolidada.
         $this->assertSame(1, substr_count($response->getContent(), '80800013'));
+        // UDC declara AMBAS presentaciones cuando la fila mezcla CJ y UN.
+        $response->assertSee('CJ/UN', false);
     }
 
     public function test_total_general_uses_invoice_total_not_line_sum(): void
@@ -248,6 +250,66 @@ class ProductsReportCajasEquivTest extends TestCase
         $this->assertSummaryCard($content, 'Total Unidades', '15');
         // Total en lempiras: suma de ambas líneas (2,124.20 + 1,878.24)
         $response->assertSee('4,002.44', false);
+    }
+
+    public function test_partial_report_shows_warning_banner(): void
+    {
+        // REGRESIÓN (confusión operativa 2026-07-01): un reporte generado desde
+        // una selección parcial de facturas se confundió con el manifiesto
+        // completo y pareció que el sistema "perdía productos". Todo reporte
+        // parcial debe declararse como tal, con el conteo X de Y visible.
+        $warehouse = Warehouse::where('code', 'OAC')->first()
+            ?? Warehouse::factory()->create(['code' => 'OAC', 'name' => 'OAC']);
+        $manifest = Manifest::factory()->create(['warehouse_id' => $warehouse->id]);
+
+        $invoices = Invoice::factory()->count(3)->create([
+            'manifest_id' => $manifest->id,
+            'warehouse_id' => $warehouse->id,
+        ]);
+        foreach ($invoices as $invoice) {
+            InvoiceLine::factory()->for($invoice, 'invoice')->create([
+                'product_id' => '70000001',
+                'product_description' => 'PRODUCTO BANNER PARCIAL',
+                'unit_sale' => 'UN',
+                'quantity_box' => 0,
+                'quantity_fractions' => 5,
+                'conversion_factor' => 1,
+                'total' => 100.00,
+            ]);
+        }
+
+        // Payload con solo 2 de las 3 facturas → banner de reporte parcial.
+        $payload = Crypt::encryptString(json_encode([
+            'manifest_id' => $manifest->id,
+            'invoice_ids' => $invoices->take(2)->pluck('id')->all(),
+        ]));
+
+        $response = $this->actingAs(User::factory()->create())
+            ->get('/imprimir/reportes/productos?payload='.urlencode($payload));
+
+        $response->assertOk();
+        $response->assertSee('REPORTE PARCIAL', false);
+        $response->assertSee('incluye 2 de 3 facturas', false);
+    }
+
+    public function test_full_report_has_no_partial_banner(): void
+    {
+        // Reporte del manifiesto completo (sin invoice_ids ni bodega) → sin banner.
+        $manifest = $this->makeManifestWithLines([
+            [
+                'product_id' => '70000002',
+                'product_description' => 'PRODUCTO COMPLETO',
+                'unit_sale' => 'UN',
+                'quantity_box' => 0,
+                'quantity_fractions' => 5,
+                'conversion_factor' => 1,
+                'total' => 100.00,
+            ],
+        ]);
+
+        $this->renderReport($manifest)
+            ->assertOk()
+            ->assertDontSee('REPORTE PARCIAL', false);
     }
 
     public function test_report_renders_when_factor_is_missing(): void

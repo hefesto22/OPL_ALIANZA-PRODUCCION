@@ -505,18 +505,28 @@ class PrintReportsController extends Controller
 
         $invoiceIds = $invoiceQuery->pluck('id');
 
+        // Transparencia anti-confusión: si el payload recorta el universo de
+        // facturas (selección parcial en la tabla, o filtro por bodega), el
+        // reporte DEBE declararlo. Un subconjunto silencioso ya causó que la
+        // bodega creyera que el sistema "perdía productos" (2026-07-01).
+        $totalManifestInvoices = $manifest->invoices()
+            ->where('status', '!=', 'rejected')
+            ->count();
+        $includedInvoices = $invoiceIds->count();
+
         // Agrupar líneas por PRODUCTO (una sola fila por producto), sumando
         // cantidades y totales. NO se agrupa por unit_sale: un producto vendido
         // en caja (CJ) y en unidad (UN) a la vez debe salir en UNA fila con sus
         // cajas + unidades juntas (antes salía partido en dos filas, lo que
-        // confundía a la bodega). unit_sale se toma como MIN → prioriza mostrar
-        // el empaque (CJ < FD < UN) cuando el producto es aboxable.
+        // confundía a la bodega). UDC muestra TODAS las presentaciones en que
+        // vino el producto, unidas con "/" (ej. "CJ/UN") — así el bodeguero
+        // sabe que la fila consolida cajas y sueltas de facturas distintas.
         $productsQuery = DB::table('invoice_lines')
             ->whereIn('invoice_id', $invoiceIds)
             ->select(
                 'product_id',
                 DB::raw('MIN(product_description) as product_description'),
-                DB::raw('MIN(unit_sale) as unit_sale'),
+                DB::raw("STRING_AGG(DISTINCT unit_sale, '/' ORDER BY unit_sale) as unit_sale"),
                 DB::raw('SUM(quantity_box) as total_boxes'),
                 // Total REAL de unidades por línea. quantity_fractions tiene dos
                 // semánticas históricas según cómo entró la línea:
@@ -584,6 +594,8 @@ class PrintReportsController extends Controller
             'supplier' => Supplier::first(),
             'generatedAt' => now()->format('d/m/Y H:i:s'),
             'warehouseFiltered' => $warehouseIds !== [],
+            'includedInvoices' => $includedInvoices,
+            'totalManifestInvoices' => $totalManifestInvoices,
         ])->render();
 
         return response($html, 200, ['Content-Type' => 'text/html; charset=UTF-8']);

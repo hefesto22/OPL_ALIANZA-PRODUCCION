@@ -78,6 +78,20 @@ body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 9pt; color: #1a1a1
     letter-spacing: 1px;
 }
 
+/* ── Partial report banner ────────────────────────────────────── */
+.partial-banner {
+    background: #fef3c7;
+    border: 2px solid #f59e0b;
+    border-radius: 6px;
+    padding: 8px 12px;
+    margin-bottom: 12px;
+    font-size: 9pt;
+    font-weight: bold;
+    color: #92400e;
+    text-align: center;
+}
+.partial-banner .detail { font-weight: normal; font-size: 7.5pt; display: block; margin-top: 2px; }
+
 /* ── Summary cards ────────────────────────────────────────────── */
 .summary-box { display: flex; gap: 10px; margin-bottom: 16px; }
 .summary-card {
@@ -99,7 +113,7 @@ table.data { width: 100%; border-collapse: collapse; font-size: 6.5pt; margin-bo
 table.data col.col-num     { width: 16px; }
 table.data col.col-code    { width: 46px; }
 table.data col.col-desc    { /* auto fill */ }
-table.data col.col-udc     { width: 22px; }
+table.data col.col-udc     { width: 34px; } /* cabe "CJ/UN" en filas consolidadas */
 table.data col.col-boxes   { width: 30px; }
 table.data col.col-units   { width: 30px; }
 table.data col.col-total   { width: 72px; }
@@ -247,6 +261,14 @@ table.data tbody tr { page-break-inside: avoid; break-inside: avoid; }
             </div>
         </div>
     </div>
+
+    {{-- PARTIAL REPORT WARNING --}}
+    @if($includedInvoices < $totalManifestInvoices)
+    <div class="partial-banner">
+        &#9888;&#65039; REPORTE PARCIAL — incluye {{ $includedInvoices }} de {{ $totalManifestInvoices }} facturas del manifiesto
+        <span class="detail">Los totales NO representan el manifiesto completo. Para el manifiesto entero use el bot&oacute;n de reportes del encabezado, o seleccione TODAS las facturas ("Seleccionar las {{ $totalManifestInvoices }}").</span>
+    </div>
+    @endif
 
     {{-- SUMMARY CARDS --}}
     <div class="summary-box">
