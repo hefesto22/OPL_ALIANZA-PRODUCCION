@@ -484,16 +484,10 @@ class EscpInvoiceService
      */
     private function boxBreakdown(InvoiceLine $line): array
     {
-        if (strtoupper((string) $line->unit_sale) === 'CJ') {
-            $cajas = (int) round((float) $line->quantity_box);
-            $factor = max(1, (int) ($line->conversion_factor ?? 1));
-            $sueltas = max(0, (int) round((float) $line->quantity_fractions) - $cajas * $factor);
-
-            return [$cajas, $sueltas];
-        }
-
-        $eq = BoxEquivalence::split(
-            (int) round((float) $line->quantity_fractions),
+        $eq = BoxEquivalence::lineBreakdown(
+            $line->unit_sale,
+            (float) $line->quantity_box,
+            (float) $line->quantity_fractions,
             (int) ($line->conversion_factor ?? 0),
         );
 

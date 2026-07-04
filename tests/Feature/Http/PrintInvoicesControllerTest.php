@@ -94,6 +94,43 @@ class PrintInvoicesControllerTest extends TestCase
         $response->assertHeader('Content-Type', 'text/html; charset=UTF-8');
     }
 
+    /**
+     * Regresión: la vista HTML Hosana duplicaba la lógica Cj/Und y divergía
+     * de la impresión ESC/P — una mixta CJ (12 cajas + 48 sueltas, factura
+     * real 03867737) mostraba "12 | vacío" en pantalla mientras la impresora
+     * ya sacaba "12 | 48". Ambas consumen ahora BoxEquivalence::lineBreakdown.
+     */
+    public function test_hosana_view_shows_embedded_loose_units_of_mixed_cj_line(): void
+    {
+        $invoice = Invoice::factory()
+            ->for($this->manifest, 'manifest')
+            ->for($this->warehouseOAC, 'warehouse')
+            ->create();
+
+        \App\Models\InvoiceLine::factory()->for($invoice, 'invoice')->create([
+            'product_id' => '82800087',
+            'unit_sale' => 'CJ',
+            'quantity_box' => 12,
+            'quantity_fractions' => 1200,   // normalizado: 12 × 96 + 48
+            'quantity_min_sale' => 1200,
+            'quantity_decimal' => 12.5,
+            'conversion_factor' => 96,
+        ]);
+
+        $payload = $this->encryptedPayload([
+            'manifest_id' => $this->manifest->id,
+            'invoice_ids' => [$invoice->id],
+        ]);
+
+        $response = $this->actingAs($this->user)
+            ->get(route('invoices.print.hosana', ['payload' => $payload]));
+
+        $response->assertOk();
+        // Celdas Cj y Und de la fila: 12 cajas Y las 48 sueltas embebidas.
+        $response->assertSee('<td>12</td>', false);
+        $response->assertSee('<td>48</td>', false);
+    }
+
     public function test_show_does_not_mark_invoices_as_printed(): void
     {
         // Cambio central de este sprint: la vista NO marca is_printed.

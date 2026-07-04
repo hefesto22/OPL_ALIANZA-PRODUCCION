@@ -36,6 +36,38 @@ class BoxEquivalence
     }
 
     /**
+     * Descomposición Cj/Und de una LÍNEA de factura — fuente única usada por
+     * la impresión ESC/P (EscpInvoiceService) y la vista HTML (invoice-hosana).
+     * Antes cada consumidor duplicaba esta lógica y divergían (la vista
+     * mostraba "12 | vacío" donde la impresora ya imprimía "12 | 48").
+     *
+     *   - CJ → cajas reales (quantity_box) + sueltas embebidas de líneas
+     *     mixtas: fractions normalizado trae el TOTAL, la diferencia sobre
+     *     cajas × factor son las sueltas. CJ pura → diferencia 0.
+     *   - UN (u otra) → se parten las fracciones por el factor (split()).
+     *
+     * @param  string|null  $unitSale  UM de la línea ('CJ', 'UN', ...).
+     * @param  float  $boxes  quantity_box de la línea.
+     * @param  float  $fractions  quantity_fractions NORMALIZADO (total real).
+     * @param  int  $factor  Unidades por caja (conversion_factor).
+     * @return array{cajas:int, sueltas:int}
+     */
+    public static function lineBreakdown(?string $unitSale, float $boxes, float $fractions, int $factor): array
+    {
+        if (strtoupper((string) $unitSale) === 'CJ') {
+            $cajas = (int) round($boxes);
+            $factor = max(1, $factor);
+
+            return [
+                'cajas' => $cajas,
+                'sueltas' => max(0, (int) round($fractions) - $cajas * $factor),
+            ];
+        }
+
+        return self::split((int) round($fractions), $factor);
+    }
+
+    /**
      * Normaliza quantity_fractions al TOTAL real de fracciones de la línea,
      * incluyendo las cajas embebidas de las líneas MIXTAS de Jaremar
      * (CantidadCaja > 0 Y CantidadFracciones > 0 en la misma línea, ej.

@@ -73,4 +73,34 @@ class BoxEquivalenceTest extends TestCase
         $this->assertSame(3.0, BoxEquivalence::totalFractions(1.0, 2.0, 0));
         $this->assertSame(3.0, BoxEquivalence::totalFractions(1.0, 2.0, 1));
     }
+
+    // ── lineBreakdown: fuente única Cj/Und (ESC/P + vista Hosana) ────────
+
+    public function test_line_breakdown_cj_pure_shows_boxes_without_loose(): void
+    {
+        // CJ pura: fractions = cajas × factor exacto → 0 sueltas.
+        $this->assertSame(['cajas' => 2, 'sueltas' => 0], BoxEquivalence::lineBreakdown('CJ', 2.0, 50.0, 25));
+    }
+
+    public function test_line_breakdown_cj_mixed_shows_embedded_loose(): void
+    {
+        // Mixta CJ real (factura 03867737): 12 cajas + 48 sueltas, factor 96.
+        $this->assertSame(['cajas' => 12, 'sueltas' => 48], BoxEquivalence::lineBreakdown('CJ', 12.0, 1200.0, 96));
+    }
+
+    public function test_line_breakdown_un_mixed_splits_fractions(): void
+    {
+        // Mixta UN real (factura 03871160): 152 fracciones, factor 96 → 1 + 56.
+        $this->assertSame(['cajas' => 1, 'sueltas' => 56], BoxEquivalence::lineBreakdown('UN', 1.0, 152.0, 96));
+    }
+
+    public function test_line_breakdown_un_pure_stays_loose_below_factor(): void
+    {
+        $this->assertSame(['cajas' => 0, 'sueltas' => 30], BoxEquivalence::lineBreakdown('UN', 0.0, 30.0, 96));
+    }
+
+    public function test_line_breakdown_is_case_insensitive_for_unit(): void
+    {
+        $this->assertSame(['cajas' => 12, 'sueltas' => 48], BoxEquivalence::lineBreakdown('cj', 12.0, 1200.0, 96));
+    }
 }
