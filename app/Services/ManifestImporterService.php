@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Manifest;
 use App\Models\Supplier;
 use App\Models\Warehouse;
+use App\Support\BoxEquivalence;
 use Illuminate\Support\Facades\DB;
 
 /**
