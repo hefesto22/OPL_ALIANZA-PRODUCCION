@@ -122,6 +122,36 @@ class EscpInvoiceServiceTest extends TestCase
         $this->assertMatchesRegularExpression('/^1\s+56\s+82800087/m', $preview);
     }
 
+    /**
+     * Regresión: línea MIXTA vendida en CJ (detectada en prod, factura 380:
+     * 12 cajas + 48 sueltas, factor 96 → fractions normalizado 1200). La rama
+     * CJ mostraba solo quantity_box y las 48 sueltas desaparecían de la
+     * impresión. Debe salir "12 | 48". Una CJ pura sigue saliendo "N | vacío"
+     * (cubierto por test_cj_line_shows_boxes_without_loose_units).
+     */
+    public function test_mixed_cj_line_prints_boxes_and_embedded_loose_units(): void
+    {
+        $manifest = Manifest::factory()->create(['number' => (string) (++static::$manifestSeq)]);
+        $invoice = Invoice::factory()->for($manifest)->create(['invoice_number' => 'F-MIXCJ-ESCP']);
+
+        InvoiceLine::factory()->for($invoice)->create([
+            'product_id' => '82800087',
+            'product_description' => 'SOFRITO CRIOLLO 8X12X87GR',
+            'unit_sale' => 'CJ',
+            'quantity_box' => 12,
+            'quantity_fractions' => 1200,     // normalizado: 12 × 96 + 48
+            'quantity_min_sale' => 1200,
+            'quantity_decimal' => 12.5,
+            'conversion_factor' => 96,
+        ]);
+        $invoice->load('lines');
+
+        $preview = app(EscpInvoiceService::class)->previewText(collect([$invoice]));
+
+        // Columna Cj = 12, Und = 48, luego el código de producto.
+        $this->assertMatchesRegularExpression('/^12\s+48\s+82800087/m', $preview);
+    }
+
     public function test_fixed_mode_uses_one_page_length_and_form_feed_per_invoice(): void
     {
         // Modo fixed (papel perforado, default): el largo de página se fija

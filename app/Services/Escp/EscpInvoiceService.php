@@ -468,10 +468,13 @@ class EscpInvoiceService
     /**
      * Descompone la cantidad de la línea en cajas + unidades sueltas, IGUAL que
      * la Sublista de Productos (App\Support\BoxEquivalence):
-     *   - Vendida en CJ  → las cajas son quantity_box; sin sueltas (quantity_fractions
-     *     es solo cajas × factor).
+     *   - Vendida en CJ  → las cajas son quantity_box + las sueltas embebidas
+     *     de líneas MIXTAS de Jaremar (quantity_fractions normalizado trae el
+     *     TOTAL: cajas × factor + sueltas; la diferencia son las sueltas).
+     *     Ej.: 12 cajas + 48 sueltas, factor 96 → fractions 1200 → "12 | 48".
+     *     En CJ pura la diferencia es 0 → salida idéntica a la histórica.
      *   - Vendida en UN  → se parten las fracciones por el factor de conversión.
-     *     Ej.: 64 unidades con factor 60 → 1 caja y 4 unidades.
+     *     Ej.: 152 unidades con factor 96 → 1 caja y 56 unidades.
      *
      * Así el bodeguero ve la factura con la misma lógica de cajas equivalentes
      * que la sublista. Solo cambia la PRESENTACIÓN de las columnas Cj/Und; los
@@ -482,7 +485,11 @@ class EscpInvoiceService
     private function boxBreakdown(InvoiceLine $line): array
     {
         if (strtoupper((string) $line->unit_sale) === 'CJ') {
-            return [(int) round((float) $line->quantity_box), 0];
+            $cajas = (int) round((float) $line->quantity_box);
+            $factor = max(1, (int) ($line->conversion_factor ?? 1));
+            $sueltas = max(0, (int) round((float) $line->quantity_fractions) - $cajas * $factor);
+
+            return [$cajas, $sueltas];
         }
 
         $eq = BoxEquivalence::split(
