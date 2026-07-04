@@ -89,6 +89,39 @@ class EscpInvoiceServiceTest extends TestCase
         $this->assertStringContainsString('TOTAL:', $out);
     }
 
+    /**
+     * Regresión: línea MIXTA UN (bonificación "1 caja + 56 uds" de la factura
+     * real 002-001-01-03871160). Con quantity_fractions normalizado (152), la
+     * descomposición debe imprimir la caja en Cj y las sueltas en Und — antes
+     * la caja desaparecía y salía solo "56".
+     */
+    public function test_mixed_unit_line_prints_embedded_box_and_loose_units(): void
+    {
+        $manifest = Manifest::factory()->create(['number' => (string) (++static::$manifestSeq)]);
+        $invoice = Invoice::factory()->for($manifest)->create(['invoice_number' => 'F-MIX-ESCP']);
+
+        InvoiceLine::factory()->for($invoice)->create([
+            'product_id' => '82800087',
+            'product_description' => 'SOFRITO CRIOLLO 8X12X87GR',
+            'unit_sale' => 'UN',
+            'quantity_box' => 1,
+            'quantity_fractions' => 152,      // normalizado: 1 × 96 + 56
+            'quantity_min_sale' => 152,
+            'quantity_decimal' => 1.583,
+            'conversion_factor' => 96,
+            'subtotal' => 0,
+            'tax' => 0,
+            'tax18' => 0,
+            'total' => 0,
+        ]);
+        $invoice->load('lines');
+
+        $preview = app(EscpInvoiceService::class)->previewText(collect([$invoice]));
+
+        // Columna Cj = 1, Und = 56, luego el código de producto.
+        $this->assertMatchesRegularExpression('/^1\s+56\s+82800087/m', $preview);
+    }
+
     public function test_fixed_mode_uses_one_page_length_and_form_feed_per_invoice(): void
     {
         // Modo fixed (papel perforado, default): el largo de página se fija

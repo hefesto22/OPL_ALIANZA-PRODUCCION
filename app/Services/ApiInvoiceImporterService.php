@@ -9,6 +9,7 @@ use App\Models\Supplier;
 use App\Models\User;
 use App\Models\Warehouse;
 use App\Notifications\InvoicesImported;
+use App\Support\BoxEquivalence;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -590,17 +591,18 @@ class ApiInvoiceImporterService
             }
 
             foreach ($data['LineasFactura'] as $line) {
-                $cantidadFracciones = (float) ($line['CantidadFracciones'] ?? 0);
                 $cantidadCaja = (float) ($line['CantidadCaja'] ?? 0);
                 $factorConversion = max(1, (int) ($line['FactorConversion'] ?? 1));
 
-                // Para productos CJ (caja): Jaremar envía CantidadFracciones=0
-                // y CantidadCaja>0. quantity_fractions debe reflejar el total
-                // de fracciones disponibles para devolución:
-                //   CantidadCaja * FactorConversion
-                if ($cantidadFracciones == 0 && $cantidadCaja > 0) {
-                    $cantidadFracciones = $cantidadCaja * $factorConversion;
-                }
+                // quantity_fractions = TOTAL real de fracciones de la línea.
+                // Normaliza el caso CJ puro (fractions=0, cajas>0) Y las líneas
+                // MIXTAS de Jaremar (cajas>0 y fracciones>0 juntas, ej.
+                // bonificación "1 caja + 56 uds"). Ver BoxEquivalence::totalFractions.
+                $cantidadFracciones = BoxEquivalence::totalFractions(
+                    (float) ($line['CantidadFracciones'] ?? 0),
+                    $cantidadCaja,
+                    $factorConversion,
+                );
 
                 $allLines[] = [
                     'invoice_id' => $invoiceId,

@@ -240,6 +240,9 @@ class ManifestImporterService
                 }
 
                 foreach ($invoiceData['LineasFactura'] as $lineData) {
+                    $cantidadCaja = (float) ($lineData['CantidadCaja'] ?? 0);
+                    $factorConversion = max(1, (int) ($lineData['FactorConversion'] ?? 1));
+
                     $lineRows[] = [
                         'invoice_id' => $invoiceId,
                         'jaremar_line_id' => $lineData['Id'] ?? null,
@@ -249,11 +252,18 @@ class ManifestImporterService
                         'product_description' => (string) ($lineData['ProductoDesc'] ?? ''),
                         'product_type' => isset($lineData['TipoProducto']) ? (string) $lineData['TipoProducto'] : null,
                         'unit_sale' => isset($lineData['UniVenta']) ? (string) $lineData['UniVenta'] : null,
-                        'quantity_fractions' => (float) ($lineData['CantidadFracciones'] ?? 0),
+                        // Normalización defensiva: TOTAL real de fracciones,
+                        // incluyendo cajas embebidas de líneas mixtas (misma
+                        // regla que el import API). Ver BoxEquivalence::totalFractions.
+                        'quantity_fractions' => BoxEquivalence::totalFractions(
+                            (float) ($lineData['CantidadFracciones'] ?? 0),
+                            $cantidadCaja,
+                            $factorConversion,
+                        ),
                         'quantity_decimal' => (float) ($lineData['CantidadDecimal'] ?? 0),
-                        'quantity_box' => (float) ($lineData['CantidadCaja'] ?? 0),
+                        'quantity_box' => $cantidadCaja,
                         'quantity_min_sale' => (float) ($lineData['CantidadUnidadMinVenta'] ?? 0),
-                        'conversion_factor' => (int) ($lineData['FactorConversion'] ?? 1),
+                        'conversion_factor' => $factorConversion,
                         'cost' => (float) ($lineData['Costo'] ?? 0),
                         'price' => (float) ($lineData['Precio'] ?? 0),
                         'price_min_sale' => (float) ($lineData['PrecioUnidadMinVenta'] ?? 0),

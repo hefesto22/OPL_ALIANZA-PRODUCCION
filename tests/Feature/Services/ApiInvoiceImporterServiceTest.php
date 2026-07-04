@@ -519,6 +519,56 @@ class ApiInvoiceImporterServiceTest extends TestCase
         $this->assertSame(24, $line->conversion_factor);
     }
 
+    /**
+     * Regresión: línea MIXTA de Jaremar (CantidadCaja > 0 Y CantidadFracciones
+     * > 0 en la misma línea, ej. bonificación "1 caja + 56 uds" de la factura
+     * real 002-001-01-03871160). Antes quantity_fractions quedaba solo con las
+     * sueltas (56) y la caja se perdía en impresión y devoluciones.
+     */
+    public function test_mixed_line_normalizes_embedded_box_into_fractions(): void
+    {
+        $inv = $this->invoicePayload([
+            'Nfactura' => 'F-MIX-001',
+            'NumeroManifiesto' => 'MAN-MIX',
+            'LineasFactura' => [[
+                'ProductoId' => '82800087',
+                'ProductoDesc' => 'SOFRITO CRIOLLO 8X12X87GR',
+                'NumeroLinea' => 1,
+                'Total' => 0.0,               // bonificación: 100% descuento
+                'Precio' => 801.389,
+                'Subtotal' => 0.0,
+                'Costo' => 0.0,
+                'CantidadFracciones' => 56.0, // <-- solo las sueltas
+                'CantidadDecimal' => 1.583,
+                'CantidadCaja' => 1.0,        // <-- caja embebida en la misma línea
+                'FactorConversion' => 96,
+                'UniVenta' => 'UN',
+                'TipoProducto' => 'A',
+                'Descuento' => 1268.59,
+                'Impuesto' => 0.0,
+                'Impuesto18' => 0.0,
+                'PorcentajeDescuento' => 100.0,
+                'PorcentajeImpuesto' => 0.0,
+                'CantidadUnidadMinVenta' => 152.0,
+                'PrecioUnidadMinVenta' => 8.35,
+                'Peso' => 0.0,
+                'Volumen' => 0.0,
+                'Id' => 88002,
+                'InvoiceId' => 88002,
+            ]],
+        ]);
+
+        $this->service()->processBatch([$inv], $this->importRecord());
+
+        $invoiceId = Invoice::where('invoice_number', 'F-MIX-001')->value('id');
+        $line = InvoiceLine::where('invoice_id', $invoiceId)->first();
+
+        // 1 caja × 96 + 56 sueltas = 152 fracciones totales
+        $this->assertEquals(152.0, (float) $line->quantity_fractions);
+        $this->assertEquals(1.0, (float) $line->quantity_box);
+        $this->assertSame(96, $line->conversion_factor);
+    }
+
     // ═══════════════════════════════════════════════════════════════
     //  6. TOTALS RECALCULATION
     // ═══════════════════════════════════════════════════════════════

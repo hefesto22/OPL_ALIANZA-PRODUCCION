@@ -113,6 +113,62 @@ class ReturnServiceTest extends TestCase
         $this->assertSame($invoice->manifest_id, $return->manifest_id);
     }
 
+    /**
+     * Regresión: línea MIXTA de Jaremar ("1 caja + 56 uds", factura real
+     * 002-001-01-03871160). Con quantity_fractions normalizado (152 = 1×96+56)
+     * debe poder devolverse la mercadería COMPLETA. Antes quantity_fractions
+     * traía solo las sueltas (56) y el sistema rechazaba devolver más que eso,
+     * aunque físicamente se entregaron 152 unidades.
+     */
+    public function test_mixed_line_allows_returning_full_physical_quantity(): void
+    {
+        $manifest = Manifest::factory()->create();
+        $invoice = Invoice::factory()
+            ->for($manifest, 'manifest')
+            ->for($manifest->warehouse, 'warehouse')
+            ->create(['total' => 1520.00]);
+
+        $line = InvoiceLine::factory()->for($invoice, 'invoice')->create([
+            'unit_sale' => 'UN',
+            'quantity_box' => 1,
+            'quantity_fractions' => 152,   // normalizado: 1 × 96 + 56
+            'quantity_min_sale' => 152,
+            'quantity_decimal' => 1.583,
+            'conversion_factor' => 96,
+            'price_min_sale' => 10.0,
+            'price' => 960.0,
+            'subtotal' => 1520.00,
+            'tax' => 0,
+            'total' => 1520.00,
+        ]);
+        $invoice->load('lines');
+
+        $reason = ReturnReason::factory()->create();
+        $user = User::factory()->create();
+
+        $return = $this->service->createReturn([
+            'invoice_id' => $invoice->id,
+            'return_reason_id' => $reason->id,
+            'return_date' => now()->toDateString(),
+            'created_by' => $user->id,
+            'lines' => [
+                [
+                    'invoice_line_id' => $line->id,
+                    'line_number' => $line->line_number,
+                    'product_id' => $line->product_id,
+                    'product_description' => $line->product_description,
+                    'quantity_box' => 1,   // la caja embebida
+                    'quantity' => 56,      // + las sueltas → 152 fracciones
+                ],
+            ],
+        ]);
+
+        // 1×96 + 56 = 152 = todo lo facturado → devolución total, sin rechazo.
+        $this->assertSame('approved', $return->status);
+        $this->assertSame('total', $return->type);
+        $this->assertEqualsWithDelta(1520.00, (float) $return->total, 0.01);
+    }
+
     public function test_creates_return_lines_with_server_side_line_total(): void
     {
         $invoice = $this->makeInvoiceWithLines();

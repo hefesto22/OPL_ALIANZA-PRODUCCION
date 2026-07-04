@@ -37,4 +37,40 @@ class BoxEquivalenceTest extends TestCase
     {
         $this->assertSame(['cajas' => 0, 'sueltas' => 0], BoxEquivalence::split(-5, 96));
     }
+
+    // ── totalFractions: normalización de líneas de Jaremar ──────────────
+
+    public function test_total_fractions_adds_embedded_boxes_of_mixed_line(): void
+    {
+        // Línea MIXTA real (factura 002-001-01-03871160): 1 caja + 56 sueltas,
+        // factor 96 → 56 < 96, la caja NO puede estar incluida → 152.
+        $this->assertSame(152.0, BoxEquivalence::totalFractions(56.0, 1.0, 96));
+    }
+
+    public function test_total_fractions_normalizes_pure_box_line(): void
+    {
+        // Caso CJ puro (fracciones = 0): 12 cajas × 24 = 288.
+        $this->assertSame(288.0, BoxEquivalence::totalFractions(0.0, 12.0, 24));
+    }
+
+    public function test_total_fractions_keeps_pure_unit_line_untouched(): void
+    {
+        // UN puro (sin cajas): las fracciones ya son el total.
+        $this->assertSame(30.0, BoxEquivalence::totalFractions(30.0, 0.0, 96));
+    }
+
+    public function test_total_fractions_is_idempotent_on_normalized_line(): void
+    {
+        // Ya normalizada (152 >= 1 × 96): re-aplicar NO duplica la caja.
+        $this->assertSame(152.0, BoxEquivalence::totalFractions(152.0, 1.0, 96));
+        // CJ ya normalizada (fracciones = cajas × factor exacto): sin cambio.
+        $this->assertSame(288.0, BoxEquivalence::totalFractions(288.0, 12.0, 24));
+    }
+
+    public function test_total_fractions_with_invalid_factor_treats_factor_as_one(): void
+    {
+        // Factor 0/1: cada caja aporta 1 fracción como mínimo.
+        $this->assertSame(3.0, BoxEquivalence::totalFractions(1.0, 2.0, 0));
+        $this->assertSame(3.0, BoxEquivalence::totalFractions(1.0, 2.0, 1));
+    }
 }
