@@ -381,7 +381,7 @@ table.data tbody tr { page-break-inside: avoid; break-inside: avoid; }
     @endif
 
     <div class="report-footer">
-        Distribuidora Hosana &nbsp;·&nbsp; {{ $generatedAt }} &nbsp;·&nbsp; Manifiesto #{{ $manifest->number }}
+        Distribuciones Alianza &nbsp;·&nbsp; {{ $generatedAt }} &nbsp;·&nbsp; Manifiesto #{{ $manifest->number }}
     </div>
 </div>
 </div>
