@@ -58,6 +58,19 @@ class CustomPermissionSeeder extends Seeder
         'ExportExcel:Deposit',
         'ExportPdf:InvoiceReturn',
         'ExportExcel:InvoiceReturn',
+
+        // ── Visibilidad dentro de la vista del manifiesto ───────────
+        // Antes estas pestañas/botones se controlaban con hasRole/
+        // hasAnyRole inline — eso rompía con usuarios multi-rol
+        // (operador + finance perdía las pestañas financieras) y no era
+        // administrable desde Shield. Ahora cada pestaña/botón tiene su
+        // permiso y se gestiona desde "Permisos personalizados".
+        'ViewDeposits:Manifest',          // pestaña Depósitos del manifiesto
+        'ViewReturns:Manifest',           // pestaña Devoluciones del manifiesto
+        'ExportInvoicesPdf:Manifest',     // botón "Reporte PDF" (facturas)
+        'ExportProductsPdf:Manifest',     // botón "Sublista Productos"
+        'ExportChecklistPdf:Manifest',    // botón "Sublista Facturas"
+        'ExportReturnsPdf:Manifest',      // botón "Devoluciones" (reporte PDF)
     ];
 
     public function run(): void

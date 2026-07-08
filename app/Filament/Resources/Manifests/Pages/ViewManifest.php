@@ -104,7 +104,10 @@ class ViewManifest extends ViewRecord
                     $this->refreshFormData(['status', 'closed_at', 'closed_by']);
                 }),
 
-            // ── Registrar Depósito (super_admin, admin, encargado, finance) ──
+            // ── Registrar Depósito ──────────────────────────────────────
+            // Autorización vía DepositPolicy::create (permiso Create:Deposit,
+            // administrable desde Shield → Recursos → Deposit). Antes era un
+            // hasAnyRole inline que duplicaba —y podía contradecir— la matriz.
             Action::make('registrar_deposito')
                 ->label('Registrar Depósito')
                 ->icon('heroicon-o-banknotes')
@@ -113,7 +116,7 @@ class ViewManifest extends ViewRecord
                 ->hidden(function (): bool {
                     /** @var User $user */
                     $user = Auth::user();
-                    $noPermission = ! $user->hasAnyRole(['super_admin', 'admin', 'encargado', 'finance']);
+                    $noPermission = ! $user->can('create', \App\Models\Deposit::class);
 
                     return $this->record->isClosed() || (float) $this->record->difference === 0.0 || $noPermission;
                 })
@@ -199,13 +202,16 @@ class ViewManifest extends ViewRecord
                         ->send();
                 }),
 
-            // ── Reportes de facturas (super_admin, admin, encargado) ───
+            // ── Reportes de facturas ────────────────────────────────────
+            // Cada botón tiene su permiso custom (ManifestPolicy →
+            // ExportInvoicesPdf/ExportProductsPdf/ExportChecklistPdf:Manifest),
+            // administrable desde Shield → Permisos personalizados.
             ActionGroup::make([
                 Action::make('report_facturas_pdf')
                     ->label('Reporte PDF')
                     ->icon('heroicon-o-document-text')
                     ->color('danger')
-                    ->visible(fn (): bool => Auth::user()->hasAnyRole(['super_admin', 'admin', 'encargado', 'finance']))
+                    ->visible(fn (): bool => Auth::user()->can('exportInvoicesPdf', $this->record))
                     ->action(function (): void {
                         /** @var User $user */
                         $user = Auth::user();
@@ -228,6 +234,7 @@ class ViewManifest extends ViewRecord
                     ->label('Sublista Productos')
                     ->icon('heroicon-o-cube')
                     ->color('warning')
+                    ->visible(fn (): bool => Auth::user()->can('exportProductsPdf', $this->record))
                     ->action(function (): void {
                         /** @var User $user */
                         $user = Auth::user();
@@ -249,6 +256,7 @@ class ViewManifest extends ViewRecord
                     ->label('Sublista Facturas')
                     ->icon('heroicon-o-clipboard-document-check')
                     ->color('success')
+                    ->visible(fn (): bool => Auth::user()->can('exportChecklistPdf', $this->record))
                     ->action(function (): void {
                         /** @var User $user */
                         $user = Auth::user();
@@ -271,16 +279,20 @@ class ViewManifest extends ViewRecord
                 ->icon('heroicon-o-document-chart-bar')
                 ->color('gray')
                 ->button()
+                // El grupo aparece si el usuario puede ver AL MENOS un botón.
                 ->visible(function (): bool {
                     /** @var User $user */
                     $user = Auth::user();
 
-                    return $user->hasAnyRole(['super_admin', 'admin', 'encargado', 'operador']);
+                    return $user->can('exportInvoicesPdf', $this->record)
+                        || $user->can('exportProductsPdf', $this->record)
+                        || $user->can('exportChecklistPdf', $this->record);
                 }),
 
-            // ── Reporte PDF de devoluciones (super_admin, admin, encargado) ──
+            // ── Reporte PDF de devoluciones ─────────────────────────────
             // Jaremar consume los datos vía API; Hozana genera el PDF.
             // El modal permite filtrar por período antes de imprimir.
+            // Permiso custom ExportReturnsPdf:Manifest (ManifestPolicy).
             Action::make('report_devoluciones_pdf')
                 ->label('Devoluciones')
                 ->icon('heroicon-o-arrow-uturn-left')
@@ -290,7 +302,7 @@ class ViewManifest extends ViewRecord
                     /** @var User $user */
                     $user = Auth::user();
 
-                    return $this->record->returns()->exists() && $user->hasAnyRole(['super_admin', 'admin', 'encargado']);
+                    return $this->record->returns()->exists() && $user->can('exportReturnsPdf', $this->record);
                 })
                 ->modalHeading('Reporte de Devoluciones')
                 ->modalDescription('Selecciona el período que deseas incluir en el reporte.')

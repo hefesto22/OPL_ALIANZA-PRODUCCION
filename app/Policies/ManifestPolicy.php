@@ -100,6 +100,71 @@ class ManifestPolicy
     }
 
     /**
+     * Ver la pestaña "Depósitos" dentro de la vista del manifiesto.
+     *
+     * Permiso: ViewDeposits:Manifest (custom, ver CustomPermissionSeeder).
+     * Antes era `! hasRole('operador')` inline en el RelationManager — un
+     * blacklist que rompía con usuarios multi-rol: operador+finance perdía
+     * la pestaña aunque finance debía verla. Qué depósitos ve DENTRO de la
+     * pestaña lo sigue filtrando Deposit::visibleTo (jerarquía created_by).
+     */
+    public function viewDeposits(AuthUser $authUser, Manifest $manifest): bool
+    {
+        return $authUser->can('ViewDeposits:Manifest')
+            && $this->userOwnsManifest($authUser, $manifest);
+    }
+
+    /**
+     * Ver la pestaña "Devoluciones" dentro de la vista del manifiesto.
+     *
+     * Permiso: ViewReturns:Manifest (custom). Independiente de
+     * ViewAny:InvoiceReturn (navegación al recurso Devoluciones): el
+     * operador conserva el recurso para capturar devoluciones, pero la
+     * pestaña financiera del manifiesto se asigna por separado.
+     */
+    public function viewReturns(AuthUser $authUser, Manifest $manifest): bool
+    {
+        return $authUser->can('ViewReturns:Manifest')
+            && $this->userOwnsManifest($authUser, $manifest);
+    }
+
+    /**
+     * Botón "Reporte PDF" (reporte de facturas del manifiesto).
+     */
+    public function exportInvoicesPdf(AuthUser $authUser, Manifest $manifest): bool
+    {
+        return $authUser->can('ExportInvoicesPdf:Manifest')
+            && $this->userOwnsManifest($authUser, $manifest);
+    }
+
+    /**
+     * Botón "Sublista Productos" (reporte de productos por bodega).
+     */
+    public function exportProductsPdf(AuthUser $authUser, Manifest $manifest): bool
+    {
+        return $authUser->can('ExportProductsPdf:Manifest')
+            && $this->userOwnsManifest($authUser, $manifest);
+    }
+
+    /**
+     * Botón "Sublista Facturas" (checklist de facturas).
+     */
+    public function exportChecklistPdf(AuthUser $authUser, Manifest $manifest): bool
+    {
+        return $authUser->can('ExportChecklistPdf:Manifest')
+            && $this->userOwnsManifest($authUser, $manifest);
+    }
+
+    /**
+     * Botón "Devoluciones" (reporte PDF de devoluciones del manifiesto).
+     */
+    public function exportReturnsPdf(AuthUser $authUser, Manifest $manifest): bool
+    {
+        return $authUser->can('ExportReturnsPdf:Manifest')
+            && $this->userOwnsManifest($authUser, $manifest);
+    }
+
+    /**
      * ¿El usuario tiene acceso a este manifiesto según su bodega?
      *
      * Un manifiesto NO tiene una sola bodega: puede abarcar varias (las

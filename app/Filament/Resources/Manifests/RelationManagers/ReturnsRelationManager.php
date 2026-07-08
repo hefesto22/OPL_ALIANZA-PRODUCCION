@@ -25,12 +25,15 @@ class ReturnsRelationManager extends RelationManager
 
     protected static ?string $pluralLabel = 'Devoluciones';
 
+    /**
+     * La pestaña se rige por el permiso custom ViewReturns:Manifest
+     * (ManifestPolicy::viewReturns), administrable desde Shield →
+     * Permisos personalizados. Antes era `! hasRole('operador')` — un
+     * blacklist que ocultaba la pestaña a usuarios operador+finance.
+     */
     public static function canViewForRecord(\Illuminate\Database\Eloquent\Model $ownerRecord, string $pageClass): bool
     {
-        /** @var User $user */
-        $user = Auth::user();
-
-        return ! $user->hasRole('operador');
+        return Auth::user()?->can('viewReturns', $ownerRecord) ?? false;
     }
 
     public function table(Table $table): Table

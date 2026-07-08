@@ -213,6 +213,52 @@ class RolePermissionSeederTest extends TestCase
         $this->assertNotContains('Close:Manifest', $finance);
     }
 
+    /**
+     * Pestañas y botones de la vista del manifiesto (permisos custom).
+     *
+     * Regresión del fix 2026-07-08: la visibilidad era un blacklist de rol
+     * (`! hasRole('operador')`) que ocultaba Depósitos/Devoluciones a los
+     * usuarios multi-rol operador+finance. Ahora es permiso por pestaña/botón
+     * y esta matriz lo protege.
+     */
+    public function test_manifest_view_tab_and_button_permissions_per_matrix(): void
+    {
+        $this->seedShieldPermissions();
+        $this->seed(RolePermissionSeeder::class);
+
+        $perms = fn (string $role): array => Role::query()
+            ->where('name', $role)->first()->permissions->pluck('name')->all();
+
+        // ── admin y encargado: ven todo el bloque financiero del manifiesto ──
+        foreach (['admin', 'encargado'] as $role) {
+            $rolePerms = $perms($role);
+            $this->assertContains('ViewDeposits:Manifest', $rolePerms);
+            $this->assertContains('ViewReturns:Manifest', $rolePerms);
+            $this->assertContains('ExportInvoicesPdf:Manifest', $rolePerms);
+            $this->assertContains('ExportProductsPdf:Manifest', $rolePerms);
+            $this->assertContains('ExportChecklistPdf:Manifest', $rolePerms);
+            $this->assertContains('ExportReturnsPdf:Manifest', $rolePerms);
+        }
+
+        // ── operador: sublistas operativas SÍ, datos financieros NO ──
+        $operador = $perms('operador');
+        $this->assertContains('ExportProductsPdf:Manifest', $operador);
+        $this->assertContains('ExportChecklistPdf:Manifest', $operador);
+        $this->assertNotContains('ViewDeposits:Manifest', $operador);
+        $this->assertNotContains('ViewReturns:Manifest', $operador);
+        $this->assertNotContains('ExportInvoicesPdf:Manifest', $operador);
+        $this->assertNotContains('ExportReturnsPdf:Manifest', $operador);
+
+        // ── finance: pestañas financieras + Reporte PDF de facturas ──
+        $finance = $perms('finance');
+        $this->assertContains('ViewDeposits:Manifest', $finance);
+        $this->assertContains('ViewReturns:Manifest', $finance);
+        $this->assertContains('ExportInvoicesPdf:Manifest', $finance);
+        $this->assertNotContains('ExportProductsPdf:Manifest', $finance);
+        $this->assertNotContains('ExportChecklistPdf:Manifest', $finance);
+        $this->assertNotContains('ExportReturnsPdf:Manifest', $finance);
+    }
+
     public function test_super_admin_receives_no_explicit_permissions(): void
     {
         $this->seedShieldPermissions();

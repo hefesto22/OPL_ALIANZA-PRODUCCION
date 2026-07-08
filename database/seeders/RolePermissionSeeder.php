@@ -88,7 +88,12 @@ class RolePermissionSeeder extends Seeder
             'Deposit' => ['ViewAny', 'View', 'Create', 'Update', 'Delete', 'Restore', 'ExportPdf', 'ExportExcel'],
             'Invoice' => ['ViewAny', 'View', 'Update', 'Delete', 'Restore'],
             'InvoiceReturn' => ['ViewAny', 'View', 'Create', 'Update', 'Delete', 'Restore', 'ExportPdf', 'ExportExcel'],
-            'Manifest' => ['ViewAny', 'View', 'Update', 'Delete', 'Restore', 'Close', 'Reopen'],
+            'Manifest' => [
+                'ViewAny', 'View', 'Update', 'Delete', 'Restore', 'Close', 'Reopen',
+                // Pestañas y botones de la vista del manifiesto (custom).
+                'ViewDeposits', 'ViewReturns',
+                'ExportInvoicesPdf', 'ExportProductsPdf', 'ExportChecklistPdf', 'ExportReturnsPdf',
+            ],
             'ReturnReason' => ['ViewAny', 'View', 'Create', 'Update', 'Delete'],
             'User' => ['ViewAny', 'View', 'Create', 'Update'],
             'Warehouse' => ['ViewAny', 'View', 'Update'],
@@ -105,7 +110,11 @@ class RolePermissionSeeder extends Seeder
             'InvoiceReturn' => ['ViewAny', 'View', 'Create', 'Update', 'ExportPdf', 'ExportExcel'],
             // Close: el encargado cierra manifiestos de SU bodega (la Policy
             // lo filtra). Reopen NO — reabrir es sensible, queda en admin.
-            'Manifest' => ['ViewAny', 'View', 'Update', 'Close'],
+            'Manifest' => [
+                'ViewAny', 'View', 'Update', 'Close',
+                'ViewDeposits', 'ViewReturns',
+                'ExportInvoicesPdf', 'ExportProductsPdf', 'ExportChecklistPdf', 'ExportReturnsPdf',
+            ],
             'ReturnReason' => ['ViewAny', 'View'],
             'Warehouse' => ['ViewAny', 'View'],
         ],
@@ -117,7 +126,9 @@ class RolePermissionSeeder extends Seeder
             'Invoice' => ['ViewAny', 'View'],
             // Captura devoluciones e imprime su PDF. NO exporta Excel.
             'InvoiceReturn' => ['ViewAny', 'View', 'Create', 'ExportPdf'],
-            'Manifest' => ['ViewAny', 'View'],
+            // Sublistas operativas SÍ; pestañas financieras (Depósitos/
+            // Devoluciones) y Reporte PDF de facturas NO — datos financieros.
+            'Manifest' => ['ViewAny', 'View', 'ExportProductsPdf', 'ExportChecklistPdf'],
             'ReturnReason' => ['ViewAny', 'View'],
             'Warehouse' => ['ViewAny', 'View'],
         ],
@@ -129,7 +140,10 @@ class RolePermissionSeeder extends Seeder
             'Deposit' => ['ViewAny', 'View', 'Create', 'Update', 'ExportPdf', 'ExportExcel'],
             'Invoice' => ['ViewAny', 'View'],
             'InvoiceReturn' => ['ViewAny', 'View'],
-            'Manifest' => ['ViewAny', 'View'],
+            // Pestañas financieras del manifiesto + Reporte PDF de facturas.
+            // Un usuario operador+finance las ve porque finance las aporta
+            // (antes el blacklist de rol 'operador' se las ocultaba — bug).
+            'Manifest' => ['ViewAny', 'View', 'ViewDeposits', 'ViewReturns', 'ExportInvoicesPdf'],
             'Warehouse' => ['ViewAny', 'View'],
         ],
     ];

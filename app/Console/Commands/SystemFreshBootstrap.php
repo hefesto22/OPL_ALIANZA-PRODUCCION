@@ -309,7 +309,7 @@ class SystemFreshBootstrap extends Command
      *                                       (NO crea super_admin; AdminUserSeeder fue retirado)
      *                                       (RolePermissionSeeder hace graceful skip aquí)
      *   3. shield:generate --all          → genera permisos Shield (solo permisos, no policies)
-     *   4. db:seed CustomPermissionSeeder → crea los 6 permisos custom de botones
+     *   4. db:seed CustomPermissionSeeder → crea los permisos custom de botones/pestañas
      *   5. provisionSuperAdmin()          → crea el User super_admin + shield:super-admin
      *   6. db:seed RolePermissionSeeder   → asigna permisos a admin/encargado/operador/finance
      *   7. db:seed TestUsersSeeder        → crea 12 usuarios de bodega

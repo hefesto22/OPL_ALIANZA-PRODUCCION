@@ -240,6 +240,13 @@ return [
         'ExportExcel:Deposit',
         'ExportPdf:InvoiceReturn',
         'ExportExcel:InvoiceReturn',
+        // Visibilidad de pestañas y botones dentro de la vista del manifiesto.
+        'ViewDeposits:Manifest',
+        'ViewReturns:Manifest',
+        'ExportInvoicesPdf:Manifest',
+        'ExportProductsPdf:Manifest',
+        'ExportChecklistPdf:Manifest',
+        'ExportReturnsPdf:Manifest',
     ],
 
     /*

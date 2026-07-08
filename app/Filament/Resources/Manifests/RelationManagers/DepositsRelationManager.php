@@ -26,12 +26,15 @@ class DepositsRelationManager extends RelationManager
 
     protected static ?string $pluralLabel = 'Depósitos';
 
+    /**
+     * La pestaña se rige por el permiso custom ViewDeposits:Manifest
+     * (ManifestPolicy::viewDeposits), administrable desde Shield →
+     * Permisos personalizados. Antes era `! hasRole('operador')` — un
+     * blacklist que ocultaba la pestaña a usuarios operador+finance.
+     */
     public static function canViewForRecord(\Illuminate\Database\Eloquent\Model $ownerRecord, string $pageClass): bool
     {
-        /** @var \App\Models\User $user */
-        $user = \Illuminate\Support\Facades\Auth::user();
-
-        return ! $user->hasRole('operador');
+        return \Illuminate\Support\Facades\Auth::user()?->can('viewDeposits', $ownerRecord) ?? false;
     }
 
     public function table(Table $table): Table
