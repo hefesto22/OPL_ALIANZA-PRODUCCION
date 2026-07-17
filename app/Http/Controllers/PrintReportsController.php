@@ -675,6 +675,25 @@ class PrintReportsController extends Controller
         $this->enforceRowLimit($invoiceQuery, 'checklist de facturas');
         $invoices = $invoiceQuery->get();
 
+        // Facturas que llevan BONIFICACIÓN: al menos una línea con valor
+        // L 0.00 y mercadería real (misma definición que la sección de
+        // bonificaciones de la Sublista de Productos). Una sola query
+        // agregada (sin N+1) → el operador ve marcado en el checklist
+        // EXACTAMENTE qué facturas incluyen producto bonificado y lo
+        // verifica al entregar. Complemento del caso frijol 200gr
+        // (2026-07-16): la sublista dice QUÉ vino bonificado; el checklist
+        // dice EN CUÁLES facturas.
+        $bonusInvoiceIds = DB::table('invoice_lines')
+            ->whereIn('invoice_id', $invoices->pluck('id'))
+            ->where('total', '=', 0)
+            ->where(function ($q) {
+                $q->where('quantity_box', '>', 0)
+                    ->orWhere('quantity_fractions', '>', 0);
+            })
+            ->distinct()
+            ->pluck('invoice_id')
+            ->flip();
+
         // Agrupar por ruta con subtotales
         $byRoute = $invoices->groupBy('route_number')->map(function ($group) {
             return [
@@ -693,6 +712,7 @@ class PrintReportsController extends Controller
         $html = view('pdf.report-invoices-checklist', [
             'manifest' => $manifest,
             'byRoute' => $byRoute,
+            'bonusInvoiceIds' => $bonusInvoiceIds,
             'totals' => $totals,
             'supplier' => Supplier::first(),
             'generatedAt' => now()->format('d/m/Y H:i:s'),

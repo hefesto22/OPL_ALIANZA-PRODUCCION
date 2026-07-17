@@ -111,7 +111,25 @@ table.data col.col-num     { width: 22px; }
 table.data col.col-factura { width: 120px; }
 table.data col.col-cliente { /* auto fill */ }
 table.data col.col-total   { width: 70px; }
+table.data col.col-bonif   { width: 52px; }
 table.data col.col-check   { width: 24px; }
+.bonif-badge {
+    display: inline-block;
+    background: #dcfce7;
+    color: #166534;
+    border: 1px solid #16a34a;
+    border-radius: 4px;
+    font-size: 6pt;
+    font-weight: bold;
+    padding: 1px 4px;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+}
+.bonif-note {
+    margin-top: 6px;
+    font-size: 7pt;
+    color: #166534;
+}
 table.data thead tr { background: linear-gradient(135deg, #1e3a5f 0%, #2d5a8e 100%); color: #fff; }
 table.data thead th {
     padding: 5px 6px;
@@ -282,6 +300,7 @@ table.data tfoot { display: table-footer-group; }
             <col class="col-factura">
             <col class="col-cliente">
             <col class="col-total">
+            <col class="col-bonif">
             <col class="col-check">
         </colgroup>
         <thead>
@@ -290,6 +309,7 @@ table.data tfoot { display: table-footer-group; }
                 <th># Factura</th>
                 <th>Cliente</th>
                 <th class="r">Total (HNL)</th>
+                <th class="c">Bonif.</th>
                 <th class="c">&#10003;</th>
             </tr>
         </thead>
@@ -300,12 +320,14 @@ table.data tfoot { display: table-footer-group; }
                 <td><strong>{{ $invoice->invoice_number }}</strong></td>
                 <td>{{ $invoice->client_name }}</td>
                 <td class="r"><strong>L {{ number_format($invoice->total, 2) }}</strong></td>
+                <td class="c">@if(isset($bonusInvoiceIds) && $bonusInvoiceIds->has($invoice->id))<span class="bonif-badge">&#9733; BONIF.</span>@endif</td>
                 <td class="c"><span class="checkbox"></span></td>
             </tr>
             @endforeach
             <tr class="subtotal-row">
                 <td colspan="3">Subtotal Ruta {{ $route ?: '(Sin ruta)' }} — {{ $routeData['count'] }} facturas</td>
                 <td class="r">L {{ number_format($routeData['subtotal'], 2) }}</td>
+                <td></td>
                 <td></td>
             </tr>
         </tbody>
@@ -323,6 +345,7 @@ table.data tfoot { display: table-footer-group; }
             <col class="col-factura">
             <col class="col-cliente">
             <col class="col-total">
+            <col class="col-bonif">
             <col class="col-check">
         </colgroup>
         <tfoot>
@@ -330,9 +353,20 @@ table.data tfoot { display: table-footer-group; }
                 <td colspan="3"><strong>TOTAL GENERAL — {{ $totals['count'] }} facturas</strong></td>
                 <td class="r">L {{ number_format($totals['total'], 2) }}</td>
                 <td></td>
+                <td></td>
             </tr>
         </tfoot>
     </table>
+
+    {{-- Leyenda de bonificaciones: solo si alguna factura lleva --}}
+    @if(isset($bonusInvoiceIds) && $bonusInvoiceIds->count() > 0)
+    <div class="bonif-note">
+        <span class="bonif-badge">&#9733; BONIF.</span>
+        = la factura incluye producto de bonificaci&oacute;n (valor L 0.00) —
+        {{ $bonusInvoiceIds->count() }} de {{ $totals['count'] }} facturas llevan bonificaci&oacute;n.
+        El detalle de productos bonificados est&aacute; en la Sublista de Productos.
+    </div>
+    @endif
     @endif
 
     {{-- VERIFICATION SECTION --}}
