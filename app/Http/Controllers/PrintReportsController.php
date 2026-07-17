@@ -9,6 +9,7 @@ use App\Models\Manifest;
 use App\Models\ManifestWarehouseTotal;
 use App\Models\Supplier;
 use App\Support\BoxEquivalence;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Crypt;
@@ -41,6 +42,8 @@ class PrintReportsController extends Controller
         if (! empty($data['status'])) {
             $query->where('status', $data['status']);
         }
+
+        $this->applyManifestPayloadFilters($query, $data);
 
         $this->enforceRowLimit($query, 'manifiestos');
         $manifests = $query->get();
@@ -102,6 +105,8 @@ class PrintReportsController extends Controller
         if (! empty($data['status'])) {
             $query->where('status', $data['status']);
         }
+
+        $this->applyManifestPayloadFilters($query, $data);
 
         $this->enforceRowLimit($query, 'manifiestos (sin ISV)');
         $manifests = $query->get();
@@ -724,6 +729,33 @@ class PrintReportsController extends Controller
     }
 
     // ── Helpers ───────────────────────────────────────────────────
+
+    /**
+     * Filtros comunes de los reportes de manifiestos (PDF y Sin ISV).
+     *
+     *  - manifest_ids:  selección explícita desde la tabla (bulk action) —
+     *    el reporte incluye SOLO los manifiestos marcados.
+     *  - warehouse_ids: scoping por bodega del usuario, capturado en la UI
+     *    (donde Auth existe). Espejo EXACTO del listado
+     *    (ManifestResource::getEloquentQuery): un manifiesto pertenece a la
+     *    bodega si tiene facturas con ese warehouse_id — NO por
+     *    manifests.warehouse_id, porque un manifiesto puede abarcar varias.
+     *    Vacío = usuario global, sin filtro.
+     */
+    private function applyManifestPayloadFilters(Builder $query, array $data): void
+    {
+        if (! empty($data['manifest_ids']) && is_array($data['manifest_ids'])) {
+            $query->whereIn('id', array_values(array_map('intval', $data['manifest_ids'])));
+        }
+
+        $warehouseIds = $this->warehouseIdsFromPayload($data);
+
+        if ($warehouseIds !== []) {
+            $query->whereHas('invoices', function (Builder $q) use ($warehouseIds) {
+                $q->whereIn('warehouse_id', $warehouseIds);
+            });
+        }
+    }
 
     /**
      * Normaliza los IDs de bodega del payload.

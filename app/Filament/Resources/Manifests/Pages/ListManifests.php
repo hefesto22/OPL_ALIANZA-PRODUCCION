@@ -177,10 +177,13 @@ class ListManifests extends ListRecords
                     ->action(function (array $data): void {
                         ['date_from' => $from, 'date_to' => $to] = $this->resolvePeriodDates($data);
 
+                        // warehouse_ids: usuarios de bodega solo imprimen SUS
+                        // bodegas (espejo del scoping del listado). Global = [].
                         $payload = Crypt::encryptString(json_encode([
                             'date_from' => $from,
                             'date_to' => $to,
                             'status' => $data['status'] ?? null,
+                            'warehouse_ids' => WarehouseScope::getWarehouseIds(),
                         ]));
 
                         $this->js("window.open('/imprimir/reportes/manifiestos?payload=".urlencode($payload)."', '_blank')");
@@ -203,6 +206,7 @@ class ListManifests extends ListRecords
                             'date_from' => $from,
                             'date_to' => $to,
                             'status' => $data['status'] ?? null,
+                            'warehouse_ids' => WarehouseScope::getWarehouseIds(),
                         ]));
 
                         $this->js("window.open('/imprimir/reportes/manifiestos-sin-isv?payload=".urlencode($payload)."', '_blank')");

@@ -7,6 +7,7 @@ use App\Exports\ManifestsExport;
 use App\Exports\ReturnsDetailExport;
 use App\Exports\ReturnsExport;
 use App\Models\Deposit;
+use App\Models\Invoice;
 use App\Models\InvoiceReturn;
 use App\Models\Manifest;
 use App\Models\ReturnLine;
@@ -56,6 +57,18 @@ class ExportMultiTenantTest extends TestCase
         $oacManifest = Manifest::factory()->create(['warehouse_id' => $this->oac->id]);
         $oasManifest = Manifest::factory()->create(['warehouse_id' => $this->oas->id]);
 
+        // La pertenencia a bodega se define por las FACTURAS del manifiesto
+        // (espejo de ManifestResource::getEloquentQuery), no por
+        // manifests.warehouse_id — un manifiesto puede abarcar varias bodegas.
+        Invoice::factory()->create([
+            'manifest_id' => $oacManifest->id,
+            'warehouse_id' => $this->oac->id,
+        ]);
+        Invoice::factory()->create([
+            'manifest_id' => $oasManifest->id,
+            'warehouse_id' => $this->oas->id,
+        ]);
+
         $export = new ManifestsExport(warehouseIds: [$this->oac->id]);
         $ids = $export->query()->pluck('id')->toArray();
 
@@ -65,6 +78,47 @@ class ExportMultiTenantTest extends TestCase
             $ids,
             'Un export con warehouseId=OAC NO debe devolver manifiestos de OAS.'
         );
+    }
+
+    public function test_manifests_export_includes_multi_warehouse_manifest(): void
+    {
+        // Manifiesto MIXTO: facturas de OAC y OAS. Debe aparecer en el
+        // export de AMBAS bodegas (regresión del fix 2026-07-17: el
+        // whereIn('warehouse_id') directo lo excluía de una de las dos
+        // aunque el usuario lo viera en su listado).
+        $mixed = Manifest::factory()->create(['warehouse_id' => $this->oac->id]);
+
+        Invoice::factory()->create([
+            'manifest_id' => $mixed->id,
+            'warehouse_id' => $this->oac->id,
+        ]);
+        Invoice::factory()->create([
+            'manifest_id' => $mixed->id,
+            'warehouse_id' => $this->oas->id,
+        ]);
+
+        foreach ([$this->oac, $this->oas] as $warehouse) {
+            $export = new ManifestsExport(warehouseIds: [$warehouse->id]);
+
+            $this->assertContains(
+                $mixed->id,
+                $export->query()->pluck('id')->toArray(),
+                "El manifiesto mixto debe aparecer en el export de {$warehouse->code}."
+            );
+        }
+    }
+
+    public function test_manifests_export_filters_by_selected_ids(): void
+    {
+        // Bulk action: el export incluye SOLO los manifiestos marcados.
+        $selected = Manifest::factory()->create(['warehouse_id' => $this->oac->id]);
+        $notSelected = Manifest::factory()->create(['warehouse_id' => $this->oac->id]);
+
+        $export = new ManifestsExport(manifestIds: [$selected->id]);
+        $ids = $export->query()->pluck('id')->toArray();
+
+        $this->assertContains($selected->id, $ids);
+        $this->assertNotContains($notSelected->id, $ids);
     }
 
     public function test_manifests_export_without_warehouse_id_sees_all(): void

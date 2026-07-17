@@ -36,12 +36,15 @@ class ManifestsExport implements FromQuery, ShouldAutoSize, ShouldQueue, WithChu
      *                                         en el call site con
      *                                         WarehouseScope::getWarehouseIds()
      *                                         porque el job corre sin Auth.
+     * @param  array<int, int>  $manifestIds   Selección explícita desde la tabla
+     *                                         (bulk action). `[]` = sin filtro.
      */
     public function __construct(
         private readonly ?string $status = null,
         private readonly ?string $dateFrom = null,
         private readonly ?string $dateTo = null,
         private readonly array $warehouseIds = [],
+        private readonly array $manifestIds = [],
     ) {}
 
     public function chunkSize(): int
@@ -66,9 +69,21 @@ class ManifestsExport implements FromQuery, ShouldAutoSize, ShouldQueue, WithChu
             $query->whereDate('date', '<=', $this->dateTo);
         }
 
+        // Selección explícita (bulk action): solo los manifiestos marcados.
+        if ($this->manifestIds !== []) {
+            $query->whereIn('id', $this->manifestIds);
+        }
+
         // Multi-tenant: usuarios de bodega solo ven sus bodegas.
+        // Espejo del listado (ManifestResource::getEloquentQuery): la
+        // pertenencia se define por las FACTURAS del manifiesto, no por
+        // manifests.warehouse_id — un manifiesto puede abarcar varias
+        // bodegas y el whereIn directo lo excluía del Excel aunque el
+        // usuario lo viera en su listado.
         if ($this->warehouseIds !== []) {
-            $query->whereIn('warehouse_id', $this->warehouseIds);
+            $query->whereHas('invoices', function (Builder $q) {
+                $q->whereIn('warehouse_id', $this->warehouseIds);
+            });
         }
 
         return $query->orderBy('date', 'desc');

@@ -259,6 +259,44 @@ class RolePermissionSeederTest extends TestCase
         $this->assertNotContains('ExportReturnsPdf:Manifest', $finance);
     }
 
+    /**
+     * Reportes globales del listado de manifiestos (permisos custom 2026-07-17).
+     *
+     * finance imprime PDF / Sin ISV / Excel (scoped a sus bodegas vía payload),
+     * pero NO el comparativo por bodega — ese se asigna caso por caso desde
+     * Shield → Permisos personalizados.
+     */
+    public function test_manifest_list_report_permissions_per_matrix(): void
+    {
+        $this->seedShieldPermissions();
+        $this->seed(RolePermissionSeeder::class);
+
+        $perms = fn (string $role): array => Role::query()
+            ->where('name', $role)->first()->permissions->pluck('name')->all();
+
+        // ── admin: los 4 reportes del listado ──
+        $admin = $perms('admin');
+        foreach (['ReportPdf', 'ReportPdfSinIsv', 'ReportWarehouseSales', 'ExportExcel'] as $action) {
+            $this->assertContains("{$action}:Manifest", $admin);
+        }
+
+        // ── finance: PDF, Sin ISV y Excel — comparativo por bodega NO ──
+        $finance = $perms('finance');
+        $this->assertContains('ReportPdf:Manifest', $finance);
+        $this->assertContains('ReportPdfSinIsv:Manifest', $finance);
+        $this->assertContains('ExportExcel:Manifest', $finance);
+        $this->assertNotContains('ReportWarehouseSales:Manifest', $finance);
+
+        // ── encargado y operador: ninguno de los reportes del listado ──
+        foreach (['encargado', 'operador'] as $role) {
+            $rolePerms = $perms($role);
+            $this->assertNotContains('ReportPdf:Manifest', $rolePerms);
+            $this->assertNotContains('ReportPdfSinIsv:Manifest', $rolePerms);
+            $this->assertNotContains('ReportWarehouseSales:Manifest', $rolePerms);
+            $this->assertNotContains('ExportExcel:Manifest', $rolePerms);
+        }
+    }
+
     public function test_super_admin_receives_no_explicit_permissions(): void
     {
         $this->seedShieldPermissions();

@@ -148,8 +148,11 @@ class RolePermissionSeeder extends Seeder
             'Manifest' => [
                 'ViewAny', 'View', 'ViewDeposits', 'ViewReturns', 'ExportInvoicesPdf',
                 // Reportes globales del listado de manifiestos (2026-07-17):
-                // finanzas genera los 4 reportes para conciliación.
-                'ReportPdf', 'ReportPdfSinIsv', 'ReportWarehouseSales', 'ExportExcel',
+                // PDF, Sin ISV y Excel para conciliación (scoped a sus bodegas).
+                // ReportWarehouseSales NO — es comparativo entre bodegas; se
+                // asigna caso por caso desde Shield → Permisos personalizados
+                // (ojo: re-correr este seeder revierte lo asignado a mano).
+                'ReportPdf', 'ReportPdfSinIsv', 'ExportExcel',
             ],
             'Warehouse' => ['ViewAny', 'View'],
         ],

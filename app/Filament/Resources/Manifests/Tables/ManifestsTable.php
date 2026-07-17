@@ -2,12 +2,16 @@
 
 namespace App\Filament\Resources\Manifests\Tables;
 
+use App\Exports\ManifestsExport;
 use App\Filament\Resources\Manifests\ManifestResource;
+use App\Jobs\NotifyExportReady;
 use App\Models\Manifest;
 use App\Models\User;
 use App\Models\Warehouse;
+use App\Support\WarehouseScope;
 use Carbon\Carbon;
 use Filament\Actions\Action;
+use Filament\Actions\BulkAction;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
@@ -21,7 +25,10 @@ use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Crypt;
+use Livewire\Component;
 
 class ManifestsTable
 {
@@ -469,7 +476,73 @@ class ManifestsTable
             ])
 
             ->toolbarActions([
+                // NOTA: los reportes NO usan deselectRecordsAfterCompletion()
+                // a propósito — mismo criterio que las facturas (2026-07-03):
+                // el usuario genera varios reportes con la MISMA selección.
                 BulkActionGroup::make([
+                    // ── Reportes de manifiestos SELECCIONADOS ──────────
+                    // Mismos permisos custom que el grupo "Reportes" del
+                    // header (CustomPermissionSeeder). El payload lleva los
+                    // IDs marcados + bodegas del usuario; el controlador
+                    // aplica ambos filtros (PrintReportsController::
+                    // applyManifestPayloadFilters).
+                    BulkAction::make('report_pdf_seleccionados')
+                        ->label('Ver Reporte PDF')
+                        ->icon('heroicon-o-document-text')
+                        ->color('danger')
+                        ->visible(fn (): bool => Auth::user()->can('ReportPdf:Manifest'))
+                        ->action(function (Collection $records, Component $livewire): void {
+                            $payload = Crypt::encryptString(json_encode([
+                                'manifest_ids' => $records->pluck('id')->all(),
+                                'warehouse_ids' => WarehouseScope::getWarehouseIds(),
+                            ]));
+
+                            $livewire->js("window.open('/imprimir/reportes/manifiestos?payload=".urlencode($payload)."', '_blank')");
+                        }),
+
+                    BulkAction::make('report_sin_isv_seleccionados')
+                        ->label('Ver Reporte Sin ISV')
+                        ->icon('heroicon-o-document-minus')
+                        ->color('warning')
+                        ->visible(fn (): bool => Auth::user()->can('ReportPdfSinIsv:Manifest'))
+                        ->action(function (Collection $records, Component $livewire): void {
+                            $payload = Crypt::encryptString(json_encode([
+                                'manifest_ids' => $records->pluck('id')->all(),
+                                'warehouse_ids' => WarehouseScope::getWarehouseIds(),
+                            ]));
+
+                            $livewire->js("window.open('/imprimir/reportes/manifiestos-sin-isv?payload=".urlencode($payload)."', '_blank')");
+                        }),
+
+                    BulkAction::make('export_excel_seleccionados')
+                        ->label('Exportar Excel')
+                        ->icon('heroicon-o-table-cells')
+                        ->color('success')
+                        ->visible(fn (): bool => Auth::user()->can('ExportExcel:Manifest'))
+                        ->action(function (Collection $records): void {
+                            $fileName = 'manifiestos_seleccionados_'.now()->format('Y-m-d_His').'.xlsx';
+                            $filePath = "exports/{$fileName}";
+
+                            // WarehouseScope/Auth se capturan ACÁ (donde hay
+                            // sesión) — dentro del worker Auth::user() es null.
+                            (new ManifestsExport(
+                                warehouseIds: WarehouseScope::getWarehouseIds(),
+                                manifestIds: $records->pluck('id')->all(),
+                            ))->queue($filePath, 'local')->chain([
+                                (new NotifyExportReady(
+                                    userId: Auth::id(),
+                                    filePath: $filePath,
+                                    fileName: $fileName,
+                                ))->onQueue('high'),
+                            ]);
+
+                            Notification::make()
+                                ->title('Exportación en proceso')
+                                ->body("El archivo {$fileName} se está generando. Te notificaremos cuando esté listo.")
+                                ->info()
+                                ->send();
+                        }),
+
                     DeleteBulkAction::make()
                         ->visible(function (): bool {
                             /** @var User $user */
