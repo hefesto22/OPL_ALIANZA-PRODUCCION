@@ -574,6 +574,38 @@ class PrintReportsController extends Controller
             $totalLoose += $eq['sueltas'];
         }
 
+        // ── Bonificaciones: transparencia anti-reclamo ──────────────────
+        // Líneas con valor L 0.00 pero mercadería real (bonificación de
+        // Jaremar). Estas cantidades YA están sumadas en las filas y totales
+        // de arriba — la query principal no filtra por total. Se listan
+        // aparte, después del TOTAL GENERAL, SOLO como información: así la
+        // bodega identifica qué mercadería vino bonificada y no reporta
+        // "la bonificación no aparece en el manifiesto" (caso frijol 200gr,
+        // factura 002-001-01-03887790, 2026-07-16). Misma matemática de
+        // unidades que la query principal para no perder cajas de líneas
+        // mixtas o crudas.
+        $bonusProducts = DB::table('invoice_lines')
+            ->whereIn('invoice_id', $invoiceIds)
+            ->where('total', '=', 0)
+            ->where(function ($q) {
+                $q->where('quantity_box', '>', 0)
+                    ->orWhere('quantity_fractions', '>', 0);
+            })
+            ->select(
+                'product_id',
+                DB::raw('MIN(product_description) as product_description'),
+                DB::raw("STRING_AGG(DISTINCT unit_sale, '/' ORDER BY unit_sale) as unit_sale"),
+                DB::raw('SUM(CASE
+                    WHEN quantity_fractions < quantity_box * conversion_factor
+                    THEN quantity_box * conversion_factor + quantity_fractions
+                    ELSE quantity_fractions
+                END) as total_units'),
+                DB::raw('MAX(conversion_factor) as conversion_factor'),
+            )
+            ->groupBy('product_id')
+            ->orderBy('product_id')
+            ->get();
+
         // TOTAL GENERAL = suma de los TOTALES DE FACTURA (valor fiscal real), NO
         // la suma de las líneas. El total de cada factura de Jaremar no siempre
         // cuadra exacto con la suma de sus líneas (redondeo del proveedor); el
@@ -590,6 +622,7 @@ class PrintReportsController extends Controller
         $html = view('pdf.report-products', [
             'manifest' => $manifest,
             'products' => $products,
+            'bonusProducts' => $bonusProducts,
             'totals' => $totals,
             'supplier' => Supplier::first(),
             'generatedAt' => now()->format('d/m/Y H:i:s'),

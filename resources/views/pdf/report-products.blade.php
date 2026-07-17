@@ -144,6 +144,34 @@ table.data tfoot td { padding: 5px 4px; font-size: 7pt; }
 table.data tfoot td.r { text-align: right; white-space: nowrap; }
 table.data tfoot td.c { text-align: center; }
 
+/* ── Bonus (bonificaciones) section ───────────────────────────── */
+.bonus-section {
+    margin-top: 14px;
+    border: 2px solid #16a34a;
+    border-radius: 8px;
+    padding: 10px 12px;
+    background: #f0fdf4;
+    page-break-inside: avoid;
+    break-inside: avoid;
+}
+.bonus-title {
+    font-size: 8.5pt;
+    font-weight: bold;
+    color: #166534;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+}
+table.data.bonus-table thead tr { background: #16a34a; }
+table.data.bonus-table tbody tr:nth-child(even) { background: #ecfdf5; }
+.bonus-legend {
+    margin-top: 8px;
+    font-size: 7.5pt;
+    color: #166534;
+    line-height: 1.5;
+}
+.bonus-legend strong { text-transform: uppercase; }
+
 /* ── Verification section ─────────────────────────────────────── */
 .verification-section {
     margin-top: 24px;
@@ -351,6 +379,57 @@ table.data tbody tr { page-break-inside: avoid; break-inside: avoid; }
     </table>
     @else
     <p style="text-align:center; color:#888; padding:20px;">No se encontraron productos para este manifiesto.</p>
+    @endif
+
+    {{-- BONIFICACIONES (solo informativo — ya incluidas en los totales de arriba) --}}
+    @if(isset($bonusProducts) && $bonusProducts->count() > 0)
+    <div class="bonus-section">
+        <div class="bonus-title">&#9733; Bonificaciones incluidas en este manifiesto — {{ $bonusProducts->count() }} {{ $bonusProducts->count() === 1 ? 'producto' : 'productos' }}</div>
+        <table class="data bonus-table">
+            <colgroup>
+                <col class="col-num">
+                <col class="col-code">
+                <col class="col-desc">
+                <col class="col-udc">
+                <col class="col-boxes">
+                <col class="col-units">
+            </colgroup>
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Codigo</th>
+                    <th>Descripcion</th>
+                    <th class="c">Udc.</th>
+                    <th class="c">Cajas</th>
+                    <th class="c">Unid.</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach($bonusProducts as $i => $bonus)
+                @php
+                    $eqBonus = \App\Support\BoxEquivalence::split(
+                        (int) round((float) $bonus->total_units),
+                        (int) ($bonus->conversion_factor ?? 0),
+                    );
+                @endphp
+                <tr>
+                    <td class="row-num">{{ $i + 1 }}</td>
+                    <td class="code">{{ $bonus->product_id }}</td>
+                    <td>{{ $bonus->product_description }}</td>
+                    <td class="c">{{ $bonus->unit_sale ?? '—' }}</td>
+                    <td class="c">{{ $eqBonus['cajas'] > 0 ? number_format($eqBonus['cajas']) : '' }}</td>
+                    <td class="c">{{ $eqBonus['sueltas'] > 0 ? number_format($eqBonus['sueltas']) : '' }}</td>
+                </tr>
+                @endforeach
+            </tbody>
+        </table>
+        <div class="bonus-legend">
+            <strong>Estas cantidades vinieron como bonificaci&oacute;n (valor L 0.00).</strong>
+            Ya est&aacute;n sumadas en las filas y totales de arriba — esta lista es solo informativa
+            para que bodega identifique la mercader&iacute;a bonificada al momento de verificar la entrega.
+            No afecta el Total General.
+        </div>
+    </div>
     @endif
 
     {{-- VERIFICATION CHECKLIST --}}
