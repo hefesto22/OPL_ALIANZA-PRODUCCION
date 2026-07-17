@@ -36,8 +36,8 @@ class ManifestsExport implements FromQuery, ShouldAutoSize, ShouldQueue, WithChu
      *                                         en el call site con
      *                                         WarehouseScope::getWarehouseIds()
      *                                         porque el job corre sin Auth.
-     * @param  array<int, int>  $manifestIds   Selección explícita desde la tabla
-     *                                         (bulk action). `[]` = sin filtro.
+     * @param  array<int, int>  $manifestIds  Selección explícita desde la tabla
+     *                                        (bulk action). `[]` = sin filtro.
      */
     public function __construct(
         private readonly ?string $status = null,
