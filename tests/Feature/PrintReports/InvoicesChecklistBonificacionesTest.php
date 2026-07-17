@@ -31,7 +31,7 @@ class InvoicesChecklistBonificacionesTest extends TestCase
 
     /**
      * @param  array<int, array<int, array<string, mixed>>>  $invoicesLines
-     *         Lista de facturas; cada una es una lista de attrs de líneas.
+     *                                                                       Lista de facturas; cada una es una lista de attrs de líneas.
      */
     private function makeManifest(array $invoicesLines): Manifest
     {
