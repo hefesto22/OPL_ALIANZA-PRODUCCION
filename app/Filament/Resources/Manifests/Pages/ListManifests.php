@@ -169,6 +169,7 @@ class ListManifests extends ListRecords
                     ->label('Ver Reporte PDF')
                     ->icon('heroicon-o-document-text')
                     ->color('danger')
+                    ->visible(fn (): bool => Auth::user()->can('ReportPdf:Manifest'))
                     ->schema(self::periodSchema())
                     ->modalHeading('Reporte de Manifiestos — PDF')
                     ->modalDescription('Seleccioná el período y filtros para generar el reporte.')
@@ -190,6 +191,7 @@ class ListManifests extends ListRecords
                     ->label('Ver Reporte Sin ISV')
                     ->icon('heroicon-o-document-minus')
                     ->color('warning')
+                    ->visible(fn (): bool => Auth::user()->can('ReportPdfSinIsv:Manifest'))
                     ->schema(self::periodSchema())
                     ->modalHeading('Reporte de Manifiestos — Sin ISV')
                     ->modalDescription('Seleccioná el período y filtros para generar el reporte con valores netos sin ISV.')
@@ -211,6 +213,7 @@ class ListManifests extends ListRecords
                     ->label('Reporte por Bodega')
                     ->icon('heroicon-o-building-office-2')
                     ->color('info')
+                    ->visible(fn (): bool => Auth::user()->can('ReportWarehouseSales:Manifest'))
                     ->schema(self::periodSchema(withDateField: true))
                     ->modalHeading('Reporte de Ventas por Bodega')
                     ->modalDescription('Compara facturación, devoluciones y venta neta de cada bodega en el período seleccionado.')
@@ -233,6 +236,7 @@ class ListManifests extends ListRecords
                     ->label('Exportar Excel')
                     ->icon('heroicon-o-table-cells')
                     ->color('success')
+                    ->visible(fn (): bool => Auth::user()->can('ExportExcel:Manifest'))
                     ->schema(self::periodSchema())
                     ->modalHeading('Exportar Manifiestos — Excel')
                     ->modalDescription('Seleccioná el período y filtros para exportar.')
@@ -270,11 +274,20 @@ class ListManifests extends ListRecords
                 ->label('Reportes')
                 ->icon('heroicon-o-document-chart-bar')
                 ->color('gray')
+                // Permisos custom (CustomPermissionSeeder), administrables
+                // desde Shield → Permisos personalizados. El grupo se
+                // muestra si el usuario tiene AL MENOS uno de los cuatro.
+                // super_admin pasa vía intercept_gate de Shield.
                 ->visible(function (): bool {
                     /** @var \App\Models\User $user */
                     $user = Auth::user();
 
-                    return $user->hasAnyRole(['super_admin', 'admin']);
+                    return $user->canAny([
+                        'ReportPdf:Manifest',
+                        'ReportPdfSinIsv:Manifest',
+                        'ReportWarehouseSales:Manifest',
+                        'ExportExcel:Manifest',
+                    ]);
                 }),
         ];
     }

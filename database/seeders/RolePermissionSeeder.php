@@ -93,6 +93,8 @@ class RolePermissionSeeder extends Seeder
                 // Pestañas y botones de la vista del manifiesto (custom).
                 'ViewDeposits', 'ViewReturns',
                 'ExportInvoicesPdf', 'ExportProductsPdf', 'ExportChecklistPdf', 'ExportReturnsPdf',
+                // Reportes globales del listado de manifiestos (custom).
+                'ReportPdf', 'ReportPdfSinIsv', 'ReportWarehouseSales', 'ExportExcel',
             ],
             'ReturnReason' => ['ViewAny', 'View', 'Create', 'Update', 'Delete'],
             'User' => ['ViewAny', 'View', 'Create', 'Update'],
@@ -143,7 +145,12 @@ class RolePermissionSeeder extends Seeder
             // Pestañas financieras del manifiesto + Reporte PDF de facturas.
             // Un usuario operador+finance las ve porque finance las aporta
             // (antes el blacklist de rol 'operador' se las ocultaba — bug).
-            'Manifest' => ['ViewAny', 'View', 'ViewDeposits', 'ViewReturns', 'ExportInvoicesPdf'],
+            'Manifest' => [
+                'ViewAny', 'View', 'ViewDeposits', 'ViewReturns', 'ExportInvoicesPdf',
+                // Reportes globales del listado de manifiestos (2026-07-17):
+                // finanzas genera los 4 reportes para conciliación.
+                'ReportPdf', 'ReportPdfSinIsv', 'ReportWarehouseSales', 'ExportExcel',
+            ],
             'Warehouse' => ['ViewAny', 'View'],
         ],
     ];

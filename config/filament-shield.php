@@ -247,6 +247,11 @@ return [
         'ExportProductsPdf:Manifest',
         'ExportChecklistPdf:Manifest',
         'ExportReturnsPdf:Manifest',
+        // Reportes globales del listado de manifiestos (ListManifests).
+        'ReportPdf:Manifest',
+        'ReportPdfSinIsv:Manifest',
+        'ReportWarehouseSales:Manifest',
+        'ExportExcel:Manifest',
     ],
 
     /*

@@ -71,6 +71,17 @@ class CustomPermissionSeeder extends Seeder
         'ExportProductsPdf:Manifest',     // botón "Sublista Productos"
         'ExportChecklistPdf:Manifest',    // botón "Sublista Facturas"
         'ExportReturnsPdf:Manifest',      // botón "Devoluciones" (reporte PDF)
+
+        // ── Reportes globales del listado de manifiestos ────────────
+        // Grupo "Reportes" en ListManifests (header actions). Antes
+        // gateado con hasAnyRole(['super_admin','admin']) inline — el
+        // último remanente del anti-patrón. Son acciones de listado
+        // (sin registro), se chequean con can('Permiso') directo, igual
+        // que ExportPdf:Deposit en ListDeposits.
+        'ReportPdf:Manifest',             // botón "Ver Reporte PDF"
+        'ReportPdfSinIsv:Manifest',       // botón "Ver Reporte Sin ISV"
+        'ReportWarehouseSales:Manifest',  // botón "Reporte por Bodega"
+        'ExportExcel:Manifest',           // botón "Exportar Excel"
     ];
 
     public function run(): void
