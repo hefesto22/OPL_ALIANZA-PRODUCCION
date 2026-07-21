@@ -28,6 +28,7 @@ class Invoice extends Model
         'importe_exonerado_total', 'importe_gravado', 'importe_gravado_desc',
         'importe_gravado_isv18', 'importe_gravado_isv15', 'importe_gravado_total',
         'discounts', 'isv18', 'isv15', 'total', 'total_returns', 'is_printed', 'printed_at',
+        'fingerprint', 'duplicate_of_invoice_id',
     ];
 
     protected function casts(): array
@@ -92,11 +93,13 @@ class Invoice extends Model
      *   - is_printed: control operativo de impresión.
      *   - total_returns: indicador derivado pero útil para detectar
      *                    recálculos anómalos sin contexto.
+     *   - duplicate_of_invoice_id: marca/desmarca de posible duplicada
+     *                    (re-emisión de Jaremar). Decisión auditada.
      */
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
-            ->logOnly(['status', 'warehouse_id', 'manifest_id', 'is_printed', 'total_returns'])
+            ->logOnly(['status', 'warehouse_id', 'manifest_id', 'is_printed', 'total_returns', 'duplicate_of_invoice_id'])
             ->logOnlyDirty()
             ->dontSubmitEmptyLogs()
             ->setDescriptionForEvent(fn (string $eventName) => "Factura {$eventName}");
@@ -134,6 +137,15 @@ class Invoice extends Model
         return $query->where('is_printed', false);
     }
 
+    /**
+     * Facturas marcadas como posibles duplicadas (re-emisión de Jaremar)
+     * pendientes de revisión humana.
+     */
+    public function scopeSuspectedDuplicate($query)
+    {
+        return $query->whereNotNull('duplicate_of_invoice_id');
+    }
+
     // ─── Relaciones ───────────────────────────────────────────
 
     public function manifest(): BelongsTo
@@ -154,6 +166,22 @@ class Invoice extends Model
     public function returns(): HasMany
     {
         return $this->hasMany(InvoiceReturn::class);
+    }
+
+    /**
+     * Factura original de la que esta es posible re-emisión duplicada.
+     */
+    public function duplicateOf(): BelongsTo
+    {
+        return $this->belongsTo(Invoice::class, 'duplicate_of_invoice_id');
+    }
+
+    /**
+     * Re-emisiones marcadas que apuntan a esta factura como original.
+     */
+    public function suspectedReemissions(): HasMany
+    {
+        return $this->hasMany(Invoice::class, 'duplicate_of_invoice_id');
     }
 
     // ─── Helpers ──────────────────────────────────────────────

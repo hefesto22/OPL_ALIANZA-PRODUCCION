@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Models\Warehouse;
 use App\Notifications\InvoicesImported;
 use App\Support\BoxEquivalence;
+use App\Support\InvoiceFingerprint;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -116,14 +117,27 @@ class ApiInvoiceImporterService
         // O entra todo, o no entra nada. Las notificaciones se disparan
         // DESPUÉS del commit para no bloquear la transacción con IO.
         $notifyQueue = [];
+        $duplicateNotifyQueue = [];
 
-        DB::transaction(function () use ($plan, $importRecord, &$summary, &$notifyQueue) {
+        DB::transaction(function () use ($plan, $importRecord, &$summary, &$notifyQueue, &$duplicateNotifyQueue) {
             foreach ($plan as $group) {
                 $manifest = $group['manifest']
                     ?? $this->createManifest($group['manifest_number'], $group['operation_date']);
 
                 $bulkResult = $this->bulkInsertNewInvoices($group['new'], $manifest);
                 $summary['invoices_inserted'] += $bulkResult['total'];
+
+                // Posibles duplicadas aisladas: marcar + advertir. La
+                // notificación a admins sale después del commit.
+                if (! empty($group['duplicate_flags'])) {
+                    $this->applyDuplicateFlags(
+                        $group['duplicate_flags'],
+                        $bulkResult['number_to_id'],
+                        $manifest,
+                        $summary,
+                    );
+                    $duplicateNotifyQueue[] = [$manifest, $group['duplicate_flags']];
+                }
 
                 foreach ($bulkResult['by_warehouse'] as $warehouseId => $count) {
                     $summary['inserted_warehouse_counts'][$warehouseId] =
@@ -150,7 +164,191 @@ class ApiInvoiceImporterService
             $this->notifyWarehouseUsers($manifest, $warehouseCounts);
         }
 
+        foreach ($duplicateNotifyQueue as [$manifest, $flags]) {
+            $this->notifyAdminsOfSuspectedDuplicates($manifest, $flags);
+        }
+
         return $summary;
+    }
+
+    /**
+     * Detecta facturas entrantes IDÉNTICAS a facturas ya registradas en la
+     * ventana configurada (re-emisiones de Jaremar con número nuevo).
+     *
+     * La comparación es global: cada factura entrante contra TODAS las
+     * facturas recientes de la BD (una sola query sobre el índice
+     * (fingerprint, invoice_date)), sin importar en qué manifiesto viva la
+     * original — Jaremar mezcla copias de varios manifiestos origen en un
+     * mismo manifiesto nuevo.
+     *
+     * Exclusiones deliberadas:
+     *   - Facturas sin client_id o sin líneas (huella null): sin base
+     *     confiable de comparación.
+     *   - La factura existente con el MISMO número: ese caso es reenvío,
+     *     no re-emisión, y ya lo maneja el paso 3 (FACTURAS_YA_EXISTENTES).
+     *   - Facturas soft-deleted: default scope de Eloquent; una factura
+     *     eliminada no debe bloquear la re-entrada legítima.
+     *
+     * @param  array<int, array>  $invoices  Payload crudo del manifiesto entrante.
+     * @return array<string, array{factura:string, identica_a:string, manifiesto_original:string, fecha_original:?string, cliente:?string, total:float, dias_diferencia:int, original_id:int}>
+     *                                                                                                                                                                                         Keyed por Nfactura entrante.
+     */
+    protected function detectExactDuplicates(array $invoices): array
+    {
+        if (! config('invoices.duplicates.detection_enabled', true)) {
+            return [];
+        }
+
+        $windowDays = max(0, (int) config('invoices.duplicates.window_days', 3));
+
+        // Huella + fecha de cada factura entrante.
+        $incoming = [];
+        foreach ($invoices as $data) {
+            $number = $data['Nfactura'] ?? null;
+            $fingerprint = InvoiceFingerprint::fromPayload($data);
+            $date = $this->parseDate($data['FechaFactura'] ?? null);
+
+            if ($number && $fingerprint && $date) {
+                $incoming[$number] = ['fingerprint' => $fingerprint, 'date' => $date];
+            }
+        }
+
+        if (empty($incoming)) {
+            return [];
+        }
+
+        $dates = array_column($incoming, 'date');
+        $from = Carbon::parse(min($dates))->subDays($windowDays)->toDateString();
+        $to = Carbon::parse(max($dates))->addDays($windowDays)->toDateString();
+
+        // UNA query indexada para todo el grupo del manifiesto.
+        $candidates = Invoice::query()
+            ->with('manifest:id,number')
+            ->whereIn('fingerprint', array_values(array_unique(array_column($incoming, 'fingerprint'))))
+            ->whereBetween('invoice_date', [$from, $to])
+            ->get()
+            ->groupBy('fingerprint');
+
+        $matches = [];
+
+        foreach ($incoming as $number => $info) {
+            $best = null;
+
+            foreach ($candidates->get($info['fingerprint'], collect()) as $existing) {
+                if ($existing->invoice_number === $number) {
+                    continue; // reenvío del mismo número → lo maneja el paso 3
+                }
+
+                $days = (int) abs(Carbon::parse($info['date'])->diffInDays($existing->invoice_date));
+
+                if ($days > $windowDays) {
+                    continue;
+                }
+
+                if ($best === null || $days < $best['dias_diferencia']) {
+                    $best = [
+                        'factura' => (string) $number,
+                        'identica_a' => (string) $existing->invoice_number,
+                        'manifiesto_original' => (string) ($existing->manifest->number ?? ''),
+                        'fecha_original' => $existing->invoice_date?->toDateString(),
+                        'cliente' => $existing->client_name,
+                        'total' => (float) $existing->total,
+                        'dias_diferencia' => $days,
+                        'original_id' => (int) $existing->id,
+                    ];
+                }
+            }
+
+            if ($best !== null) {
+                $matches[$number] = $best;
+            }
+        }
+
+        return $matches;
+    }
+
+    /**
+     * Marca las facturas recién insertadas que son posibles duplicadas
+     * AISLADAS (bajo el umbral de bloque): setea duplicate_of_invoice_id
+     * hacia la original idéntica, deja rastro en ActivityLog y agrega la
+     * advertencia al summary (viaja en la respuesta a Jaremar).
+     *
+     * Corre DENTRO de la transacción del lote.
+     *
+     * @param  array<string, array>  $flags  Matches de detectExactDuplicates.
+     * @param  array<string, int>  $numberToId  Nfactura → id insertado.
+     */
+    protected function applyDuplicateFlags(array $flags, array $numberToId, Manifest $manifest, array &$summary): void
+    {
+        foreach ($flags as $number => $match) {
+            $newId = $numberToId[$number] ?? null;
+
+            if (! $newId) {
+                continue;
+            }
+
+            DB::table('invoices')
+                ->where('id', $newId)
+                ->update(['duplicate_of_invoice_id' => $match['original_id']]);
+
+            $summary['warnings'][] = "Factura {$number} importada como POSIBLE DUPLICADA de ".
+                "{$match['identica_a']} (manifiesto #{$match['manifiesto_original']}, ".
+                "{$match['fecha_original']}, mismo cliente/productos/total). Requiere revisión.";
+
+            activity('api')
+                ->performedOn($manifest)
+                ->withProperties([
+                    'source' => 'jaremar_api',
+                    'factura' => $number,
+                    'identica_a' => $match['identica_a'],
+                    'manifiesto_original' => $match['manifiesto_original'],
+                    'total' => $match['total'],
+                    'dias_diferencia' => $match['dias_diferencia'],
+                ])
+                ->log("Factura {$number} importada como posible duplicada de {$match['identica_a']} (revisión pendiente).");
+        }
+    }
+
+    /**
+     * Notifica a admins/super_admins las posibles duplicadas aisladas que
+     * ENTRARON marcadas. A diferencia del rechazo en bloque (que Jaremar ve
+     * en su respuesta), esto requiere decisión humana en Hosana: ¿pedido
+     * legítimo repetido o re-emisión que hay que devolver?
+     *
+     * Se ejecuta DESPUÉS del commit; nunca interrumpe la importación.
+     *
+     * @param  array<string, array>  $flags
+     */
+    protected function notifyAdminsOfSuspectedDuplicates(Manifest $manifest, array $flags): void
+    {
+        try {
+            $admins = User::role(['super_admin', 'admin'])->get();
+
+            if ($admins->isEmpty()) {
+                return;
+            }
+
+            $detalle = collect($flags)
+                ->map(fn (array $m) => "{$m['factura']} ≈ {$m['identica_a']} ({$m['cliente']}, L. ".
+                    number_format($m['total'], 2).')')
+                ->implode('; ');
+
+            $total = count($flags);
+
+            foreach ($admins as $admin) {
+                \Filament\Notifications\Notification::make()
+                    ->title("Posible(s) factura(s) duplicada(s) en manifiesto #{$manifest->number}")
+                    ->body("{$total} factura(s) entraron idénticas a facturas recientes de otro manifiesto: {$detalle}. ".
+                        'Verifique con bodega si es pedido repetido legítimo o re-emisión de Jaremar (devolver).')
+                    ->warning()
+                    ->sendToDatabase($admin);
+            }
+        } catch (\Throwable $e) {
+            Log::error('API Duplicadas: error notificando posibles duplicadas.', [
+                'manifest' => $manifest->number,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**
@@ -314,6 +512,45 @@ class ApiInvoiceImporterService
             ]);
         }
 
+        // ── 4. Duplicadas EXACTAS por huella (re-emisión de Jaremar) ──
+        // Jaremar re-emite la misma factura económica con número fiscal
+        // NUEVO en manifiesto NUEVO (mismo cliente, mismas líneas, mismo
+        // total; solo cambian número, fechas y redondeo por línea). La
+        // huella canónica (InvoiceFingerprint) las compara contra TODAS
+        // las facturas de la ventana configurada, vivan en el manifiesto
+        // que vivan. Dos niveles según la evidencia:
+        //
+        //   BLOQUE  (matches >= block_threshold): firma inequívoca de
+        //           re-emisión masiva → rechazo del manifiesto completo.
+        //   AISLADA (matches < block_threshold): puede ser un pedido
+        //           legítimo repetido (pulperías con canasta fija) → la
+        //           factura ENTRA pero marcada con duplicate_of_invoice_id
+        //           para revisión humana + notificación a admins.
+        $duplicateMatches = $this->detectExactDuplicates($invoices);
+        $blockThreshold = max(1, (int) config('invoices.duplicates.block_threshold', 3));
+
+        if (count($duplicateMatches) >= $blockThreshold) {
+            return $this->rejection($manifestNumber, $totalFacturas, 'FACTURAS_DUPLICADAS_EXACTAS', [
+                'facturas_duplicadas_exactas' => array_values(array_map(
+                    fn (array $m) => [
+                        'factura' => $m['factura'],
+                        'identica_a' => $m['identica_a'],
+                        'manifiesto_original' => $m['manifiesto_original'],
+                        'fecha_original' => $m['fecha_original'],
+                        'cliente' => $m['cliente'],
+                        'total' => $m['total'],
+                        'dias_diferencia' => $m['dias_diferencia'],
+                    ],
+                    $duplicateMatches,
+                )),
+                'mensaje' => "El manifiesto #{$manifestNumber} contiene ".count($duplicateMatches).
+                    ' factura(s) idénticas a facturas ya registradas recientemente '.
+                    '(mismo cliente, mismos productos y cantidades, mismo total) con número de factura distinto. '.
+                    'Re-emisión duplicada detectada: NO reenvíe estas facturas. '.
+                    'Las facturas no listadas pueden reenviarse en un manifiesto limpio.',
+            ]);
+        }
+
         // ── Limpio: todas las facturas son nuevas → plan de inserción ──
         // La fecha operacional la resuelve el validador (config
         // manifests.dates.manifest_date_source). Las fechas por factura ya
@@ -330,6 +567,9 @@ class ApiInvoiceImporterService
                 'manifest_number' => $manifestNumber,
                 'operation_date' => $operationDate,
                 'new' => $invoices,
+                // Matches AISLADOS bajo el umbral de bloque: se insertan
+                // marcados como posible duplicada (ver applyDuplicateFlags).
+                'duplicate_flags' => $duplicateMatches,
             ],
         ];
     }
@@ -527,7 +767,7 @@ class ApiInvoiceImporterService
     protected function bulkInsertNewInvoices(array $newInvoicesData, Manifest $manifest): array
     {
         $now = now()->toDateTimeString();
-        $counts = ['total' => 0, 'by_warehouse' => []];
+        $counts = ['total' => 0, 'by_warehouse' => [], 'number_to_id' => []];
 
         // ── 1. Preparar filas mapeadas ──────────────────────────────────
         $rows = [];
@@ -642,6 +882,8 @@ class ApiInvoiceImporterService
             });
         }
 
+        $counts['number_to_id'] = $invoiceNumberToId;
+
         return $counts;
     }
 
@@ -653,6 +895,9 @@ class ApiInvoiceImporterService
         return [
             'warehouse_id' => $warehouseId,
             'status' => $warehouseId ? 'imported' : 'pending_warehouse',
+            // Huella de duplicado exacto — se persiste en el insert para que
+            // futuras importaciones la comparen con una sola query indexada.
+            'fingerprint' => InvoiceFingerprint::fromPayload($data),
             'jaremar_id' => $data['Id'] ?? null,
             'invoice_number' => $data['Nfactura'],
             'lx_number' => $data['NumeroFacturaLX'] ?? null,

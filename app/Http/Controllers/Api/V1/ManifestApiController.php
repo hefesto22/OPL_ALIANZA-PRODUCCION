@@ -323,6 +323,7 @@ class ManifestApiController extends Controller
                         'MANIFIESTO_CERRADO' => 'Uno o más manifiestos fueron rechazados porque ya están cerrados y no aceptan modificaciones.',
                         'FACTURAS_DUPLICADAS_EN_OTRO_MANIFIESTO' => 'Uno o más manifiestos fueron rechazados por contener facturas que ya existen en otros manifiestos.',
                         'FACTURAS_YA_EXISTENTES' => 'Uno o más manifiestos fueron rechazados por contener facturas que ya fueron registradas. Reenvíe únicamente las facturas nuevas.',
+                        'FACTURAS_DUPLICADAS_EXACTAS' => 'Uno o más manifiestos fueron rechazados por contener facturas idénticas a facturas ya registradas (mismo cliente, mismos productos y cantidades, mismo total) con número de factura distinto. Re-emisión duplicada: no reenvíe esas facturas.',
                         default => 'Uno o más manifiestos fueron rechazados.',
                     };
                 } else {
@@ -470,6 +471,11 @@ class ManifestApiController extends Controller
                 'facturas_existentes' => $rejected['facturas_existentes'],
             ]),
 
+            'FACTURAS_DUPLICADAS_EXACTAS' => array_merge($base, [
+                'mensaje' => $rejected['mensaje'],
+                'facturas_duplicadas_exactas' => $rejected['facturas_duplicadas_exactas'],
+            ]),
+
             default => $base,
         };
     }
@@ -594,6 +600,17 @@ class ManifestApiController extends Controller
                                 fn ($f) => $f['factura'] ?? '?',
                                 $rechazado['facturas_existentes'] ?? []
                             )).'. Jaremar debe reenviar únicamente las facturas nuevas.',
+                    ],
+                    'FACTURAS_DUPLICADAS_EXACTAS' => [
+                        "Manifiesto #{$manifiesto} rechazado — re-emisión duplicada de Jaremar",
+                        "El manifiesto #{$manifiesto} fue RECHAZADO automáticamente: contiene facturas idénticas ".
+                            '(mismo cliente, mismos productos y cantidades, mismo total) a facturas ya registradas, '.
+                            'con número de factura distinto: '.
+                            implode('; ', array_map(
+                                fn ($f) => ($f['factura'] ?? '?').' ≈ '.($f['identica_a'] ?? '?').
+                                    ' (manif. #'.($f['manifiesto_original'] ?? '?').')',
+                                $rechazado['facturas_duplicadas_exactas'] ?? []
+                            )).'. La mercadería NO debe entregarse dos veces; el rechazo quedó documentado para el reclamo a Jaremar.',
                     ],
                     default => [
                         "Manifiesto #{$manifiesto} rechazado",
