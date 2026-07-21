@@ -555,6 +555,12 @@ class ManifestApiController extends Controller
     {
         $admins = User::role(['super_admin', 'admin'])->get();
 
+        // Decisión de negocio (2026-07-21): los rechazos por re-emisión
+        // duplicada de Jaremar (FACTURAS_DUPLICADAS_EXACTAS) se notifican
+        // SOLO al super_admin — admins/operativos no deben verlos. Los
+        // demás motivos conservan su audiencia original (super_admin+admin).
+        $superAdmins = $admins->filter(fn (User $u) => $u->hasRole('super_admin'));
+
         if ($admins->isEmpty()) {
             return;
         }
@@ -619,7 +625,12 @@ class ManifestApiController extends Controller
                 };
             }
 
-            foreach ($admins as $admin) {
+            // Audiencia según motivo: duplicadas exactas → solo super_admin.
+            $recipients = ($rechazado['motivo'] ?? null) === 'FACTURAS_DUPLICADAS_EXACTAS'
+                ? $superAdmins
+                : $admins;
+
+            foreach ($recipients as $admin) {
                 Notification::make()
                     ->title($titulo)
                     ->body($cuerpo)

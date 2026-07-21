@@ -293,7 +293,7 @@ class ApiInvoiceImporterService
 
             $summary['warnings'][] = "Factura {$number} importada como POSIBLE DUPLICADA de ".
                 "{$match['identica_a']} (manifiesto #{$match['manifiesto_original']}, ".
-                "{$match['fecha_original']}, mismo cliente/productos/total). Requiere revisión.";
+                "{$match['fecha_original']}, mismo cliente, productos y total). Requiere revisión.";
 
             activity('api')
                 ->performedOn($manifest)
@@ -310,10 +310,14 @@ class ApiInvoiceImporterService
     }
 
     /**
-     * Notifica a admins/super_admins las posibles duplicadas aisladas que
+     * Notifica SOLO a super_admins las posibles duplicadas aisladas que
      * ENTRARON marcadas. A diferencia del rechazo en bloque (que Jaremar ve
-     * en su respuesta), esto requiere decisión humana en Hosana: ¿pedido
-     * legítimo repetido o re-emisión que hay que devolver?
+     * en su respuesta), esto requiere decisión humana: ¿pedido legítimo
+     * repetido o re-emisión que hay que devolver?
+     *
+     * Decisión de negocio (Mauricio, 2026-07-21): las alertas de duplicadas
+     * son exclusivas del super_admin — admins/operativos NO deben verlas.
+     * El resto de notificaciones del API conservan su audiencia original.
      *
      * Se ejecuta DESPUÉS del commit; nunca interrumpe la importación.
      *
@@ -322,7 +326,7 @@ class ApiInvoiceImporterService
     protected function notifyAdminsOfSuspectedDuplicates(Manifest $manifest, array $flags): void
     {
         try {
-            $admins = User::role(['super_admin', 'admin'])->get();
+            $admins = User::role('super_admin')->get();
 
             if ($admins->isEmpty()) {
                 return;

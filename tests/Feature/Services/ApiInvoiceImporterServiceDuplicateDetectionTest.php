@@ -6,6 +6,7 @@ use App\Models\ApiInvoiceImport;
 use App\Models\Invoice;
 use App\Models\Manifest;
 use App\Models\Supplier;
+use App\Models\User;
 use App\Models\Warehouse;
 use App\Services\ApiInvoiceImporterService;
 use App\Support\InvoiceFingerprint;
@@ -320,6 +321,29 @@ class ApiInvoiceImporterServiceDuplicateDetectionTest extends TestCase
         $this->assertNotNull(Invoice::where('invoice_number', 'F-DOS-1')->value('duplicate_of_invoice_id'));
         $this->assertNotNull(Invoice::where('invoice_number', 'F-DOS-2')->value('duplicate_of_invoice_id'));
         $this->assertNull(Invoice::where('invoice_number', 'F-DOS-3')->value('duplicate_of_invoice_id'));
+    }
+
+    public function test_alerta_de_posible_duplicada_llega_solo_a_super_admin(): void
+    {
+        // Decisión de negocio (2026-07-21): las alertas de duplicadas son
+        // EXCLUSIVAS del super_admin. Un admin (ej. Mayra) no debe verlas.
+        $super = User::factory()->create(['is_active' => true]);
+        $super->assignRole('super_admin');
+
+        $adminNormal = User::factory()->create(['is_active' => true]);
+        $adminNormal->assignRole('admin');
+
+        $this->importarOriginales([
+            $this->pedido('F-NOT-1', 'MAN-NOT-A', 'C-100', 'ART-100', 10.0, 100.0, now()->subDay()->toIso8601String()),
+        ]);
+
+        $this->service()->processBatch([
+            $this->pedido('F-NOT-2', 'MAN-NOT-B', 'C-100', 'ART-100', 10.0, 100.0),
+        ], $this->importRecord());
+
+        // La notificación Filament de posible duplicada va SOLO al super_admin.
+        Notification::assertSentTo($super, \Filament\Notifications\DatabaseNotification::class);
+        Notification::assertNotSentTo($adminNormal, \Filament\Notifications\DatabaseNotification::class);
     }
 
     // ═══════════════════════════════════════════════════════════════
