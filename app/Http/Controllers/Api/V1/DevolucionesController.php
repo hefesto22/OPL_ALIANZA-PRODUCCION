@@ -65,16 +65,37 @@ class DevolucionesController extends Controller
      *   Header FechaHasta: 20/12/2025  (dd/MM/yyyy) — fin del rango, OPCIONAL
      *   Query  pagina:     1           (opcional, default 1)
      *
-     * Devuelve todas las devoluciones aprobadas cuyo processed_date cae dentro
-     * del rango [Fecha, FechaHasta], AMBOS inclusive. Sin FechaHasta el rango es
-     * de un solo día (Fecha == FechaHasta), idéntico al comportamiento histórico.
+     * ── Contrato vigente (correo de Isack 2026-07-20, 3 puntos) ─────────
+     * Con config api.devoluciones_filtro_emision = true (default):
+     *
+     *   1. FILTRO POR EMISIÓN: el rango [Fecha, FechaHasta] filtra por la
+     *      fecha de EMISIÓN de la factura en Jaremar (invoices.invoice_date),
+     *      no por la fecha en que Hosana procesó la devolución. Así todas
+     *      las devoluciones de un manifiesto quedan bajo la misma fecha de
+     *      consulta sin importar qué día las registró la bodega.
+     *
+     *   2. PAQUETE COMPLETO POR MANIFIESTO: solo se publican devoluciones de
+     *      manifiestos cuya ventana de registro YA CERRÓ (N días hábiles
+     *      lun–sáb desde la llegada; manifests.returns_deadline_at). Antes
+     *      del cierre la fecha responde vacío — nunca un paquete parcial.
+     *      Tras el cierre el paquete es COMPLETO e INMUTABLE (ReturnService
+     *      congela crear/editar/cancelar).
+     *
+     *   3. TODO EN UNIDADES: cantidad = cajas × factor de conversión +
+     *      unidades sueltas (ej. 1 caja de 96 + 10 sueltas = 106.000000).
+     *      Internamente las bodegas siguen registrando cajas/unidades.
+     *
+     * Con el toggle en false, comportamiento legacy: filtro por
+     * processed_date y sin retención (el punto 3 aplica en ambos modos).
      *
      * Tope de rango: config('api.devoluciones_max_dias_rango') días (default 31).
      * Un rango mayor se rechaza con 422 para proteger query, caché y respuesta.
      *
      * Cache:
-     *   - Rango que incluye hoy:   5 minutos  (pueden llegar nuevas devoluciones)
-     *   - Rango totalmente pasado: 60 minutos (no cambia)
+     *   - Rango "abierto" (fechas cuyo paquete aún puede cambiar/publicarse):
+     *     5 minutos. En modo emisión eso cubre los últimos ~9 días (ventana
+     *     hábil máxima + margen); en legacy, solo si el rango incluye hoy.
+     *   - Rango totalmente consolidado: 60 minutos.
      *   La clave usa una versión COMPUESTA de los contadores por-día del rango
      *   (devoluciones:version:{día}); cuando cambia cualquier día, la caché del
      *   rango se invalida sola sin lógica de invalidación nueva.
@@ -190,17 +211,26 @@ class DevolucionesController extends Controller
         $pagina = max(1, (int) $request->query('pagina', 1));
         $porPagina = 1000;
 
-        // ── 3. TTL según si el rango incluye hoy ──────────────
-        // processed_date nunca es futuro; "incluye hoy" = el rango llega a hoy.
-        $incluyeHoy = $hasta >= now()->toDateString();
-        $ttl = $incluyeHoy ? 300 : 3600; // 5 min con hoy, 60 min totalmente pasado
+        // ── 3. Modo de filtro + TTL según si el rango está "abierto" ──
+        // Modo emisión: una fecha queda consolidada cuando la ventana hábil
+        // de sus manifiestos ya cerró — en el peor caso ~8 días calendario
+        // después (5 hábiles + domingos + llegada retrasada). Con margen: 9.
+        // Modo legacy: processed_date nunca es futuro; "abierto" = incluye hoy.
+        $filtroEmision = (bool) config('api.devoluciones_filtro_emision', true);
+
+        $horizonteAbierto = $filtroEmision
+            ? now()->subDays(9)->toDateString()
+            : now()->toDateString();
+        $rangoAbierto = $hasta >= $horizonteAbierto;
+        $ttl = $rangoAbierto ? 300 : 3600; // 5 min abierto, 60 min consolidado
 
         // ── 4. Cache con versión COMPUESTA del rango ──────────
         // Cada día tiene su contador devoluciones:version:{día}, que
-        // ReturnService incrementa al crear/aprobar/cancelar una devolución
-        // de ese día. La firma combina los contadores de TODO el rango, así
-        // que un cambio en cualquier día altera la clave y la caché del rango
-        // queda obsoleta sola — sin lógica de invalidación nueva.
+        // ReturnService incrementa al crear/editar/cancelar una devolución
+        // (bump por día de proceso Y por día de emisión — cubre ambos modos).
+        // La firma combina los contadores de TODO el rango, así que un cambio
+        // en cualquier día altera la clave y la caché del rango queda obsoleta
+        // sola — sin lógica de invalidación nueva.
         $dias = [];
         $cursor = Carbon::parse($desde);
         $fin = Carbon::parse($hasta);
@@ -218,18 +248,39 @@ class DevolucionesController extends Controller
         }
         $version = md5($firma);
 
-        $cacheKey = "devoluciones:listar:{$desde}:{$hasta}:v{$version}:pagina:{$pagina}";
+        // El modo forma parte de la clave: alternar el toggle nunca sirve
+        // una respuesta cacheada del modo contrario.
+        $modo = $filtroEmision ? 'em' : 'pr';
+        $cacheKey = "devoluciones:listar:{$modo}:{$desde}:{$hasta}:v{$version}:pagina:{$pagina}";
 
-        $resultado = Cache::remember($cacheKey, $ttl, function () use ($desde, $hasta, $pagina, $porPagina) {
-            $devoluciones = InvoiceReturn::with([
-                'invoice:id,invoice_number,client_id,client_name',
-                'manifest:id,number',
+        $resultado = Cache::remember($cacheKey, $ttl, function () use ($desde, $hasta, $pagina, $porPagina, $filtroEmision) {
+            $query = InvoiceReturn::with([
+                'invoice:id,invoice_number,client_id,client_name,invoice_date',
+                'manifest:id,number,returns_deadline_at',
                 'warehouse:id,code',
                 'returnReason:id,jaremar_id,code,description',
-                'lines:id,return_id,line_number,product_id,product_description,quantity_box,quantity,line_total',
+                'lines:id,return_id,invoice_line_id,line_number,product_id,product_description,quantity_box,quantity,line_total',
+                // Factor de conversión de la línea original — para expresar
+                // la cantidad devuelta en unidades totales (punto 3).
+                'lines.invoiceLine:id,conversion_factor',
             ])
-                ->approved()
-                ->whereBetween('processed_date', [$desde, $hasta])
+                ->approved();
+
+            if ($filtroEmision) {
+                // Punto 1: filtro por fecha de EMISIÓN de la factura.
+                // Punto 2: solo manifiestos con ventana de registro CERRADA
+                // (paquete completo, publicado de una sola vez, congelado).
+                $query
+                    ->whereHas('invoice', fn ($q) => $q->whereBetween('invoice_date', [$desde, $hasta]))
+                    ->whereHas('manifest', fn ($q) => $q
+                        ->whereNotNull('returns_deadline_at')
+                        ->where('returns_deadline_at', '<', now()));
+            } else {
+                // Legacy: fecha en que Hosana procesó la devolución.
+                $query->whereBetween('processed_date', [$desde, $hasta]);
+            }
+
+            $devoluciones = $query
                 ->orderBy('id')
                 ->limit($porPagina)
                 ->offset(($pagina - 1) * $porPagina)
@@ -258,14 +309,17 @@ class DevolucionesController extends Controller
                                             ? (string) $devolucion->processed_time
                                             : null,
                     'lineasDevolucion' => $devolucion->lines->map(function ($linea) {
+                        // Punto 3: SIEMPRE unidades totales.
+                        // cajas × factor de conversión + unidades sueltas
+                        // (ej. 1 caja de 96 + 10 sueltas = 106). Las bodegas
+                        // siguen registrando cajas/unidades internamente.
+                        $factor = max(1, (int) ($linea->invoiceLine->conversion_factor ?? 1));
+                        $unidades = ((float) $linea->quantity_box * $factor) + (float) $linea->quantity;
+
                         return [
                             'productoId' => $linea->product_id,
                             'producto' => $linea->product_description,
-                            // CJ products: quantity=0, quantity_box>0 → devolver cajas
-                            // UN products: quantity_box=0, quantity>0 → devolver unidades
-                            'cantidad' => $this->numero6($linea->quantity_box > 0
-                                                ? $linea->quantity_box
-                                                : $linea->quantity),
+                            'cantidad' => $this->numero6($unidades),
                             'numeroLinea' => (string) $linea->line_number,
                             'lineTotal' => $this->numero6($linea->line_total),
                         ];
@@ -284,6 +338,7 @@ class DevolucionesController extends Controller
                 'fecha' => $desde,
                 'fecha_hasta' => $hasta,
                 'dias' => $diasRango,
+                'modo_filtro' => $filtroEmision ? 'emision' : 'procesado',
                 'pagina' => $pagina,
                 'total' => count($resultado),
                 'desde_cache' => Cache::has($cacheKey),

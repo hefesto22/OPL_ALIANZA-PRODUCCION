@@ -39,6 +39,19 @@ class ReturnService
                 ]);
             }
 
+            // ── Ventana de registro (N días hábiles) ─────────────────────
+            // Regla operativa 2026-07-21: las devoluciones solo pueden
+            // registrarse dentro de la ventana hábil del manifiesto (lun–sáb
+            // desde su llegada). Al cierre, el paquete se publica a Jaremar
+            // y queda CONGELADO — sin excepciones, para ningún rol.
+            if ($invoice->manifest->returnsWindowClosed()) {
+                throw ValidationException::withMessages([
+                    'invoice_id' => 'La ventana para registrar devoluciones de este manifiesto cerró el '.
+                        $invoice->manifest->returnsDeadlineLabel().
+                        '. Las devoluciones ya fueron publicadas a Jaremar y no aceptan cambios.',
+                ]);
+            }
+
             $linesData = $data['lines'] ?? [];
 
             // ── Server-side quantity validation ──────────────────────────
@@ -169,8 +182,8 @@ class ReturnService
         // solapado con la transacción.
         $this->recalculateManifestTotals($return->manifest_id);
 
-        // Invalidar cache de Jaremar para TODAS las páginas de hoy.
-        $this->invalidateDevolucionesCache(now()->toDateString());
+        // Invalidar cache del listar de Jaremar (ambos modos de filtro).
+        $this->invalidateDevolucionesCacheForReturn($return);
 
         return $return;
     }
@@ -212,6 +225,18 @@ class ReturnService
         if ($return->manifest->isClosed()) {
             throw ValidationException::withMessages([
                 'id' => 'No se puede editar una devolución de un manifiesto cerrado.',
+            ]);
+        }
+
+        // Congelamiento por ventana: tras el cierre hábil del manifiesto lo
+        // publicado a Jaremar es inmutable. (En la práctica isEditableToday
+        // ya es más estricto — mismo día — pero este guard es la regla de
+        // negocio explícita y cubre cualquier relajación futura de aquella.)
+        if ($return->manifest->returnsWindowClosed()) {
+            throw ValidationException::withMessages([
+                'id' => 'La ventana de devoluciones de este manifiesto cerró el '.
+                    $return->manifest->returnsDeadlineLabel().
+                    '. Lo publicado a Jaremar es inmutable.',
             ]);
         }
 
@@ -334,15 +359,9 @@ class ReturnService
         $this->recalculateManifestTotals($return->manifest_id);
 
         // Si la devolución ya estaba aprobada (regla absoluta: nacen aprobadas),
-        // su processed_date ya indexa el cache. Invalidamos ese día para que
-        // la API de Jaremar refleje los cambios.
-        if ($return->processed_date) {
-            $this->invalidateDevolucionesCache(
-                $return->processed_date instanceof \DateTimeInterface
-                    ? $return->processed_date->format('Y-m-d')
-                    : (string) $return->processed_date
-            );
-        }
+        // ya indexa el cache del listar. Invalidamos para que la API de
+        // Jaremar refleje los cambios (ambos modos de filtro).
+        $this->invalidateDevolucionesCacheForReturn($return);
 
         return $return->fresh('lines');
     }
@@ -356,6 +375,16 @@ class ReturnService
             throw new \RuntimeException(
                 'No se puede aprobar una devolución de un manifiesto cerrado. '.
                 'Reabre el manifiesto antes de aprobar.'
+            );
+        }
+
+        // Aprobar tras el cierre agregaría una devolución al paquete que
+        // Jaremar ya consumió congelado — mismo congelamiento que crear.
+        if ($return->manifest->returnsWindowClosed()) {
+            throw new \RuntimeException(
+                'No se puede aprobar: la ventana de devoluciones del manifiesto cerró el '.
+                $return->manifest->returnsDeadlineLabel().
+                ' y el paquete publicado a Jaremar es inmutable.'
             );
         }
 
@@ -373,11 +402,10 @@ class ReturnService
             $this->updateInvoiceStatus($return->invoice);
         });
 
-        // Post-transacción: recalcular + invalidar cache de Jaremar.
-        // Al aprobar, la devolución pasa a ser visible en la API con
-        // processed_date = hoy, así que invalidamos el cache del día.
+        // Post-transacción: recalcular + invalidar cache de Jaremar
+        // (ambos modos de filtro: día de proceso y día de emisión).
         $this->recalculateManifestTotals($return->manifest_id);
-        $this->invalidateDevolucionesCache($now->toDateString());
+        $this->invalidateDevolucionesCacheForReturn($return->fresh());
     }
 
     public function rejectReturn(InvoiceReturn $return, int $reviewedBy, string $reason): void
@@ -626,6 +654,30 @@ class ReturnService
     }
 
     /**
+     * Invalida el cache del listar para una devolución concreta.
+     *
+     * El cache puede estar claveado por fecha de PROCESO (modo legacy) o
+     * por fecha de EMISIÓN de la factura (contrato actual con Jaremar —
+     * config api.devoluciones_filtro_emision). Bump a ambos contadores:
+     * es barato y cubre los dos modos sin acoplar el service al toggle.
+     */
+    public function invalidateDevolucionesCacheForReturn(InvoiceReturn $return): void
+    {
+        if ($return->processed_date) {
+            $this->invalidateDevolucionesCache(
+                $return->processed_date instanceof \DateTimeInterface
+                    ? $return->processed_date->format('Y-m-d')
+                    : (string) $return->processed_date
+            );
+        }
+
+        $emision = $return->invoice?->invoice_date;
+        if ($emision) {
+            $this->invalidateDevolucionesCache($emision->toDateString());
+        }
+    }
+
+    /**
      * API pública para recalcular el status de una factura desde fuera del servicio
      * (p.ej. desde InvoiceReturnObserver cuando se elimina una devolución).
      */
@@ -763,6 +815,17 @@ class ReturnService
             return;
         }
 
+        // Congelamiento por ventana: cancelar una devolución después del
+        // cierre alteraría el paquete ya publicado a Jaremar (el total del
+        // manifiesto cambiaría respecto a lo que su ERP consumió). Inmutable.
+        if ($return->manifest->returnsWindowClosed()) {
+            throw ValidationException::withMessages([
+                'id' => 'No se puede cancelar: la ventana de devoluciones del manifiesto cerró el '.
+                    $return->manifest->returnsDeadlineLabel().
+                    ' y el paquete publicado a Jaremar es inmutable.',
+            ]);
+        }
+
         DB::transaction(function () use ($return, $reason) {
             // Lock pesimista sobre la factura. Bloquea cualquier otra cancelación
             // o aprobación concurrente sobre la misma factura, garantizando que
@@ -787,6 +850,7 @@ class ReturnService
 
             $wasApproved = $returnLocked->isApproved();
             $processedDate = $returnLocked->processed_date?->toDateString();
+            $emisionDate = $returnLocked->invoice?->invoice_date?->toDateString();
 
             $returnLocked->update([
                 'status' => 'cancelled',
@@ -834,11 +898,15 @@ class ReturnService
             // rollback, NADA de esto se ejecuta — sin job fantasma encolado en
             // Redis ni invalidación de cache sin razón.
             $manifestId = $returnLocked->manifest_id;
-            DB::afterCommit(function () use ($manifestId, $wasApproved, $processedDate) {
+            DB::afterCommit(function () use ($manifestId, $wasApproved, $processedDate, $emisionDate) {
                 RecalculateManifestTotalsJob::dispatch($manifestId);
 
+                // Ambos modos de filtro del listar (proceso y emisión).
                 if ($wasApproved && $processedDate) {
                     $this->invalidateDevolucionesCache($processedDate);
+                }
+                if ($wasApproved && $emisionDate) {
+                    $this->invalidateDevolucionesCache($emisionDate);
                 }
             });
         });

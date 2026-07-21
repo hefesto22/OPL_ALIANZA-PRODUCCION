@@ -70,4 +70,30 @@ return [
     //
     'devoluciones_max_dias_rango' => env('API_DEVOLUCIONES_MAX_DIAS_RANGO', 31),
 
+    // ── Devoluciones: ventana de registro y modo del filtro ───────────────
+    //
+    // devoluciones_ventana_dias_habiles
+    //   Regla operativa (definida con Mayra, 2026-07-21): las devoluciones de
+    //   un manifiesto solo pueden registrarse dentro de N días HÁBILES
+    //   (lunes a sábado; el domingo no cuenta) desde la llegada del
+    //   manifiesto, contando el día de llegada como día 1. Al cierre (día N
+    //   a las 11:59 pm hora Honduras) el paquete se publica a Jaremar y
+    //   queda CONGELADO: no se puede crear, editar ni cancelar ninguna
+    //   devolución de ese manifiesto — para ningún rol, sin excepciones.
+    //   Ej.: llega viernes → vie(1), sáb(2), lun(3), mar(4), mié(5) →
+    //   cierra miércoles 11:59 pm; el jueves Jaremar lo consulta completo.
+    //
+    // devoluciones_filtro_emision
+    //   Punto 1 del contrato con Jaremar (correo de Isack, 2026-07-20): el
+    //   header Fecha de GET v1/devoluciones/listar filtra por fecha de
+    //   EMISIÓN de la factura, no por fecha de procesado.
+    //     true  → contrato nuevo: filtro por emisión + solo manifiestos con
+    //             ventana cerrada (paquete completo e inmutable).
+    //     false → comportamiento legacy (filtro por processed_date, sin
+    //             retención). Red de seguridad para revertir la transición
+    //             sin deploy si Jaremar lo pidiera.
+    //
+    'devoluciones_ventana_dias_habiles' => (int) env('DEVOLUCIONES_VENTANA_DIAS_HABILES', 5),
+    'devoluciones_filtro_emision' => filter_var(env('DEVOLUCIONES_FILTRO_EMISION', true), FILTER_VALIDATE_BOOLEAN),
+
 ];

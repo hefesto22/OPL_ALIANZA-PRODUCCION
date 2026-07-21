@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Support\BusinessDays;
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -19,13 +21,34 @@ class Manifest extends Model
         'total_invoices', 'total_returns', 'total_to_deposit',
         'total_deposited', 'difference', 'invoices_count', 'returns_count', 'clients_count',
         'raw_json', 'closed_by', 'closed_at', 'created_by', 'updated_by',
+        'returns_deadline_at',
     ];
+
+    /**
+     * La fecha límite de registro de devoluciones se fija automáticamente
+     * al crear el manifiesto (N días hábiles desde su llegada, ver
+     * config api.devoluciones_ventana_dias_habiles y App\Support\BusinessDays)
+     * y se recalcula si la fecha operativa cambia. La condición hace que el
+     * hook sea no-op en los saves frecuentes (recalculateTotals).
+     */
+    protected static function booted(): void
+    {
+        static::saving(function (Manifest $manifest) {
+            if ($manifest->date && ($manifest->returns_deadline_at === null || $manifest->isDirty('date'))) {
+                $manifest->returns_deadline_at = BusinessDays::deadline(
+                    $manifest->date,
+                    (int) config('api.devoluciones_ventana_dias_habiles', 5),
+                );
+            }
+        });
+    }
 
     protected function casts(): array
     {
         return [
             'date' => 'date',
             'closed_at' => 'datetime',
+            'returns_deadline_at' => 'datetime',
             'raw_json' => 'array',
             'total_invoices' => 'decimal:2',
             'total_returns' => 'decimal:2',
@@ -102,6 +125,68 @@ class Manifest extends Model
     public function isClosed(): bool
     {
         return $this->status === 'closed';
+    }
+
+    // ─── Ventana de registro de devoluciones ──────────────────
+    // Regla operativa 2026-07-21: N días hábiles (lun–sáb) desde la llegada
+    // del manifiesto; al cierre el paquete se publica a Jaremar y se congela.
+
+    /**
+     * Fecha límite de registro en el timezone operativo (Honduras).
+     * Fallback calculado si la columna aún es null (pre-backfill).
+     */
+    public function returnsDeadline(): ?Carbon
+    {
+        $tz = config('manifests.dates.timezone', 'America/Tegucigalpa');
+
+        if ($this->returns_deadline_at) {
+            return $this->returns_deadline_at->copy()->timezone($tz);
+        }
+
+        if ($this->date) {
+            return BusinessDays::deadline(
+                $this->date,
+                (int) config('api.devoluciones_ventana_dias_habiles', 5),
+            );
+        }
+
+        return null;
+    }
+
+    /**
+     * true cuando la ventana ya cerró: las devoluciones del manifiesto
+     * quedaron publicadas a Jaremar y CONGELADAS (ni crear/editar/cancelar).
+     */
+    public function returnsWindowClosed(): bool
+    {
+        $deadline = $this->returnsDeadline();
+
+        return $deadline !== null && now()->greaterThan($deadline);
+    }
+
+    /**
+     * Días hábiles restantes para registrar devoluciones (incluye hoy).
+     * 0 = ventana cerrada.
+     */
+    public function remainingReturnBusinessDays(): int
+    {
+        $deadline = $this->returnsDeadline();
+
+        if ($deadline === null || $this->returnsWindowClosed()) {
+            return 0;
+        }
+
+        return BusinessDays::remaining($deadline);
+    }
+
+    /**
+     * Etiqueta humana del cierre para mensajes de validación y tooltips.
+     */
+    public function returnsDeadlineLabel(): string
+    {
+        $deadline = $this->returnsDeadline();
+
+        return $deadline ? $deadline->format('d/m/Y').' a las 11:59 pm' : '—';
     }
 
     /**

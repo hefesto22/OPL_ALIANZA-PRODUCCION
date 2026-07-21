@@ -46,6 +46,13 @@ class DevolucionesControllerListarTest extends TestCase
             'api.jaremar_api_key' => self::API_KEY,
             'api.rate_limit_per_minute' => 100,
             'api.rate_limit_devoluciones_per_minute' => 100,
+            // Esta suite cubre el modo LEGACY del listar (filtro por
+            // processed_date, sin retención por ventana). El contrato
+            // vigente (filtro por fecha de emisión + publicación al cierre
+            // de la ventana hábil) se cubre en
+            // DevolucionesControllerVentanaTest. El toggle existe como red
+            // de seguridad para revertir la transición sin deploy.
+            'api.devoluciones_filtro_emision' => false,
         ]);
     }
 

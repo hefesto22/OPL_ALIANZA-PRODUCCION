@@ -112,6 +112,44 @@ class ManifestsTable
                     ->sortable()
                     ->toggleable(),
 
+                // ── Ventana de devoluciones (regla 5 días hábiles) ────────
+                // Cuenta regresiva para que las bodegas registren devoluciones:
+                // lun–sáb desde la llegada del manifiesto (domingo no cuenta).
+                // Al cierre (11:59 pm del día límite) el paquete se publica a
+                // Jaremar y queda congelado — el badge pasa a "Cerrado".
+                TextColumn::make('returns_deadline_at')
+                    ->label('Días p/ devoluciones')
+                    ->badge()
+                    ->alignCenter()
+                    ->sortable()
+                    ->toggleable()
+                    ->state(function (Manifest $record): string {
+                        if ($record->returnsWindowClosed()) {
+                            return 'Cerrado';
+                        }
+
+                        $deadline = $record->returnsDeadline();
+                        $tz = config('manifests.dates.timezone', 'America/Tegucigalpa');
+
+                        if ($deadline !== null && $deadline->isSameDay(now($tz))) {
+                            return 'Hoy 11:59 pm';
+                        }
+
+                        $dias = $record->remainingReturnBusinessDays();
+
+                        return $dias.' '.($dias === 1 ? 'día hábil' : 'días hábiles');
+                    })
+                    ->color(function (Manifest $record): string {
+                        if ($record->returnsWindowClosed()) {
+                            return 'gray';
+                        }
+
+                        return $record->remainingReturnBusinessDays() <= 1 ? 'warning' : 'success';
+                    })
+                    ->tooltip(fn (Manifest $record): ?string => $record->returnsDeadline()
+                        ? 'Cierre de devoluciones: '.$record->returnsDeadlineLabel()
+                        : null),
+
                 // ── Facturas + Clientes ───────────────────────────────────
                 TextColumn::make('invoices_count')
                     ->label('Facturas')
