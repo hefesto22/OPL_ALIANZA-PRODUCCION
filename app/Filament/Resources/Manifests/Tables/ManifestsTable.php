@@ -124,6 +124,12 @@ class ManifestsTable
                     ->sortable()
                     ->toggleable()
                     ->state(function (Manifest $record): string {
+                        // NULL = sin límite (manifiestos anteriores a la
+                        // entrada en vigor de la regla — transición 2026-07-21).
+                        if ($record->returns_deadline_at === null) {
+                            return 'Sin límite';
+                        }
+
                         if ($record->returnsWindowClosed()) {
                             return 'Cerrado';
                         }
@@ -140,6 +146,10 @@ class ManifestsTable
                         return $dias.' '.($dias === 1 ? 'día hábil' : 'días hábiles');
                     })
                     ->color(function (Manifest $record): string {
+                        if ($record->returns_deadline_at === null) {
+                            return 'info';
+                        }
+
                         if ($record->returnsWindowClosed()) {
                             return 'gray';
                         }

@@ -167,6 +167,23 @@ class DevolucionesControllerVentanaTest extends TestCase
         $this->assertSame($return->manifest->number, $despues->json()[0]['numeroManifiesto']);
     }
 
+    public function test_manifiesto_sin_limite_publica_de_inmediato(): void
+    {
+        // Transición 2026-07-21: manifiestos sin límite (deadline NULL)
+        // conservan el esquema previo — sus devoluciones son visibles al
+        // registrarse, sin esperar cierre de ventana.
+        $emision = now()->subDay()->toDateString();
+        $return = $this->makeReturn($emision, ventanaCerrada: false);
+
+        $return->manifest->update(['returns_deadline_at' => null]);
+        Cache::flush();
+
+        $response = $this->getListar(now()->subDay()->format('d/m/Y'));
+        $response->assertStatus(200);
+        $this->assertCount(1, $response->json());
+        $this->assertSame($return->manifest->number, $response->json()[0]['numeroManifiesto']);
+    }
+
     // ═══════════════════════════════════════════════════════════════
     //  PUNTO 3 — CANTIDADES EN UNIDADES TOTALES
     // ═══════════════════════════════════════════════════════════════

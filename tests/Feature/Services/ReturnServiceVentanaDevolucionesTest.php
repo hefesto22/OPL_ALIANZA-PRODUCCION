@@ -185,6 +185,40 @@ class ReturnServiceVentanaDevolucionesTest extends TestCase
         ]);
     }
 
+    public function test_manifiesto_sin_limite_acepta_devoluciones_sin_plazo(): void
+    {
+        // Transición 2026-07-21: los manifiestos anteriores a la entrada en
+        // vigor quedaron con returns_deadline_at = NULL → SIN LÍMITE. Aunque
+        // tengan semanas de antigüedad, siguen aceptando devoluciones.
+        [$manifest, $invoice, $line] = $this->makeManifestConFactura(now()->subDays(15)->toDateString());
+
+        DB::table('manifests')
+            ->where('id', $manifest->id)
+            ->update(['returns_deadline_at' => null]);
+
+        $return = $this->service()->createReturn($this->createReturnData($invoice, $line));
+
+        $this->assertSame('approved', $return->status);
+        $this->assertFalse($manifest->fresh()->returnsWindowClosed());
+    }
+
+    public function test_sin_limite_no_se_rellena_solo_en_saves(): void
+    {
+        // El hook de update NO debe reponer el deadline de un manifiesto sin
+        // límite: recalculateTotals() guarda constantemente y un refill
+        // silencioso reactivaría la ventana sobre el backlog de transición.
+        [$manifest] = $this->makeManifestConFactura(now()->subDays(15)->toDateString());
+
+        DB::table('manifests')
+            ->where('id', $manifest->id)
+            ->update(['returns_deadline_at' => null]);
+
+        $fresh = Manifest::findOrFail($manifest->id);
+        $fresh->recalculateTotals(); // dispara saves del modelo
+
+        $this->assertNull($fresh->fresh()->returns_deadline_at);
+    }
+
     public function test_deadline_coincide_con_business_days(): void
     {
         // La columna persistida y el cálculo directo nunca deben divergir

@@ -268,13 +268,18 @@ class DevolucionesController extends Controller
 
             if ($filtroEmision) {
                 // Punto 1: filtro por fecha de EMISIÓN de la factura.
-                // Punto 2: solo manifiestos con ventana de registro CERRADA
-                // (paquete completo, publicado de una sola vez, congelado).
+                // Punto 2: manifiestos con ventana CERRADA → paquete completo,
+                // publicado de una sola vez y congelado. Los manifiestos SIN
+                // LÍMITE (returns_deadline_at NULL — anteriores a la entrada
+                // en vigor de la regla, transición 2026-07-21) se publican de
+                // inmediato como en el esquema previo: visibles al registrarse
+                // y pueden seguir creciendo hasta que su backlog se agote.
                 $query
                     ->whereHas('invoice', fn ($q) => $q->whereBetween('invoice_date', [$desde, $hasta]))
                     ->whereHas('manifest', fn ($q) => $q
-                        ->whereNotNull('returns_deadline_at')
-                        ->where('returns_deadline_at', '<', now()));
+                        ->where(fn ($w) => $w
+                            ->whereNull('returns_deadline_at')
+                            ->orWhere('returns_deadline_at', '<', now())));
             } else {
                 // Legacy: fecha en que Hosana procesó la devolución.
                 $query->whereBetween('processed_date', [$desde, $hasta]);

@@ -26,15 +26,32 @@ class Manifest extends Model
 
     /**
      * La fecha límite de registro de devoluciones se fija automáticamente
-     * al crear el manifiesto (N días hábiles desde su llegada, ver
+     * al CREAR el manifiesto (N días hábiles desde su llegada, ver
      * config api.devoluciones_ventana_dias_habiles y App\Support\BusinessDays)
-     * y se recalcula si la fecha operativa cambia. La condición hace que el
-     * hook sea no-op en los saves frecuentes (recalculateTotals).
+     * y se recalcula si la fecha operativa cambia.
+     *
+     * IMPORTANTE — NULL significa "SIN LÍMITE" (transición 2026-07-21): los
+     * manifiestos anteriores a la entrada en vigor de la regla quedaron con
+     * returns_deadline_at = NULL y aceptan devoluciones sin plazo (además se
+     * publican de inmediato a Jaremar, comportamiento previo). Por eso el
+     * hook de update SOLO recalcula si el manifiesto YA tenía ventana — un
+     * NULL deliberado nunca se rellena solo.
      */
     protected static function booted(): void
     {
-        static::saving(function (Manifest $manifest) {
-            if ($manifest->date && ($manifest->returns_deadline_at === null || $manifest->isDirty('date'))) {
+        static::creating(function (Manifest $manifest) {
+            if ($manifest->date && $manifest->returns_deadline_at === null) {
+                $manifest->returns_deadline_at = BusinessDays::deadline(
+                    $manifest->date,
+                    (int) config('api.devoluciones_ventana_dias_habiles', 5),
+                );
+            }
+        });
+
+        static::updating(function (Manifest $manifest) {
+            if ($manifest->isDirty('date')
+                && $manifest->date
+                && $manifest->getOriginal('returns_deadline_at') !== null) {
                 $manifest->returns_deadline_at = BusinessDays::deadline(
                     $manifest->date,
                     (int) config('api.devoluciones_ventana_dias_habiles', 5),
@@ -130,32 +147,29 @@ class Manifest extends Model
     // ─── Ventana de registro de devoluciones ──────────────────
     // Regla operativa 2026-07-21: N días hábiles (lun–sáb) desde la llegada
     // del manifiesto; al cierre el paquete se publica a Jaremar y se congela.
+    // NULL en returns_deadline_at = SIN LÍMITE (manifiestos anteriores a la
+    // entrada en vigor): aceptan devoluciones sin plazo y se publican de
+    // inmediato, como el comportamiento previo a la regla.
 
     /**
      * Fecha límite de registro en el timezone operativo (Honduras).
-     * Fallback calculado si la columna aún es null (pre-backfill).
+     * NULL = manifiesto sin límite (nunca cierra).
      */
     public function returnsDeadline(): ?Carbon
     {
+        if ($this->returns_deadline_at === null) {
+            return null;
+        }
+
         $tz = config('manifests.dates.timezone', 'America/Tegucigalpa');
 
-        if ($this->returns_deadline_at) {
-            return $this->returns_deadline_at->copy()->timezone($tz);
-        }
-
-        if ($this->date) {
-            return BusinessDays::deadline(
-                $this->date,
-                (int) config('api.devoluciones_ventana_dias_habiles', 5),
-            );
-        }
-
-        return null;
+        return $this->returns_deadline_at->copy()->timezone($tz);
     }
 
     /**
      * true cuando la ventana ya cerró: las devoluciones del manifiesto
      * quedaron publicadas a Jaremar y CONGELADAS (ni crear/editar/cancelar).
+     * Un manifiesto sin límite (deadline NULL) nunca cierra.
      */
     public function returnsWindowClosed(): bool
     {
@@ -186,7 +200,7 @@ class Manifest extends Model
     {
         $deadline = $this->returnsDeadline();
 
-        return $deadline ? $deadline->format('d/m/Y').' a las 11:59 pm' : '—';
+        return $deadline ? $deadline->format('d/m/Y').' a las 11:59 pm' : 'Sin límite';
     }
 
     /**
