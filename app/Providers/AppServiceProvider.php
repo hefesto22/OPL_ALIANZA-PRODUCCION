@@ -5,6 +5,8 @@ namespace App\Providers;
 use App\Listeners\RecordUserLogin;
 use App\Models\InvoiceReturn;
 use App\Observers\InvoiceReturnObserver;
+use Filament\Schemas\Schema;
+use Filament\Tables\Table;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
@@ -28,6 +30,20 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Event::listen(Login::class, RecordUserLogin::class);
+
+        // ── Formato numérico global de Filament ───────────────────────────
+        // La app corre con APP_LOCALE=es (interfaz en español), pero el
+        // locale ICU 'es' formatea montos al estilo europeo (1.087,92).
+        // En Honduras la convención es la de es_HN: coma para miles y
+        // punto para decimales (1,087.92), con símbolo "L" de Lempira.
+        // Esto cubre TODOS los ->money() y ->numeric() de tablas,
+        // infolists y formularios sin tocar cada llamada individual.
+        // Los number_format() de PHP (PDFs, exports, notificaciones) ya
+        // usan ese formato por defecto — no requieren cambio.
+        Table::configureUsing(fn (Table $table) => $table
+            ->defaultNumberLocale('es_HN'));
+        Schema::configureUsing(fn (Schema $schema) => $schema
+            ->defaultNumberLocale('es_HN'));
 
         // ── Observers ─────────────────────────────────────────────────────
         // InvoiceReturnObserver mantiene la integridad del manifiesto y la
