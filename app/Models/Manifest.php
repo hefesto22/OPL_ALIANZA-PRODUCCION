@@ -19,7 +19,8 @@ class Manifest extends Model
     protected $fillable = [
         'supplier_id', 'warehouse_id', 'number', 'date', 'status',
         'total_invoices', 'total_returns', 'total_to_deposit',
-        'total_deposited', 'difference', 'invoices_count', 'returns_count', 'clients_count',
+        'total_deposited', 'adjustment_amount', 'difference',
+        'invoices_count', 'returns_count', 'clients_count',
         'raw_json', 'closed_by', 'closed_at', 'created_by', 'updated_by',
         'returns_deadline_at',
     ];
@@ -71,6 +72,7 @@ class Manifest extends Model
             'total_returns' => 'decimal:2',
             'total_to_deposit' => 'decimal:2',
             'total_deposited' => 'decimal:2',
+            'adjustment_amount' => 'decimal:2',
             'difference' => 'decimal:2',
         ];
     }
@@ -130,6 +132,27 @@ class Manifest extends Model
     public function deposits(): HasMany
     {
         return $this->hasMany(Deposit::class);
+    }
+
+    /**
+     * Dinero aplicado a este manifiesto, venga de la boleta que venga.
+     *
+     * NO es lo mismo que deposits(): un depósito registrado desde OTRO
+     * manifiesto puede tener una allocation acá (reparto FIFO), y un depósito
+     * registrado desde acá puede tener parte de su monto aplicado a otros.
+     * Para todo cálculo financiero del manifiesto, la fuente es esta.
+     */
+    public function allocations(): HasMany
+    {
+        return $this->hasMany(DepositAllocation::class);
+    }
+
+    /**
+     * Ajustes manuales de centavos (ver ManifestAdjustment).
+     */
+    public function adjustments(): HasMany
+    {
+        return $this->hasMany(ManifestAdjustment::class);
     }
 
     public function closedBy(): BelongsTo
@@ -305,10 +328,20 @@ class Manifest extends Model
             ")
             ->first();
 
-        // Deposits: una sola SUM (tabla independiente, no se puede fusionar).
-        // Filtro active() excluye depósitos cancelados — un cancelado existe
-        // en BD para auditoría pero NO cuenta como dinero ingresado.
-        $totalDeposited = (float) $this->deposits()->active()->sum('amount');
+        // Depósitos: la fuente es deposit_allocations, NO deposits.
+        //
+        // Desde la aplicación multi-manifiesto una boleta puede repartirse
+        // entre varios manifiestos, así que sumar deposits.amount por
+        // manifest_id acreditaría a este manifiesto plata que en realidad
+        // fue a otro. totalForManifest() suma solo las líneas de reparto
+        // dirigidas acá, excluyendo depósitos cancelados o borrados.
+        $totalDeposited = DepositAllocation::totalForManifest($this->id);
+
+        // Ajustes manuales de centavos. Se mantienen SEPARADOS de
+        // total_deposited a propósito: la columna "Depositado" debe seguir
+        // reflejando plata real que entró al banco. El ajuste solo mueve
+        // la diferencia, y en la UI se muestra aparte.
+        $adjustment = (float) $this->adjustments()->sum('amount');
 
         // ── Asignar resultados al modelo ──────────────────────────────────
         $this->total_invoices = (float) ($invoiceStats->total_invoices ?? 0);
@@ -320,8 +353,9 @@ class Manifest extends Model
         $this->total_returns = (float) ($returnStats->total_returns ?? 0);
         $this->returns_count = (int) ($returnStats->returns_count ?? 0);
         $this->total_deposited = $totalDeposited;
+        $this->adjustment_amount = $adjustment;
         $this->total_to_deposit = $this->total_invoices - $this->total_returns;
-        $this->difference = $this->total_to_deposit - $this->total_deposited;
+        $this->difference = $this->total_to_deposit - $this->total_deposited - $adjustment;
 
         $this->save();
 

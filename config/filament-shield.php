@@ -236,6 +236,7 @@ return [
         // roles. Mantener sincronizado con CustomPermissionSeeder::PERMISSIONS.
         'Close:Manifest',
         'Reopen:Manifest',
+        'Adjust:Manifest',
         'ExportPdf:Deposit',
         'ExportExcel:Deposit',
         'ExportPdf:InvoiceReturn',

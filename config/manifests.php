@@ -15,6 +15,37 @@ return [
     |
     */
 
+    /*
+    |--------------------------------------------------------------------------
+    | Ajustes de diferencia (centavos)
+    |--------------------------------------------------------------------------
+    |
+    | Un depósito bancario rara vez cuadra al centavo con el total a depositar.
+    | Como el cierre de manifiesto exige diferencia CERO exacta, esos centavos
+    | dejan manifiestos varados de por vida (al 28/07/2026 había manifiestos en
+    | producción con -0.01 imposibles de cerrar).
+    |
+    | La solución NO es una tolerancia automática de cierre — eso no deja
+    | constancia de quién autorizó dar por buenos esos centavos. Es un ajuste
+    | explícito, con permiso (Adjust:Manifest), motivo obligatorio y registro
+    | en el canal `finance`. Ver App\Services\ManifestAdjustmentService.
+    |
+    */
+
+    'ajustes' => [
+
+        // ── tope_hnl ────────────────────────────────────────────────────
+        //
+        // Monto absoluto máximo de UN ajuste individual. La regla de negocio
+        // es "centavos de redondeo bancario", no "cuadrar manifiestos a mano":
+        // si la diferencia supera este tope, hay un depósito o una devolución
+        // sin registrar y eso se investiga, no se ajusta.
+        //
+        // Se puede subir desde .env sin migración si la operación lo justifica.
+        //
+        'tope_hnl' => (float) env('MANIFESTS_AJUSTE_TOPE_HNL', 1.00),
+    ],
+
     'dates' => [
 
         // ── Timezone ────────────────────────────────────────────────────

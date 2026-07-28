@@ -100,6 +100,21 @@ class ManifestPolicy
     }
 
     /**
+     * Registrar un ajuste de diferencia por centavos (permiso custom).
+     *
+     * Permiso: Adjust:Manifest. Por matriz lo tienen admin y finance — es
+     * una decisión financiera (dar por buenos centavos de redondeo), no
+     * operativa. El tope del monto lo impone ManifestAdjustmentService vía
+     * config('manifests.ajustes.tope_hnl'); la Policy solo autoriza al actor
+     * y lo restringe a SU bodega.
+     */
+    public function adjust(AuthUser $authUser, Manifest $manifest): bool
+    {
+        return $authUser->can('Adjust:Manifest')
+            && $this->userOwnsManifest($authUser, $manifest);
+    }
+
+    /**
      * Ver la pestaña "Depósitos" dentro de la vista del manifiesto.
      *
      * Permiso: ViewDeposits:Manifest (custom, ver CustomPermissionSeeder).

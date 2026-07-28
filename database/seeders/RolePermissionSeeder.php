@@ -89,7 +89,7 @@ class RolePermissionSeeder extends Seeder
             'Invoice' => ['ViewAny', 'View', 'Update', 'Delete', 'Restore'],
             'InvoiceReturn' => ['ViewAny', 'View', 'Create', 'Update', 'Delete', 'Restore', 'ExportPdf', 'ExportExcel'],
             'Manifest' => [
-                'ViewAny', 'View', 'Update', 'Delete', 'Restore', 'Close', 'Reopen',
+                'ViewAny', 'View', 'Update', 'Delete', 'Restore', 'Close', 'Reopen', 'Adjust',
                 // Pestañas y botones de la vista del manifiesto (custom).
                 'ViewDeposits', 'ViewReturns',
                 'ExportInvoicesPdf', 'ExportProductsPdf', 'ExportChecklistPdf', 'ExportReturnsPdf',
@@ -147,6 +147,9 @@ class RolePermissionSeeder extends Seeder
             // (antes el blacklist de rol 'operador' se las ocultaba — bug).
             'Manifest' => [
                 'ViewAny', 'View', 'ViewDeposits', 'ViewReturns', 'ExportInvoicesPdf',
+                // Adjust: finance concilia el banco, así que es quien detecta
+                // y da por buenos los centavos de redondeo (tope en config).
+                'Adjust',
                 // Reportes globales del listado de manifiestos (2026-07-17):
                 // PDF, Sin ISV y Excel para conciliación (scoped a sus bodegas).
                 // ReportWarehouseSales NO — es comparativo entre bodegas; se

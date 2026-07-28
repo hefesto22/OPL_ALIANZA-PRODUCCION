@@ -54,6 +54,10 @@ class CustomPermissionSeeder extends Seeder
     public const PERMISSIONS = [
         'Close:Manifest',
         'Reopen:Manifest',
+        // Ajuste de diferencia por centavos (ManifestAdjustmentService).
+        // Es la única vía para llevar a cero un manifiesto descuadrado por
+        // redondeo bancario, y deja firma de quién lo autorizó.
+        'Adjust:Manifest',
         'ExportPdf:Deposit',
         'ExportExcel:Deposit',
         'ExportPdf:InvoiceReturn',

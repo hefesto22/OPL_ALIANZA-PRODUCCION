@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
@@ -36,9 +37,9 @@ class Deposit extends Model
     }
 
     protected $fillable = [
-        'manifest_id', 'amount', 'deposit_date',
+        'manifest_id', 'amount', 'allocated_amount', 'deposit_date',
         'bank', 'reference', 'observations',
-        'receipt_image', 'receipt_image_uploaded_at',
+        'receipt_image', 'receipt_image_uploaded_at', 'justification',
         'cancelled_at', 'cancelled_by', 'cancellation_reason',
         'created_by', 'updated_by',
     ];
@@ -48,6 +49,7 @@ class Deposit extends Model
         return [
             'deposit_date' => 'date',
             'amount' => 'decimal:2',
+            'allocated_amount' => 'decimal:2',
             'receipt_image_uploaded_at' => 'datetime',
             'cancelled_at' => 'datetime',
         ];
@@ -101,7 +103,7 @@ class Deposit extends Model
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
-            ->logOnly(['amount', 'deposit_date', 'bank', 'reference'])
+            ->logOnly(['amount', 'deposit_date', 'bank', 'reference', 'justification'])
             ->logOnlyDirty()
             ->dontSubmitEmptyLogs();
     }
@@ -148,6 +150,35 @@ class Deposit extends Model
 
     // ─── Relaciones ───────────────────────────────────────────
 
+    /**
+     * Reparto de esta boleta entre manifiestos.
+     *
+     * INVARIANTE: SUM(allocations.amount) == amount, siempre. No existe
+     * dinero registrado sin aplicar — si sobra tras llenar los manifiestos
+     * candidatos, el remanente se carga al manifiesto de origen y exige
+     * justificación. Ver DepositAllocationService.
+     */
+    public function allocations(): HasMany
+    {
+        return $this->hasMany(DepositAllocation::class);
+    }
+
+    /**
+     * ¿El depósito se repartió entre más de un manifiesto?
+     * Usado por la UI para mostrar el desglose solo cuando aporta algo.
+     */
+    public function isSplit(): bool
+    {
+        return $this->allocations()->count() > 1;
+    }
+
+    /**
+     * Manifiesto DESDE EL QUE se registró el depósito.
+     *
+     * Ojo: desde la aplicación multi-manifiesto esto ya NO significa
+     * "único manifiesto que cubre esta boleta" — para eso está allocations().
+     * Se conserva porque de él cuelgan DepositPolicy y scopeVisibleTo.
+     */
     public function manifest(): BelongsTo
     {
         return $this->belongsTo(Manifest::class);

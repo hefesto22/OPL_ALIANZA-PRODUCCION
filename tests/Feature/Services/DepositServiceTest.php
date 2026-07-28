@@ -115,7 +115,13 @@ class DepositServiceTest extends TestCase
         );
     }
 
-    public function test_create_deposit_exceeding_pending_amount_throws(): void
+    /**
+     * Depositar por encima del pendiente YA NO se rechaza — el cliente
+     * necesita mandar una sola transferencia para varios manifiestos. Lo que
+     * sí se exige es justificación. Sin manifiestos candidatos donde repartir,
+     * el excedente queda en este manifiesto (difference negativa).
+     */
+    public function test_create_deposit_exceeding_pending_without_justification_throws(): void
     {
         $this->expectException(ValidationException::class);
 
@@ -124,6 +130,26 @@ class DepositServiceTest extends TestCase
             $this->depositData(['amount' => 1500.00]),  // pending es 1000
             $this->user->id,
         );
+    }
+
+    public function test_create_deposit_exceeding_pending_with_justification_is_accepted(): void
+    {
+        $deposit = $this->service()->createDeposit(
+            $this->manifest,
+            $this->depositData([
+                'amount' => 1500.00,
+                'justification' => 'Una sola transferencia para cubrir dos manifiestos.',
+            ]),
+            $this->user->id,
+        );
+
+        $this->manifest->refresh();
+
+        $this->assertEquals(1500.00, (float) $deposit->amount);
+        // Invariante: todo el monto queda aplicado, sin dinero en el limbo.
+        $this->assertEquals(1500.00, (float) $deposit->allocations()->sum('amount'));
+        // Sin candidatos donde repartir, el excedente se queda acá.
+        $this->assertEquals(-500.00, (float) $this->manifest->difference);
     }
 
     public function test_create_deposit_with_receipt_image_sets_uploaded_at(): void
@@ -138,28 +164,38 @@ class DepositServiceTest extends TestCase
         $this->assertSame('deposits/receipt-001.jpg', $deposit->receipt_image);
     }
 
-    public function test_create_deposit_penny_margin_is_accepted(): void
+    /**
+     * El margen de tolerancia de HNL 0.01 fue ELIMINADO.
+     *
+     * Ese margen dejaba pasar depósitos un centavo por encima del pendiente
+     * sin justificación ni registro — y es el origen de los manifiestos con
+     * difference = -0.01 que quedaron imposibles de cerrar en producción.
+     * Ahora un centavo de más también exige justificación explícita.
+     */
+    public function test_create_deposit_one_cent_over_pending_now_requires_justification(): void
     {
-        // Depositar exactamente total_to_deposit + 0.01 (margen de redondeo)
-        $deposit = $this->service()->createDeposit(
+        $this->expectException(ValidationException::class);
+
+        $this->service()->createDeposit(
             $this->manifest,
             $this->depositData(['amount' => 1000.01]),
             $this->user->id,
         );
-
-        $this->assertEquals(1000.01, (float) $deposit->amount);
     }
 
-    public function test_create_deposit_beyond_penny_margin_throws(): void
+    public function test_create_deposit_exactly_pending_needs_no_justification(): void
     {
-        $this->expectException(ValidationException::class);
-
-        // 1000.02 excede el margen de 0.01
-        $this->service()->createDeposit(
+        $deposit = $this->service()->createDeposit(
             $this->manifest,
-            $this->depositData(['amount' => 1000.02]),
+            $this->depositData(['amount' => 1000.00]),
             $this->user->id,
         );
+
+        $this->manifest->refresh();
+
+        $this->assertEquals(1000.00, (float) $deposit->amount);
+        $this->assertEquals(0.00, (float) $this->manifest->difference);
+        $this->assertNull($deposit->justification);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -408,10 +444,15 @@ class DepositServiceTest extends TestCase
 
     public function test_get_pending_amount_floors_at_zero(): void
     {
-        // Depositar todo + margen
+        // Sobre-depositar: el pendiente nunca debe salir negativo, aunque la
+        // `difference` del manifiesto sí lo sea. El pendiente alimenta la UI
+        // ("cuánto falta") y un negativo ahí se leería como deuda inexistente.
         $this->service()->createDeposit(
             $this->manifest,
-            $this->depositData(['amount' => 1000.01]),
+            $this->depositData([
+                'amount' => 1000.01,
+                'justification' => 'Centavo de más por redondeo del banco emisor.',
+            ]),
             $this->user->id,
         );
 

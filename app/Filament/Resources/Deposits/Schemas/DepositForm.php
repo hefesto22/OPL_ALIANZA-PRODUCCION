@@ -4,11 +4,13 @@ namespace App\Filament\Resources\Deposits\Schemas;
 
 use App\Models\Deposit;
 use App\Models\Manifest;
+use App\Services\DepositService;
 use App\Services\ReceiptImageService;
 use App\Support\WarehouseScope;
 use Carbon\Carbon;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\FileUpload;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -17,6 +19,8 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\HtmlString;
 
 class DepositForm
 {
@@ -41,7 +45,10 @@ class DepositForm
                 return;
             }
 
-            $pending = max(0, (float) $manifest->total_to_deposit - (float) $manifest->total_deposited);
+            // El pendiente sale de `difference`, que ya descuenta depósitos
+            // Y ajustes manuales de centavos. Restar total_deposited a mano
+            // ignoraría los ajustes y mostraría un saldo que no existe.
+            $pending = max(0, (float) $manifest->difference);
 
             $set('_manifest_total', 'HNL '.number_format($manifest->total_to_deposit, 2));
             $set('_manifest_deposited', 'HNL '.number_format($manifest->total_deposited, 2));
@@ -69,7 +76,12 @@ class DepositForm
                             // Manifiestos con saldo pendiente, filtrados por bodega del usuario
                             $query = Manifest::query()
                                 ->whereIn('status', ['imported', 'processing'])
-                                ->whereRaw('total_to_deposit > total_deposited')
+                                // `difference > 0` en vez de comparar
+                                // total_to_deposit contra total_deposited: la
+                                // diferencia ya contempla los ajustes de centavos,
+                                // así que un manifiesto ajustado a cero deja de
+                                // ofrecerse (antes seguía apareciendo con saldo).
+                                ->where('difference', '>', 0)
                                 ->orderBy('date', 'desc');
 
                             // Usuarios de bodega solo ven sus propios manifiestos
@@ -90,10 +102,7 @@ class DepositForm
                                     '#%s  |  %s  |  Pendiente: HNL %s',
                                     $m->number,
                                     Carbon::parse($m->date)->format('d/m/Y'),
-                                    number_format(
-                                        max(0, (float) $m->total_to_deposit - (float) $m->total_deposited),
-                                        2
-                                    )
+                                    number_format(max(0, (float) $m->difference), 2)
                                 ),
                             ]);
                         })
@@ -144,7 +153,11 @@ class DepositForm
                             ->minValue(0.01)
                             ->prefix('HNL')
                             ->placeholder('0.00')
-                            ->helperText('Puedes ajustar el monto para depósitos parciales.'),
+                            ->live(onBlur: true)
+                            ->helperText(
+                                'Depósito parcial: menor al saldo. Una sola transferencia para varios '.
+                                'manifiestos: mayor al saldo — el excedente se reparte automáticamente.'
+                            ),
 
                         DatePicker::make('deposit_date')
                             ->label('Fecha de Depósito')
@@ -169,6 +182,55 @@ class DepositForm
                             ->rows(3)
                             ->columnSpan(2)
                             ->placeholder('Notas adicionales...'),
+
+                        // ── Reparto y justificación ───────────────────────
+                        // Ambos aparecen solo cuando el monto supera el saldo
+                        // del manifiesto elegido. Ver DepositAllocationService
+                        // para el orden del reparto y DepositService para la
+                        // validación de la justificación (que se revalida en
+                        // el servicio: la UI se puede saltar, el Service no).
+                        Placeholder::make('reparto_preview')
+                            ->label('Así se va a repartir el depósito')
+                            ->visible(fn (Get $get): bool => self::exceedsPending($get))
+                            ->content(function (Get $get): HtmlString {
+                                $manifest = Manifest::find($get('manifest_id'));
+                                $amount = round((float) ($get('amount') ?? 0), 2);
+
+                                if (! $manifest || $amount <= 0) {
+                                    return new HtmlString('<span class="text-sm text-gray-500">Elegí manifiesto y monto.</span>');
+                                }
+
+                                $plan = app(DepositService::class)
+                                    ->previewAllocationPlan($manifest, $amount, Auth::user());
+
+                                $rows = collect($plan)->map(function (array $line): string {
+                                    $etiqueta = $line['is_overflow']
+                                        ? ' <span class="text-warning-600 font-medium">(excede el total — requiere justificación)</span>'
+                                        : ($line['is_origin'] ? ' <span class="text-gray-500">(manifiesto elegido)</span>' : '');
+
+                                    return sprintf(
+                                        '<li class="flex justify-between gap-4 py-1 border-b border-gray-200 dark:border-gray-700">'.
+                                        '<span>#%s%s</span><span class="font-semibold">HNL %s</span></li>',
+                                        e($line['number']),
+                                        $etiqueta,
+                                        number_format($line['amount'], 2)
+                                    );
+                                })->implode('');
+
+                                return new HtmlString('<ul class="text-sm w-full">'.$rows.'</ul>');
+                            })
+                            ->columnSpan(2),
+
+                        Textarea::make('justification')
+                            ->label('Justificación del depósito en exceso')
+                            ->visible(fn (Get $get): bool => self::exceedsPending($get))
+                            ->required(fn (Get $get): bool => self::exceedsPending($get))
+                            ->minLength(15)
+                            ->maxLength(1000)
+                            ->rows(2)
+                            ->columnSpan(2)
+                            ->placeholder('Ej.: una sola transferencia para cubrir dos manifiestos.')
+                            ->helperText('Obligatoria. Queda registrada en la auditoría junto con el reparto.'),
                     ]),
 
                     // ── Comprobante de depósito ────────────────────────
@@ -196,5 +258,26 @@ class DepositForm
                         ->columnSpanFull(),
                 ]),
         ]);
+    }
+
+    /**
+     * ¿El monto tecleado supera el saldo pendiente del manifiesto elegido?
+     *
+     * Se lee `difference` (ya neta de depósitos y ajustes) en vez de
+     * recalcular a mano. Devuelve false sin manifiesto o sin monto para que
+     * los campos condicionales no parpadeen mientras se llena el formulario.
+     */
+    private static function exceedsPending(Get $get): bool
+    {
+        $manifestId = $get('manifest_id');
+        $amount = round((float) ($get('amount') ?? 0), 2);
+
+        if (! $manifestId || $amount <= 0) {
+            return false;
+        }
+
+        $manifest = Manifest::find($manifestId);
+
+        return $manifest !== null && $amount > round(max(0, (float) $manifest->difference), 2);
     }
 }

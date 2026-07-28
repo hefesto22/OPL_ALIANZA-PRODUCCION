@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use App\Models\Deposit;
+use App\Models\DepositAllocation;
 use App\Models\Manifest;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -34,6 +35,32 @@ class DepositFactory extends Factory
             'receipt_image' => null,
             'receipt_image_uploaded_at' => null,
         ];
+    }
+
+    /**
+     * Todo depósito nace con su línea de reparto al manifiesto al que
+     * pertenece.
+     *
+     * Sin esto la factory produciría un depósito "huérfano": existe en
+     * `deposits` pero su dinero no aparece en ningún manifiesto, porque
+     * `total_deposited` se calcula desde deposit_allocations. Un test que
+     * creara depósitos así vería totales en cero y culparía al modelo.
+     *
+     * Espeja lo que hace DepositService en producción: depósito y reparto
+     * siempre juntos, cumpliendo SUM(allocations) == amount.
+     */
+    public function configure(): static
+    {
+        return $this->afterCreating(function (Deposit $deposit): void {
+            DepositAllocation::create([
+                'deposit_id' => $deposit->id,
+                'manifest_id' => $deposit->manifest_id,
+                'amount' => $deposit->amount,
+                'created_by' => $deposit->created_by,
+            ]);
+
+            $deposit->forceFill(['allocated_amount' => $deposit->amount])->saveQuietly();
+        });
     }
 
     public function withReceipt(): static

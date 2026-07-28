@@ -312,6 +312,18 @@ class ManifestInfolist
                         ->color('success')
                         ->state(fn ($record): float => (float) $record->total_deposited),
 
+                    // Solo aparece cuando hubo ajuste. Se muestra SEPARADO de
+                    // "Depositado" a propósito: esa columna debe seguir siendo
+                    // plata real que entró al banco. El ajuste es una decisión
+                    // administrativa sobre centavos, no un depósito.
+                    TextEntry::make('adjustment_amount')
+                        ->label('(−) Ajuste')
+                        ->money('HNL')
+                        ->color('warning')
+                        ->state(fn ($record): float => (float) $record->adjustment_amount)
+                        ->visible(fn ($record): bool => (float) $record->adjustment_amount != 0.0)
+                        ->tooltip('Ajuste manual de centavos registrado en la auditoría'),
+
                     TextEntry::make('difference')
                         ->label('(=) Diferencia')
                         ->money('HNL')

@@ -88,7 +88,10 @@ class ManifestResource extends Resource
     {
         return [
             \App\Filament\Resources\Manifests\RelationManagers\InvoicesRelationManager::class,
-            \App\Filament\Resources\Manifests\RelationManagers\DepositsRelationManager::class, // ← agregar
+            \App\Filament\Resources\Manifests\RelationManagers\DepositsRelationManager::class,
+            // Contracara de la anterior: de qué boletas salió el dinero que
+            // cubre este manifiesto (incluye excedentes venidos de otros).
+            \App\Filament\Resources\Manifests\RelationManagers\AllocationsRelationManager::class,
             \App\Filament\Resources\Manifests\RelationManagers\ReturnsRelationManager::class,
         ];
     }
