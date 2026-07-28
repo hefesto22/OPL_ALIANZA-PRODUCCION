@@ -408,14 +408,51 @@ class ReturnServiceTest extends TestCase
     public function test_invalidates_devoluciones_cache_for_today(): void
     {
         $invoice = $this->makeInvoiceWithLines();
+
+        // Fecha de emisión FIJA y distinta de hoy — esto es lo que hace al test
+        // determinista.
+        //
+        // invalidateDevolucionesCacheForReturn() bombea DOS contadores: el de la
+        // fecha de PROCESO y el de la fecha de EMISIÓN de la factura (cubre los
+        // dos modos del contrato con Jaremar). InvoiceFactory genera invoice_date
+        // aleatorio dentro de los últimos 15 días, así que ~1 de cada 15 corridas
+        // caía justo en hoy, ambos bumps golpeaban la MISMA clave y el contador
+        // subía a 7 en vez de 6. El test fallaba por azar, no por el código.
+        // (Se cayó en CI el 28/07/2026 después de pasar en local.)
+        $invoice->update(['invoice_date' => now()->subDays(3)->toDateString()]);
+
         $today = now()->toDateString();
         $cacheKey = "devoluciones:version:{$today}";
         Cache::forget($cacheKey);
         Cache::put($cacheKey, 5);
 
-        $this->service->createReturn($this->returnPayload($invoice, boxesToReturn: 2));
+        $this->service->createReturn($this->returnPayload($invoice->fresh('lines'), boxesToReturn: 2));
 
         $this->assertSame(6, (int) Cache::get($cacheKey));
+    }
+
+    /**
+     * El caso complementario del anterior: cuando la factura se emitió HOY, la
+     * fecha de proceso y la de emisión son la misma, y el contador de ese día
+     * recibe los dos bumps.
+     *
+     * No es un bug: invalidar de más solo cuesta una lectura fría de cache, e
+     * invalidar de menos serviría datos viejos a Jaremar. Se deja cubierto por
+     * un test propio para que nadie lo "arregle" pensando que es un doble
+     * disparo accidental.
+     */
+    public function test_same_day_invoice_bumps_the_version_counter_twice(): void
+    {
+        $invoice = $this->makeInvoiceWithLines();
+        $invoice->update(['invoice_date' => now()->toDateString()]);
+
+        $cacheKey = 'devoluciones:version:'.now()->toDateString();
+        Cache::forget($cacheKey);
+        Cache::put($cacheKey, 5);
+
+        $this->service->createReturn($this->returnPayload($invoice->fresh('lines'), boxesToReturn: 2));
+
+        $this->assertSame(7, (int) Cache::get($cacheKey));
     }
 
     public function test_rejects_return_when_quantity_exceeds_available(): void
