@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Database\Seeders;
 
+use App\Models\Deposit;
+use App\Models\DepositAllocation;
 use App\Models\Invoice;
 use App\Models\Manifest;
 use App\Models\Supplier;
@@ -86,8 +88,8 @@ class DepositCasesSeeder extends Seeder
         ],
         [
             'number' => '950002', 'days' => 15,
-            'lines' => ['OAC' => 500.00], 'deposit' => 500.01,
-            'nota' => 'SOBRA 0.01 — el reparto no puede arreglarlo, solo el ajuste',
+            'lines' => ['OAC' => 500.00], 'deposit' => 500.01, 'legacy' => true,
+            'nota' => 'SOBRA 0.01 — dato HEREDADO: el código nuevo ya no puede generarlo',
         ],
         [
             'number' => '950008', 'days' => 12,
@@ -158,7 +160,11 @@ class DepositCasesSeeder extends Seeder
                 continue;
             }
 
-            if ($case['deposit'] !== null && $manifest->deposits()->count() === 0) {
+            if ($case['legacy'] ?? false) {
+                // Caso heredado: NO puede sembrarse por el servicio. Ver
+                // seedLegacyOverDeposit() para el porqué.
+                $this->seedLegacyOverDeposit($manifest, $case, $user->id);
+            } elseif ($case['deposit'] !== null && $manifest->deposits()->count() === 0) {
                 $service->createDeposit(
                     $manifest,
                     $this->depositData($case, $manifest),
@@ -275,6 +281,79 @@ class DepositCasesSeeder extends Seeder
         }
 
         return $data;
+    }
+
+    /**
+     * Siembra un manifiesto SOBRE-DEPOSITADO escribiendo el depósito y su
+     * reparto directo en la base, sin pasar por DepositService.
+     *
+     * ─────────────────────────────────────────────────────────────────
+     *  POR QUÉ NO SE PUEDE USAR EL SERVICIO
+     * ─────────────────────────────────────────────────────────────────
+     *  Si le pedimos al servicio que deposite 500.01 sobre un manifiesto que
+     *  debe 500.00, hace exactamente lo que fue diseñado para hacer: reparte
+     *  el centavo sobrante al manifiesto más antiguo con saldo pendiente. El
+     *  manifiesto de origen queda en CERO, no en −0.01.
+     *
+     *  Es decir: con el código nuevo un manifiesto sobre-depositado por
+     *  centavos ya no puede existir. Los que hay en producción (4 al
+     *  28/07/2026) los generó el código VIEJO, cuando assertAmountWithinPending
+     *  tenía un margen de tolerancia de +0.01 que dejaba pasar el exceso sin
+     *  repartirlo ni justificarlo.
+     *
+     *  Para poder probar la acción "Ajustar Diferencia" hay que reproducir ese
+     *  estado heredado tal cual: depósito y allocation escritos a mano, con el
+     *  monto completo aplicado al propio manifiesto.
+     *
+     *  Si el manifiesto ya quedó en otro estado por una corrida anterior del
+     *  seeder, se limpian sus depósitos y se reescribe — esto es una base de
+     *  pruebas, no hay auditoría que preservar.
+     *
+     * @param  array{number: string, days: int, deposit: float|null}  $case
+     */
+    private function seedLegacyOverDeposit(Manifest $manifest, array $case, int $userId): void
+    {
+        $esperada = round((float) $manifest->total_to_deposit - (float) $case['deposit'], 2);
+
+        if ($manifest->deposits()->exists() && round((float) $manifest->difference, 2) === $esperada) {
+            $this->command?->line("  #{$case['number']} ya está sobre-depositado — se deja como está.");
+
+            return;
+        }
+
+        // Limpiar SOLO los depósitos registrados desde este manifiesto. Las
+        // allocations que otras boletas hayan dirigido acá no se tocan.
+        foreach ($manifest->deposits()->withTrashed()->get() as $previo) {
+            $previo->allocations()->delete();
+            $previo->forceDelete();
+        }
+
+        $deposito = Deposit::create([
+            'manifest_id' => $manifest->id,
+            'amount' => $case['deposit'],
+            'allocated_amount' => $case['deposit'],
+            'deposit_date' => now()->subDays(max(0, $case['days'] - 1))->toDateString(),
+            'bank' => 'BAC',
+            'reference' => 'PRB-'.$case['number'],
+            'observations' => 'Depósito HEREDADO simulado (código anterior al reparto multi-manifiesto).',
+            'created_by' => $userId,
+            'updated_by' => $userId,
+        ]);
+
+        DepositAllocation::create([
+            'deposit_id' => $deposito->id,
+            'manifest_id' => $manifest->id,
+            'amount' => $case['deposit'],
+            'created_by' => $userId,
+        ]);
+
+        $manifest->recalculateTotals();
+        $manifest->refresh();
+
+        $this->command?->line(
+            "  #{$case['number']} sembrado como sobre-depositado (diferencia ".
+            number_format((float) $manifest->difference, 2).')'
+        );
     }
 
     private function summary(): void
