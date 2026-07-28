@@ -12,6 +12,7 @@ use App\Models\Supplier;
 use App\Models\User;
 use App\Models\Warehouse;
 use App\Services\DepositService;
+use Carbon\Carbon;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -147,6 +148,13 @@ class DepositCasesSeeder extends Seeder
 
         $this->command?->info("Sembrando casos de prueba en la base: {$database}");
 
+        // DEPOSIT_CASES_RESET=1 borra los casos y los vuelve a sembrar desde
+        // cero. Necesario para repetir la demo: una vez que los manifiestos
+        // quedan cuadrados, el reparto ya no tiene nada que mostrar.
+        if (env('DEPOSIT_CASES_RESET')) {
+            $this->purge();
+        }
+
         // El DepositService registra actividad con auth()->user(); sin sesión
         // los logs quedarían sin causer.
         Auth::login($user);
@@ -205,7 +213,7 @@ class DepositCasesSeeder extends Seeder
             return $existing;
         }
 
-        $date = now()->subDays($case['days'])->toDateString();
+        $date = $this->fechaPara($case['days']);
 
         $manifest = Manifest::create([
             'supplier_id' => $supplierId,
@@ -268,7 +276,7 @@ class DepositCasesSeeder extends Seeder
             'amount' => $case['deposit'],
             // Un día después del manifiesto (o hoy si el manifiesto es de hoy):
             // así la fecha del depósito nunca queda antes de la del manifiesto.
-            'deposit_date' => now()->subDays(max(0, $case['days'] - 1))->toDateString(),
+            'deposit_date' => $this->fechaPara(max(0, $case['days'] - 1)),
             'bank' => 'BAC',
             'reference' => 'PRB-'.$case['number'],
             'observations' => 'Depósito sembrado por DepositCasesSeeder.',
@@ -349,7 +357,7 @@ class DepositCasesSeeder extends Seeder
             'manifest_id' => $manifest->id,
             'amount' => $case['deposit'],
             'allocated_amount' => $case['deposit'],
-            'deposit_date' => now()->subDays(max(0, $case['days'] - 1))->toDateString(),
+            'deposit_date' => $this->fechaPara(max(0, $case['days'] - 1)),
             'bank' => 'BAC',
             'reference' => 'PRB-'.$case['number'],
             'observations' => 'Depósito HEREDADO simulado (código anterior al reparto multi-manifiesto).',
@@ -371,6 +379,96 @@ class DepositCasesSeeder extends Seeder
             "  #{$case['number']} sembrado como sobre-depositado (diferencia ".
             number_format((float) $manifest->difference, 2).')'
         );
+    }
+
+    /**
+     * Fecha del caso, anclada ANTES de cualquier manifiesto del entorno.
+     *
+     * ─────────────────────────────────────────────────────────────────
+     *  POR QUÉ NO SE USA now()->subDays()
+     * ─────────────────────────────────────────────────────────────────
+     *  El reparto FIFO va del manifiesto más antiguo al más nuevo. Si el
+     *  entorno tiene manifiestos reales anteriores a los sembrados —en
+     *  pruebas hay uno del 27/06/2026 con L 61,000 pendientes— ese se lleva
+     *  TODO el excedente y los casos de prueba nunca reciben nada. La demo
+     *  parece rota cuando en realidad el sistema está haciendo lo correcto.
+     *
+     *  Anclando los casos 60 días antes del manifiesto más viejo existente,
+     *  quedan siempre a la cabeza de la cola y el reparto es predecible.
+     *  Se conserva el espaciado relativo entre ellos (28, 25, 20… días).
+     */
+    private function fechaPara(int $days): string
+    {
+        $masViejo = Manifest::min('date');
+
+        $base = $masViejo
+            ? Carbon::parse($masViejo)->subDays(60)
+            : now()->subDays(60);
+
+        return $base->addDays(28 - $days)->toDateString();
+    }
+
+    /**
+     * Borra los casos de prueba para poder re-sembrarlos.
+     *
+     * Solo se activa con DEPOSIT_CASES_RESET=1. Recalcula los manifiestos
+     * AJENOS que hubieran recibido excedente de estas boletas: si no, quedan
+     * con `total_deposited` inflado apuntando a allocations que ya no existen.
+     *
+     * Se aborta si algún depósito EXTERNO aplicó dinero a un manifiesto de
+     * prueba: borrarlo rompería la invariante SUM(allocations) == amount de
+     * una boleta que no nos pertenece.
+     */
+    private function purge(): void
+    {
+        $manifiestos = Manifest::whereIn('number', array_column(self::CASES, 'number'))->get();
+
+        if ($manifiestos->isEmpty()) {
+            return;
+        }
+
+        $ids = $manifiestos->pluck('id')->all();
+
+        $externas = DepositAllocation::whereIn('deposit_allocations.manifest_id', $ids)
+            ->join('deposits', 'deposits.id', '=', 'deposit_allocations.deposit_id')
+            ->whereNotIn('deposits.manifest_id', $ids)
+            ->count();
+
+        if ($externas > 0) {
+            $this->command?->error(
+                "RESET ABORTADO: {$externas} aplicación(es) de boletas externas apuntan a los manifiestos de prueba. ".
+                'Borrarlos dejaría esas boletas descuadradas. Cancelá esos depósitos primero.'
+            );
+
+            return;
+        }
+
+        $ajenos = [];
+
+        foreach ($manifiestos as $manifiesto) {
+            foreach ($manifiesto->deposits()->withTrashed()->get() as $deposito) {
+                $ajenos = array_merge($ajenos, $deposito->allocations()->pluck('manifest_id')->all());
+                $deposito->allocations()->delete();
+                $deposito->forceDelete();
+            }
+
+            $manifiesto->adjustments()->delete();
+
+            foreach ($manifiesto->invoices()->get() as $factura) {
+                $factura->lines()->delete();
+                $factura->forceDelete();
+            }
+
+            $manifiesto->warehouseTotals()->delete();
+            $manifiesto->forceDelete();
+        }
+
+        foreach (Manifest::whereIn('id', array_diff(array_unique($ajenos), $ids))->get() as $ajeno) {
+            $ajeno->recalculateTotals();
+            $this->command?->line("  ↳ recalculado #{$ajeno->number} (había recibido excedente de los casos)");
+        }
+
+        $this->command?->warn('Casos de prueba borrados. Se vuelven a sembrar desde cero.');
     }
 
     private function summary(): void
