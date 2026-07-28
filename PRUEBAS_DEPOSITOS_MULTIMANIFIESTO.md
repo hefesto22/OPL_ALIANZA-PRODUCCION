@@ -1,40 +1,50 @@
-# Guion de pruebas — Depósitos multi-manifiesto y ajuste de centavos
+# Guion de pruebas — Depósitos multi-manifiesto, barrido y sobrepago
 
 > Entorno: **pruebas.hozana.cloud** · Manifiestos sembrados por `DepositCasesSeeder` (rango 95xxxx)
-> Fecha: 28/07/2026
+> Actualizado: 28/07/2026
+
+---
+
+## Las tres reglas que se están probando
+
+**1. Una boleta puede cubrir varios manifiestos.** Si el monto supera el saldo del manifiesto, el excedente se aplica solo, empezando por el más antiguo.
+
+**2. El barrido automático es angosto a propósito.** Solo cubre deudas de hasta **L 10.00** en manifiestos de **más de 15 días**. Una deuda grande no es un redondeo: se deposita explícitamente. Y un manifiesto reciente sigue en la conciliación del encargado, así que no se toca.
+
+**3. Lo que no encuentra dónde aplicarse queda como sobrepago.** El manifiesto muestra cuánto se depositó de más, y se puede cerrar dejando constancia de la justificación.
+
+Ambos umbrales viven en `config/manifests.php` y se cambian sin tocar código.
 
 ---
 
 ## Estado inicial tras sembrar
 
-Verificá que el listado de manifiestos muestre exactamente esto antes de empezar. Si algún número no coincide, avisá antes de seguir — el resto del guion depende de estos saldos.
+| # | Bodega | A depositar | Depositado | Diferencia | Rol en la prueba |
+|---|---|---|---|---|---|
+| **950005** | OAC | 1,000.00 | 999.50 | **+0.50** | barrido, 1º |
+| **950006** | OAC | 500.00 | 499.75 | **+0.25** | barrido, 2º |
+| **950001** | OAC | 1,000.00 | 999.68 | **+0.32** | barrido, 3º |
+| **950002** | OAC | 500.00 | 500.01 | **−0.01** | sobrepago heredado, sin justificación |
+| **950008** | OAC | 300.00 | 300.00 | 0.00 · **CERRADO** | nunca recibe nada |
+| **950004** | OAS | 300.00 | 0.00 | +300.00 | aislamiento entre bodegas |
+| **950009** | OAC + OAS | 700.00 | 696.00 | **+4.00** | multi-bodega |
+| **950010** | OAC | 1,000.00 | 975.00 | **+25.00** | deuda vieja pero **grande** |
+| **950003** | OAC | 800.00 | 0.00 | +800.00 | manifiesto de trabajo |
+| **950007** | OAC | 200.00 | 0.00 | +200.00 | prueba del sobrepago |
+| **950011** | OAC | 100.00 | 98.00 | **+2.00** | **reciente** (3 días) |
 
-| # | Bodega | Días atrás | A depositar | Depositado | Diferencia | Rol |
-|---|---|---|---|---|---|---|
-| **950005** | OAC | 28 | 1,000.00 | 999.50 | **+0.50** | candidato FIFO 1º |
-| **950006** | OAC | 25 | 500.00 | 499.75 | **+0.25** | candidato FIFO 2º |
-| **950001** | OAC | 20 | 1,000.00 | 999.68 | **+0.32** | candidato FIFO 3º |
-| **950002** | OAC | 15 | 500.00 | 500.01 | **−0.01** | solo se cierra con ajuste |
-| **950008** | OAC | 12 | 300.00 | 300.00 | 0.00 · **CERRADO** | nunca debe recibir dinero |
-| **950004** | OAS | 10 | 300.00 | 0.00 | +300.00 | aislamiento entre bodegas |
-| **950009** | OAC + OAS | 8 | 700.00 | 0.00 | +700.00 | multi-bodega |
-| **950010** | OAC | 5 | 1,000.00 | 995.00 | **+5.00** | supera el tope de ajuste |
-| **950003** | OAC | hoy | 800.00 | 0.00 | +800.00 | manifiesto de trabajo |
-| **950007** | OAC | hoy | 200.00 | 0.00 | +200.00 | sobredepósito extremo |
+Las deudas barribles de OAC suman **0.50 + 0.25 + 0.32 = 1.07**. El 950009 (4.00) también es barrible pero queda más adelante en la cola. El 950010 (25.00) y el 950011 (reciente) **no lo son**.
 
-**Los centavos pendientes de OAC suman 0.50 + 0.25 + 0.32 = 1.07.** Ese es el número que hace toda la demo.
-
-> ⚠️ Corré las pruebas **en orden**. Cada una deja el estado que la siguiente espera.
+> ⚠️ Corré las pruebas **en orden**. Cada una deja el estado que espera la siguiente.
 
 ---
 
 ## T1 · Una transferencia limpia cuatro manifiestos
 
-*Es el caso exacto que pidió el cliente: no quiere hacer varias transferencias.*
+*El caso que pidió el cliente: no quiere hacer varias transferencias.*
 
-1. Entrá al **950003** → **Registrar Depósito**.
-2. Monto: **801.07**.
-3. Al salir del campo debe aparecer el desglose:
+1. Entrá al **950003** → **Registrar Depósito** → monto **801.07**.
+2. Al salir del campo debe aparecer el desglose:
 
    | Manifiesto | Monto |
    |---|---|
@@ -43,123 +53,119 @@ Verificá que el listado de manifiestos muestre exactamente esto antes de empeza
    | #950006 | 0.25 |
    | #950001 | 0.32 |
 
-4. Intentá guardar **sin** escribir justificación → **debe rechazarlo**.
-5. Escribí la justificación y guardá.
+3. Guardá **sin** justificación → debe rechazarlo pidiendo al menos 15 caracteres.
+4. Escribí la justificación y guardá.
 
-**Resultado esperado:** los cuatro manifiestos (950003, 950005, 950006, 950001) quedan en **0.00** y muestran el botón **Cerrar**. Ninguno tenía botón Cerrar antes.
+**Esperado:** los cuatro quedan en **0.00** con botón Cerrar. Tres de ellos llevaban semanas trabados por centavos y nadie los tocó.
 
-✅ **Esta es la prueba principal.** Si sale bien, la funcionalidad hace lo que el cliente pidió.
+✅ **Prueba principal.**
 
 ---
 
 ## T2 · No se cruza plata entre bodegas
 
-Abrí el **950004** (bodega OAS). Debe seguir intacto en **+300.00**.
-
-El depósito de T1 salió de un manifiesto de OAC; un manifiesto exclusivo de OAS no puede recibir nada de ahí.
+El **950004** (OAS puro) sigue en **+300.00**. El depósito salió de un manifiesto de OAC.
 
 ---
 
 ## T3 · Un manifiesto cerrado nunca recibe dinero
 
-Abrí el **950008**. Sigue **cerrado**, en 0.00, y su pestaña **Dinero Aplicado** no tiene líneas nuevas.
+El **950008** sigue cerrado, en 0.00, sin líneas nuevas en su pestaña **Dinero Aplicado**.
 
 ---
 
-## T4 · El centavo que sobra — lo que el reparto NO puede arreglar
+## T4 · Una deuda vieja pero grande no se barre
 
-*Un manifiesto sobre-depositado no se arregla con más dinero: ya tiene de más.*
+El **950010** sigue en **+25.00**. Es de hace meses, así que la antigüedad no es el problema: son 25 lempiras, y eso no es un redondeo bancario. El sistema no lo tapa con el sobrante de otra boleta — hay que depositarlo.
+
+**Y tampoco le aparece el botón "Ajustar Diferencia"**, porque el tope del ajuste es L 1.00. Un faltante real no se resuelve ni barriendo ni ajustando: se deposita.
+
+---
+
+## T5 · Un manifiesto reciente no se toca
+
+El **950011** es de hace 3 días y le faltan L 2.00 — una deuda chiquita que el barrido cubriría de sobra si no fuera por la fecha. Sigue en **+2.00**.
+
+Esto es deliberado: ese manifiesto está en la conciliación del encargado ahora mismo. Si el sistema se lo pagara solo con plata que él mandó para otra cosa, le desordenaría el trabajo y le haría desconfiar de los números.
+
+---
+
+## T6 · El centavo que sobra — lo que el barrido NO puede arreglar
 
 1. Abrí el **950002**: Diferencia **−0.01**, sin botón Cerrar.
-2. Debe aparecer el botón **Ajustar Diferencia**, prellenado con `-0.01`.
-3. Escribí un motivo (mínimo 10 caracteres) y guardá.
+2. Aparece **Ajustar Diferencia**, prellenado en `-0.01`. Escribí un motivo y guardá.
 
-**Resultado esperado:** Diferencia **0.00**, aparece el chip **Ajuste** en el resumen financiero, y ahora sí el botón **Cerrar**. En Registros de Actividad debe quedar el ajuste con tu nombre y el motivo.
+**Esperado:** diferencia **0.00**, chip **Ajuste** en el resumen financiero, y ahora sí botón Cerrar. En Registros de Actividad queda el ajuste con tu nombre y el motivo.
 
----
-
-## T5 · El tope del ajuste protege de cuadrar a mano
-
-Abrí el **950010**: Diferencia **+5.00**.
-
-**El botón "Ajustar Diferencia" NO debe aparecer.** Cinco lempiras no son un redondeo bancario — eso es un depósito que falta, y el sistema no permite taparlo con un ajuste. El tope está en L 1.00 (`config/manifests.php`).
+> Este manifiesto viene del código viejo, cuando el validador dejaba pasar un centavo de más sin pedir explicación. **Con el sistema actual ya no se puede generar uno así**: todo sobrepago nace con justificación obligatoria. El ajuste existe para limpiar los que quedaron de antes — en producción hay 4.
 
 ---
 
-## T6 · Manifiesto multi-bodega
+## T7 · Manifiesto multi-bodega
 
-*Un manifiesto con facturas de OAC y OAS participa del reparto de las dos.*
+*Los manifiestos reales de la API abarcan varias bodegas a la vez.*
 
-1. Entrá al **950004** (OAS, pendiente 300.00) → **Registrar Depósito**.
-2. Monto: **350.00**.
-3. Desglose esperado:
+1. Entrá al **950004** (OAS, debe 300.00) → Registrar Depósito → monto **304.00**.
+2. Desglose esperado:
 
    | Manifiesto | Monto |
    |---|---|
    | #950004 *(este manifiesto)* | 300.00 |
-   | #950009 | 50.00 |
+   | #950009 | 4.00 |
 
    El 950009 aparece porque comparte la bodega OAS, aunque también tenga facturas de OAC.
-4. Justificá y guardá.
+3. Justificá y guardá.
 
-**Resultado esperado:** 950004 en **0.00**; 950009 baja de 700.00 a **650.00**.
-
----
-
-## T7 · Sobredepósito por encima de todo lo pendiente
-
-*El caso raro que el cliente mencionó: depositar más de lo que se debe.*
-
-1. Entrá al **950007** (pendiente 200.00) → **Registrar Depósito**.
-2. Monto: **1,000.00**.
-3. Desglose esperado:
-
-   | Manifiesto | Monto | |
-   |---|---|---|
-   | #950007 *(este manifiesto)* | 200.00 | |
-   | #950009 | 650.00 | lo que le quedaba |
-   | #950010 | 5.00 | queda cuadrado |
-   | #950007 | 145.00 | marcado **excede el total — requiere justificación** |
-
-   El total aplicado al 950007 queda en **345.00**.
-4. Justificá y guardá.
-
-**Resultado esperado:**
-- 950009 y 950010 en **0.00** (el 950010 se arregló con dinero real, no con ajuste — que era lo que T5 impedía).
-- **950007 en −145.00**, y **sin** botón "Ajustar Diferencia" (145 supera el tope). Se resuelve revirtiendo el depósito o cuando entre el manifiesto que corresponde.
+**Esperado:** 950004 en **0.00**; 950009 en **0.00**.
 
 ---
 
-## T8 · Trazabilidad
+## T8 · Sobrepago: cuando no hay dónde aplicar el excedente
 
-En cualquiera de los manifiestos que recibió dinero de otra boleta (por ejemplo el **950001** después de T1):
+1. Entrá al **950007** (debe 200.00) → Registrar Depósito → monto **250.00**.
+2. En el desglose los 250 van **completos a este manifiesto**: ya no quedan deudas viejas y chicas que barrer.
+3. Justificá y guardá.
 
-1. Abrí la pestaña **Dinero Aplicado**.
-2. Debe listar de qué boleta salió cada lempira, con el número del manifiesto **desde el que se registró** marcado en color cuando es distinto.
-3. En **Registros de Actividad** debe estar el evento del canal `finance` con el reparto completo y la justificación.
+**Esperado:**
+
+- El manifiesto queda en **Sobrepago L 50.00**, en ámbar y no en rojo — porque sobrar no es lo mismo que faltar.
+- **El botón Cerrar Manifiesto SÍ aparece.** Al cerrarlo, el modal te avisa del sobrepago y queda registrado en el canal `finance` con el monto y la justificación.
+- El botón "Ajustar Diferencia" **no** aparece: 50 lempiras exceden el tope de L 1.00.
+
+Así el manifiesto no se queda trabado para siempre en Activos, y a la vez queda constancia de dónde se depositó de más.
+
+---
+
+## T9 · Trazabilidad
+
+En el **950001** (que recibió 0.32 de una boleta ajena en T1):
+
+1. Pestaña **Dinero Aplicado**: muestra de qué boleta salió cada lempira, con el manifiesto de origen marcado cuando es distinto.
+2. **Registros de Actividad**: el evento del canal `finance` con el reparto completo y la justificación.
 
 ---
 
 ## Cómo volver a empezar
 
-El seeder es idempotente: si los manifiestos ya existen, no los toca. Para repetir el guion desde cero hay que borrar los manifiestos del rango 95xxxx y volver a correr:
-
 ```bash
 cd /var/www/hozana-pruebas
-php artisan db:seed --class=DepositCasesSeeder --force
+DEPOSIT_CASES_RESET=1 php artisan db:seed --class=DepositCasesSeeder --force
 ```
+
+El reset borra los casos y los vuelve a sembrar, recalculando los manifiestos ajenos que hubieran recibido excedente. Se niega a correr si una boleta externa aplicó dinero a los casos de prueba.
 
 ---
 
-## Resumen de qué prueba cada caso
+## Qué prueba cada caso
 
 | Prueba | Qué valida | Por qué importa |
 |---|---|---|
-| T1 | Reparto FIFO a varios manifiestos | Es el pedido literal del cliente |
+| T1 | Reparto a varios manifiestos | El pedido literal del cliente |
 | T2 | Aislamiento entre bodegas | Que no se mezcle plata de OAC con OAS |
 | T3 | Manifiesto cerrado protegido | Un cierre es definitivo |
-| T4 | Ajuste de centavos | Los 4 manifiestos varados de producción |
-| T5 | Tope del ajuste | Que nadie cuadre manifiestos a mano |
-| T6 | Multi-bodega | Los manifiestos reales de la API son así |
-| T7 | Sobredepósito con justificación | El caso raro pero posible |
-| T8 | Auditoría | Responder "¿de dónde salió este dinero?" |
+| T4 | Tope del barrido | Un faltante real se deposita, no se tapa |
+| T5 | Antigüedad mínima | No desordenar la conciliación en curso |
+| T6 | Ajuste de centavos | Los 4 manifiestos heredados de producción |
+| T7 | Multi-bodega | Los manifiestos reales de la API son así |
+| T8 | Sobrepago cerrable | Que no se acumulen manifiestos trabados |
+| T9 | Auditoría | Responder "¿de dónde salió este dinero?" |

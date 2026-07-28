@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Services;
 
+use App\Models\Deposit;
 use App\Models\Invoice;
 use App\Models\InvoiceReturn;
 use App\Models\Manifest;
@@ -81,7 +82,7 @@ class ManifestServiceTest extends TestCase
         $this->service->closeManifest($manifest, $user->id);
     }
 
-    public function test_close_rejects_when_difference_is_not_zero(): void
+    public function test_close_rejects_when_money_is_missing(): void
     {
         $manifest = $this->balancedManifest([
             'total_deposited' => 500,
@@ -90,9 +91,89 @@ class ManifestServiceTest extends TestCase
         $user = User::factory()->create();
 
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessageMatches('/diferencia/');
+        $this->expectExceptionMessageMatches('/faltan/i');
 
         $this->service->closeManifest($manifest, $user->id);
+    }
+
+    /**
+     * Sobrar NO es lo mismo que faltar.
+     *
+     * Con la regla vieja (diferencia == 0 exacta) un manifiesto sobrepagado
+     * quedaba abierto para siempre aunque estuviera cobrado de sobra, y se
+     * mezclaba en Activos con los que sí necesitan atención. Se cierra
+     * siempre que exista la justificación del depósito que generó el exceso.
+     */
+    public function test_close_allows_an_overpaid_manifest_with_justification(): void
+    {
+        $manifest = $this->balancedManifest([
+            'total_deposited' => 1050,
+            'difference' => -50,
+        ]);
+
+        Deposit::factory()->create([
+            'manifest_id' => $manifest->id,
+            'amount' => 1050,
+            'justification' => 'Transferencia redondeada por pedido del encargado de bodega.',
+        ]);
+
+        $user = User::factory()->create();
+        $this->actingAs($user);
+
+        $this->service->closeManifest($manifest->fresh(), $user->id);
+
+        $this->assertSame('closed', $manifest->fresh()->status);
+    }
+
+    public function test_close_rejects_an_overpaid_manifest_without_justification(): void
+    {
+        $manifest = $this->balancedManifest([
+            'total_deposited' => 1050,
+            'difference' => -50,
+        ]);
+
+        // Depósito sin justificación: solo puede venir de un dato heredado o
+        // de una carga manual, porque DepositService la exige al registrar.
+        Deposit::factory()->create([
+            'manifest_id' => $manifest->id,
+            'amount' => 1050,
+            'justification' => null,
+        ]);
+
+        $user = User::factory()->create();
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessageMatches('/sobre-depositado/i');
+
+        $this->service->closeManifest($manifest->fresh(), $user->id);
+    }
+
+    public function test_closing_with_overpayment_is_logged_in_the_finance_channel(): void
+    {
+        $manifest = $this->balancedManifest([
+            'total_deposited' => 1050,
+            'difference' => -50,
+        ]);
+
+        Deposit::factory()->create([
+            'manifest_id' => $manifest->id,
+            'amount' => 1050,
+            'justification' => 'Transferencia redondeada por pedido del encargado de bodega.',
+        ]);
+
+        $user = User::factory()->create();
+        $this->actingAs($user);
+
+        $this->service->closeManifest($manifest->fresh(), $user->id);
+
+        $activity = \Spatie\Activitylog\Models\Activity::query()
+            ->where('log_name', 'finance')
+            ->where('description', 'Manifiesto cerrado con sobrepago')
+            ->latest('id')
+            ->first();
+
+        $this->assertNotNull($activity, 'Cerrar con plata de más debe quedar registrado');
+        $this->assertEquals(50.00, (float) $activity->properties['sobrepago']);
     }
 
     public function test_close_rejects_when_no_total_to_deposit(): void

@@ -113,13 +113,13 @@ class DepositCasesSeeder extends Seeder
         ],
         [
             'number' => '950009', 'days' => 8,
-            'lines' => ['OAC' => 400.00, 'OAS' => 300.00], 'deposit' => null,
-            'nota' => 'MULTI-BODEGA (OAC+OAS) — participa del reparto de ambas',
+            'lines' => ['OAC' => 400.00, 'OAS' => 300.00], 'deposit' => 696.00,
+            'nota' => 'MULTI-BODEGA (OAC+OAS), le faltan 4.00 — entra al barrido de las dos bodegas',
         ],
         [
             'number' => '950010', 'days' => 5,
-            'lines' => ['OAC' => 1000.00], 'deposit' => 995.00,
-            'nota' => 'falta 5.00 — supera el tope de ajuste, solo se arregla con dinero',
+            'lines' => ['OAC' => 1000.00], 'deposit' => 975.00,
+            'nota' => 'falta 25.00 — vieja pero GRANDE: ni el barrido ni el ajuste la tocan',
         ],
         [
             'number' => '950003', 'days' => 0,
@@ -129,7 +129,12 @@ class DepositCasesSeeder extends Seeder
         [
             'number' => '950007', 'days' => 0,
             'lines' => ['OAC' => 200.00], 'deposit' => null,
-            'nota' => 'para probar sobredepósito extremo (más que todos los pendientes)',
+            'nota' => 'para probar el sobrepago (más de lo que hay dónde aplicar)',
+        ],
+        [
+            'number' => '950011', 'days' => 0, 'reciente' => true,
+            'lines' => ['OAC' => 100.00], 'deposit' => 98.00,
+            'nota' => 'RECIENTE (3 días) con deuda chica — el barrido NO debe tocarlo',
         ],
     ];
 
@@ -222,7 +227,12 @@ class DepositCasesSeeder extends Seeder
             return $existing;
         }
 
-        $date = $this->fechaPara($case['days']);
+        // Los casos 'reciente' se fechan contra HOY, no contra el ancla: su
+        // razón de existir es quedar por DEBAJO de la antigüedad mínima del
+        // barrido, y anclarlos meses atrás los volvería elegibles.
+        $date = ($case['reciente'] ?? false)
+            ? now()->subDays(3)->toDateString()
+            : $this->fechaPara($case['days']);
 
         $manifest = Manifest::create([
             'supplier_id' => $supplierId,
@@ -285,7 +295,9 @@ class DepositCasesSeeder extends Seeder
             'amount' => $case['deposit'],
             // Un día después del manifiesto (o hoy si el manifiesto es de hoy):
             // así la fecha del depósito nunca queda antes de la del manifiesto.
-            'deposit_date' => $this->fechaPara(max(0, $case['days'] - 1)),
+            'deposit_date' => ($case['reciente'] ?? false)
+                ? now()->subDays(2)->toDateString()
+                : $this->fechaPara(max(0, $case['days'] - 1)),
             'bank' => 'BAC',
             'reference' => 'PRB-'.$case['number'],
             'observations' => 'Depósito sembrado por DepositCasesSeeder.',
@@ -504,7 +516,9 @@ class DepositCasesSeeder extends Seeder
             ])->all()
         );
 
-        $this->command?->info('Centavos pendientes en OAC: 0.50 + 0.25 + 0.32 = 1.07');
+        $this->command?->info('Barrido: solo deudas <= HNL '.number_format((float) config('manifests.reparto.tope_pendiente_hnl'), 2).
+            ' en manifiestos de más de '.config('manifests.reparto.antiguedad_minima_dias').' días.');
+        $this->command?->info('Centavos barribles en OAC: 0.50 + 0.25 + 0.32 = 1.07');
         $this->command?->info('→ Un depósito de HNL 801.07 desde el #950003 debe dejar 4 manifiestos en cero.');
     }
 }

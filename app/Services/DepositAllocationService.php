@@ -76,6 +76,22 @@ class DepositAllocationService
     }
 
     /**
+     * Saldo pendiente máximo que el barrido puede cubrir en un manifiesto.
+     */
+    public function topePendiente(): float
+    {
+        return (float) config('manifests.reparto.tope_pendiente_hnl', 10.00);
+    }
+
+    /**
+     * Días que debe tener un manifiesto para ser elegible al barrido.
+     */
+    public function antiguedadMinima(): int
+    {
+        return (int) config('manifests.reparto.antiguedad_minima_dias', 15);
+    }
+
+    /**
      * Bodegas a las que pertenece un manifiesto.
      *
      * Se lee de manifest_warehouse_totals y NO de manifests.warehouse_id:
@@ -104,10 +120,23 @@ class DepositAllocationService
      * Manifiestos que pueden recibir el excedente de un depósito, del más
      * antiguo al más nuevo.
      *
+     * ─────────────────────────────────────────────────────────────────
+     *  EL BARRIDO ES ANGOSTO A PROPÓSITO
+     * ─────────────────────────────────────────────────────────────────
+     *  Solo entran deudas VIEJAS y CHICAS. La razón es operativa: un
+     *  manifiesto reciente sigue en la conciliación del encargado, y verlo
+     *  pagado solo —con plata que él mandó para otra cosa— le desordena el
+     *  trabajo y le hace desconfiar de los números. Y una deuda grande no es
+     *  un redondeo: se deposita explícitamente, no se tapa con un sobrante.
+     *
+     *  Lo que no entra acá se queda en el manifiesto de origen como sobrepago
+     *  visible, que es justamente la señal que la operación quiere ver.
+     *
      * Condiciones (todas obligatorias):
      *   - abierto (no cerrado)
      *   - mismo proveedor que el de origen
-     *   - le falta dinero (difference > 0)
+     *   - le falta dinero, y como máximo el tope configurado
+     *   - tiene al menos la antigüedad mínima configurada
      *   - comparte al menos una bodega con el de origen
      *   - el usuario tiene acceso (mismo criterio que el listado de
      *     manifiestos: al menos una factura de sus bodegas)
@@ -122,7 +151,9 @@ class DepositAllocationService
             ->whereKeyNot($origin->id)
             ->whereIn('status', self::OPEN_STATUSES)
             ->where('supplier_id', $origin->supplier_id)
-            ->where('difference', '>', 0);
+            ->where('difference', '>', 0)
+            ->where('difference', '<=', $this->topePendiente())
+            ->whereDate('date', '<=', now()->subDays($this->antiguedadMinima())->toDateString());
 
         // Comparte bodega con el manifiesto de origen. Si el de origen no
         // tiene bodegas resueltas todavía (manifiesto recién importado sin
@@ -186,7 +217,10 @@ class DepositAllocationService
 
                 $pending = $this->pendingFor($candidate);
 
-                if ($pending <= 0) {
+                // Se revalida bajo lock: entre el plan preliminar y este punto
+                // otro depósito pudo dejar al candidato con un saldo mayor al
+                // tope (p.ej. una devolución cancelada que le sube la deuda).
+                if ($pending <= 0 || $pending > $this->topePendiente()) {
                     continue;
                 }
 

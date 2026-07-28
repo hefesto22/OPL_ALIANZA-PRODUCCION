@@ -72,6 +72,60 @@ class ManifestTest extends TestCase
         $this->assertFalse($manifest->isReadyToClose());
     }
 
+    public function test_is_ready_to_close_when_overpaid_with_justification(): void
+    {
+        $manifest = $this->balancedManifest([
+            'total_deposited' => 1050,
+            'difference' => -50,
+        ]);
+
+        Deposit::factory()->create([
+            'manifest_id' => $manifest->id,
+            'amount' => 1050,
+            'justification' => 'Transferencia redondeada a pedido del encargado.',
+        ]);
+
+        $this->assertTrue($manifest->isOverpaid());
+        $this->assertEquals(50.00, $manifest->overpaidAmount());
+        $this->assertTrue($manifest->fresh()->isReadyToClose());
+    }
+
+    public function test_is_not_ready_to_close_when_overpaid_without_justification(): void
+    {
+        $manifest = $this->balancedManifest([
+            'total_deposited' => 1050,
+            'difference' => -50,
+        ]);
+
+        Deposit::factory()->create([
+            'manifest_id' => $manifest->id,
+            'amount' => 1050,
+            'justification' => null,
+        ]);
+
+        $this->assertFalse($manifest->fresh()->isReadyToClose());
+    }
+
+    /**
+     * Faltar bloquea el cierre SIEMPRE, sin excepción ni justificación que
+     * valga: ahí hay plata que la empresa no recibió.
+     */
+    public function test_missing_money_blocks_the_close_even_with_a_justified_deposit(): void
+    {
+        $manifest = $this->balancedManifest([
+            'total_deposited' => 900,
+            'difference' => 100,
+        ]);
+
+        Deposit::factory()->create([
+            'manifest_id' => $manifest->id,
+            'amount' => 900,
+            'justification' => 'Justificación que no debe habilitar nada acá.',
+        ]);
+
+        $this->assertFalse($manifest->fresh()->isReadyToClose());
+    }
+
     public function test_is_not_ready_to_close_when_total_to_deposit_is_zero(): void
     {
         // Manifiesto completamente devuelto: no hay nada que cuadrar.

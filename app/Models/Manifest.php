@@ -227,13 +227,61 @@ class Manifest extends Model
     }
 
     /**
+     * ¿Le depositaron más de lo que debía?
+     */
+    public function isOverpaid(): bool
+    {
+        return round((float) $this->difference, 2) < 0;
+    }
+
+    /**
+     * Cuánto se depositó de más (siempre positivo; 0 si no hay sobrepago).
+     */
+    public function overpaidAmount(): float
+    {
+        return round(max(0, -(float) $this->difference), 2);
+    }
+
+    /**
+     * ¿El sobrepago tiene una justificación registrada?
+     *
+     * DepositService exige justificación obligatoria a toda boleta que supere
+     * el saldo pendiente, así que un manifiesto sobrepagado siempre debería
+     * tener una. Se verifica igual: es la condición que habilita el cierre, y
+     * no se cierra un manifiesto con plata de más sin que alguien haya
+     * escrito por qué.
+     */
+    public function hasJustifiedOverpayment(): bool
+    {
+        return $this->isOverpaid()
+            && $this->deposits()
+                ->active()
+                ->whereNotNull('justification')
+                ->where('justification', '!=', '')
+                ->exists();
+    }
+
+    /**
      * Listo para cerrar cuando:
      * - No está ya cerrado.
-     * - La diferencia entre depósitos y total a depositar es 0.
+     * - No le FALTA dinero (difference > 0 lo bloquea siempre).
+     * - Si le SOBRA, el sobrepago está justificado.
      * - Tiene al menos algo que depositar (no es manifiesto vacío).
      * - No tiene devoluciones pendientes de revisión.
      *   Cerrar con devoluciones pendientes las dejaría en un limbo:
      *   no se podrían aprobar/rechazar sin reabrir el manifiesto.
+     *
+     * ─────────────────────────────────────────────────────────────────
+     *  POR QUÉ SE ADMITE CERRAR CON SOBREPAGO
+     * ─────────────────────────────────────────────────────────────────
+     *  Depositar de más pasa a propósito: el encargado manda una transferencia
+     *  redondeada o adelanta plata. Con la regla vieja (diferencia == 0 exacta)
+     *  ese manifiesto quedaba abierto para siempre, aunque estuviera pagado de
+     *  sobra, y se iba mezclando en la pestaña de Activos con los que sí
+     *  necesitan atención — hasta que el operador dejaba de mirarla.
+     *
+     *  Faltar sigue bloqueando el cierre sin excepción: ahí sí hay plata que
+     *  la empresa no recibió. Sobrar no es lo mismo que faltar.
      */
     public function isReadyToClose(): bool
     {
@@ -241,7 +289,13 @@ class Manifest extends Model
             return false;
         }
 
-        if ((float) $this->difference != 0) {
+        $difference = round((float) $this->difference, 2);
+
+        if ($difference > 0) {
+            return false;
+        }
+
+        if ($difference < 0 && ! $this->hasJustifiedOverpayment()) {
             return false;
         }
 

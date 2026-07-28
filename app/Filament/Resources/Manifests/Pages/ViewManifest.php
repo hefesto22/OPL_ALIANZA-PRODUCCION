@@ -58,7 +58,20 @@ class ViewManifest extends ViewRecord
                 ->requiresConfirmation()
                 ->modalIcon('heroicon-o-lock-closed')
                 ->modalHeading('¿Cerrar este manifiesto?')
-                ->modalDescription('Una vez cerrado no podrá modificarse. Solo un administrador podrá reabrirlo.')
+                ->modalDescription(function (): string {
+                    $base = 'Una vez cerrado no podrá modificarse. Solo un administrador podrá reabrirlo.';
+
+                    // Cerrar con plata de más no es un cierre de rutina: se
+                    // avisa explícitamente para que nadie lo haga sin verlo.
+                    if ($this->record->isOverpaid()) {
+                        return 'Este manifiesto tiene un SOBREPAGO de HNL '.
+                            number_format($this->record->overpaidAmount(), 2).
+                            '. Se cerrará dejando constancia del exceso y de la justificación del depósito. '.
+                            $base;
+                    }
+
+                    return $base;
+                })
                 ->modalSubmitActionLabel('Sí, cerrar')
                 ->visible(function (): bool {
                     /** @var User $user */
@@ -161,11 +174,16 @@ class ViewManifest extends ViewRecord
                             // saldos de los manifiestos candidatos — dispararlo por
                             // pulsación sería una query por dígito tecleado.
                             ->live(onBlur: true)
-                            ->helperText(
-                                'Saldo pendiente: HNL '.number_format($pending, 2).
-                                '. Podés registrar un monto mayor: el excedente se aplica automáticamente '.
-                                'a los manifiestos más antiguos de la misma bodega que tengan saldo.'
-                            ),
+                            ->helperText(function () use ($pending): string {
+                                $allocation = app(\App\Services\DepositAllocationService::class);
+
+                                return 'Saldo pendiente: HNL '.number_format($pending, 2).
+                                    '. Podés registrar un monto mayor. El excedente cubre primero deudas '.
+                                    'chicas y viejas de la misma bodega (hasta HNL '.
+                                    number_format($allocation->topePendiente(), 2).
+                                    ' en manifiestos de más de '.$allocation->antiguedadMinima().
+                                    ' días); lo que quede se registra en este manifiesto como sobrepago.';
+                            }),
 
                         // ── Desglose del reparto ──────────────────────────
                         // Solo aparece cuando el monto supera el pendiente.

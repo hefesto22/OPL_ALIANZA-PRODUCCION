@@ -324,16 +324,28 @@ class ManifestInfolist
                         ->visible(fn ($record): bool => (float) $record->adjustment_amount != 0.0)
                         ->tooltip('Ajuste manual de centavos registrado en la auditoría'),
 
+                    // Faltar y sobrar NO son el mismo problema y no deben
+                    // leerse igual: si falta, hay plata que la empresa no
+                    // recibió (rojo, bloquea el cierre); si sobra, recibió de
+                    // más (ámbar, se puede cerrar con justificación).
                     TextEntry::make('difference')
-                        ->label('(=) Diferencia')
+                        ->label(fn ($record): string => $record->isOverpaid() ? '(=) Sobrepago' : '(=) Diferencia')
                         ->money('HNL')
                         ->weight('bold')
                         ->state(fn ($record): float => (float) $record->difference)
-                        ->color(fn ($state): string => ($state ?? 1) == 0 ? 'success' : 'danger')
-                        ->icon(fn ($state): string => ($state ?? 1) == 0
-                            ? 'heroicon-o-check-circle'
-                            : 'heroicon-o-exclamation-circle'
-                        ),
+                        ->color(fn ($record): string => match (true) {
+                            (float) $record->difference == 0.0 => 'success',
+                            $record->isOverpaid() => 'warning',
+                            default => 'danger',
+                        })
+                        ->icon(fn ($record): string => match (true) {
+                            (float) $record->difference == 0.0 => 'heroicon-o-check-circle',
+                            $record->isOverpaid() => 'heroicon-o-arrow-trending-up',
+                            default => 'heroicon-o-exclamation-circle',
+                        })
+                        ->tooltip(fn ($record): ?string => $record->isOverpaid()
+                            ? 'Se depositó de más. El manifiesto puede cerrarse dejando constancia del exceso.'
+                            : null),
                 ]),
         ]);
     }

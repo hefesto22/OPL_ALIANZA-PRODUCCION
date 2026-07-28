@@ -2,6 +2,8 @@
 
 namespace Tests\Feature\Services;
 
+use App\Models\Deposit;
+use App\Models\DepositAllocation;
 use App\Models\Invoice;
 use App\Models\Manifest;
 use App\Models\Supplier;
@@ -81,6 +83,37 @@ class ManifestAdjustmentServiceTest extends TestCase
         $this->manifest->refresh();
     }
 
+    /**
+     * Escribe un depósito sobre-depositado SIN justificación, directo en la
+     * base.
+     *
+     * No se puede usar DepositService: exige justificación en cuanto el monto
+     * supera el pendiente, justamente para que este estado no vuelva a
+     * generarse. Es la reproducción de un dato heredado.
+     */
+    private function seedLegacyOverDeposit(float $amount): void
+    {
+        $deposito = Deposit::create([
+            'manifest_id' => $this->manifest->id,
+            'amount' => $amount,
+            'allocated_amount' => $amount,
+            'deposit_date' => now()->toDateString(),
+            'bank' => 'BAC',
+            'reference' => 'LEGACY-'.fake()->unique()->numerify('#####'),
+            'created_by' => $this->user->id,
+        ]);
+
+        DepositAllocation::create([
+            'deposit_id' => $deposito->id,
+            'manifest_id' => $this->manifest->id,
+            'amount' => $amount,
+            'created_by' => $this->user->id,
+        ]);
+
+        $this->manifest->recalculateTotals();
+        $this->manifest->refresh();
+    }
+
     // ═══════════════════════════════════════════════════════════════
     //  Los dos casos reales de producción
     // ═══════════════════════════════════════════════════════════════
@@ -101,19 +134,45 @@ class ManifestAdjustmentServiceTest extends TestCase
     }
 
     /**
-     * El caso que el reparto FIFO no puede resolver: ya sobra dinero.
+     * El caso REAL de producción: un sobrepago HEREDADO, sin justificación.
+     *
+     * Los 4 manifiestos con −0.01 que hay en producción los generó el margen
+     * de tolerancia de +0.01 que tenía el validador viejo: dejaba pasar el
+     * centavo sin pedir explicación y sin registrarla. Como no hay
+     * justificación, el cierre está bloqueado y el reparto no puede ayudar
+     * (no hay plata que mover: ya sobra). El ajuste es la única salida.
      */
-    public function test_adjustment_closes_an_over_deposited_manifest(): void
+    public function test_adjustment_closes_a_legacy_over_deposited_manifest(): void
     {
-        $this->deposit(1000.01, 'Depósito con un centavo de más por redondeo del banco emisor.');
+        $this->seedLegacyOverDeposit(1000.01);
+
         $this->assertEquals(-0.01, (float) $this->manifest->difference);
-        $this->assertFalse($this->manifest->isReadyToClose());
+        $this->assertFalse(
+            $this->manifest->isReadyToClose(),
+            'Sin justificación, el sobrepago sí bloquea el cierre'
+        );
 
         $this->service()->adjust($this->manifest, -0.01, 'Centavo de más del banco, se da por bueno.', $this->user->id);
 
         $this->manifest->refresh();
 
         $this->assertEquals(0.00, (float) $this->manifest->difference);
+        $this->assertTrue($this->manifest->isReadyToClose());
+    }
+
+    /**
+     * La contracara: un sobrepago registrado HOY ya nace con justificación
+     * obligatoria, así que se cierra solo y no necesita ningún ajuste.
+     *
+     * Se deja cubierto para que quede claro el alcance real de esta función:
+     * el ajuste existe para limpiar la deuda heredada, no como muleta del
+     * flujo normal.
+     */
+    public function test_a_justified_overpayment_needs_no_adjustment(): void
+    {
+        $this->deposit(1000.01, 'Depósito con un centavo de más por redondeo del banco emisor.');
+
+        $this->assertEquals(-0.01, (float) $this->manifest->difference);
         $this->assertTrue($this->manifest->isReadyToClose());
     }
 

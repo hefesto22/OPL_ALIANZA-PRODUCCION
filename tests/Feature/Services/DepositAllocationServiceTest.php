@@ -81,6 +81,29 @@ class DepositAllocationServiceTest extends TestCase
         return $manifest->refresh();
     }
 
+    /**
+     * Manifiesto viejo al que le queda un saldo pendiente EXACTO.
+     *
+     * El barrido automático solo mira deudas chicas y viejas, así que casi
+     * todos los tests necesitan construir ese estado: se factura el total y
+     * se deposita todo menos el pendiente buscado.
+     */
+    private function manifestConPendiente(float $total, float $pendiente, int $daysAgo, ?Warehouse $warehouse = null): Manifest
+    {
+        $manifest = $this->manifest($total, $daysAgo, $warehouse);
+        $aDepositar = round($total - $pendiente, 2);
+
+        if ($aDepositar > 0) {
+            $this->service()->createDeposit(
+                $manifest,
+                $this->depositData(['amount' => $aDepositar]),
+                $this->user->id,
+            );
+        }
+
+        return $manifest->refresh();
+    }
+
     private function depositData(array $overrides = []): array
     {
         return array_merge([
@@ -159,15 +182,15 @@ class DepositAllocationServiceTest extends TestCase
 
     public function test_excess_is_distributed_oldest_first(): void
     {
-        $masViejo = $this->manifest(100.00, daysAgo: 30);
-        $medio = $this->manifest(100.00, daysAgo: 10);
+        $masViejo = $this->manifestConPendiente(100.00, pendiente: 5.00, daysAgo: 30);
+        $medio = $this->manifestConPendiente(100.00, pendiente: 3.00, daysAgo: 20);
         $hoy = $this->manifest(50.00, daysAgo: 0);
 
-        // 50 (hoy) + 100 (más viejo) + 30 (medio, parcial) = 180
+        // 50 (hoy) + 5 (más viejo) + 3 (medio) = 58
         $deposit = $this->service()->createDeposit(
             $hoy,
             $this->depositData([
-                'amount' => 180.00,
+                'amount' => 58.00,
                 'justification' => 'Transferencia única para ponerse al día con los manifiestos pendientes.',
             ]),
             $this->user->id,
@@ -179,8 +202,82 @@ class DepositAllocationServiceTest extends TestCase
             ->map(fn ($a) => (float) $a);
 
         $this->assertEquals(50.00, $porManifiesto[$hoy->id]);
-        $this->assertEquals(100.00, $porManifiesto[$masViejo->id], 'El más antiguo se cubre completo primero');
-        $this->assertEquals(30.00, $porManifiesto[$medio->id], 'El siguiente recibe solo el resto');
+        $this->assertEquals(5.00, $porManifiesto[$masViejo->id], 'El más antiguo se cubre primero');
+        $this->assertEquals(3.00, $porManifiesto[$medio->id], 'Después el siguiente en antigüedad');
+    }
+
+    /**
+     * El barrido NO toca manifiestos recientes aunque tengan saldo chico.
+     *
+     * Un manifiesto de pocos días sigue en la conciliación del encargado:
+     * verlo pagado solo, con plata que él mandó para otra cosa, le desordena
+     * el trabajo y le hace desconfiar de los números.
+     */
+    public function test_excess_ignores_manifests_newer_than_the_minimum_age(): void
+    {
+        $reciente = $this->manifestConPendiente(100.00, pendiente: 5.00, daysAgo: 3);
+        $hoy = $this->manifest(100.00, daysAgo: 0);
+
+        $deposit = $this->service()->createDeposit(
+            $hoy,
+            $this->depositData([
+                'amount' => 150.00,
+                'justification' => 'Sobredepósito intencional para probar el umbral de antigüedad.',
+            ]),
+            $this->user->id,
+        );
+
+        $this->assertInvariant($deposit);
+        $reciente->refresh();
+        $hoy->refresh();
+
+        $this->assertEquals(5.00, (float) $reciente->difference, 'Un manifiesto reciente no debe recibir excedente');
+        $this->assertEquals(-50.00, (float) $hoy->difference, 'Todo el excedente se queda como sobrepago del origen');
+    }
+
+    /**
+     * Una deuda grande no es un redondeo: se deposita explícitamente, no se
+     * tapa con el sobrante de otra boleta.
+     */
+    public function test_excess_ignores_debts_larger_than_the_cap(): void
+    {
+        $viejoConDeudaGrande = $this->manifestConPendiente(100.00, pendiente: 50.00, daysAgo: 30);
+        $hoy = $this->manifest(100.00, daysAgo: 0);
+
+        $deposit = $this->service()->createDeposit(
+            $hoy,
+            $this->depositData([
+                'amount' => 150.00,
+                'justification' => 'Sobredepósito intencional para probar el tope del barrido.',
+            ]),
+            $this->user->id,
+        );
+
+        $this->assertInvariant($deposit);
+        $viejoConDeudaGrande->refresh();
+
+        $this->assertEquals(50.00, (float) $viejoConDeudaGrande->difference, 'Una deuda mayor al tope no se barre');
+        $this->assertEquals(-50.00, (float) $hoy->refresh()->difference);
+    }
+
+    public function test_sweep_thresholds_are_configurable(): void
+    {
+        config(['manifests.reparto.tope_pendiente_hnl' => 100.00]);
+
+        $viejo = $this->manifestConPendiente(100.00, pendiente: 50.00, daysAgo: 30);
+        $hoy = $this->manifest(100.00, daysAgo: 0);
+
+        $this->service()->createDeposit(
+            $hoy,
+            $this->depositData([
+                'amount' => 150.00,
+                'justification' => 'Con el tope elevado, esta deuda sí entra al barrido.',
+            ]),
+            $this->user->id,
+        );
+
+        $this->assertEquals(0.00, (float) $viejo->refresh()->difference);
+        $this->assertEquals(0.00, (float) $hoy->refresh()->difference);
     }
 
     /**
@@ -206,7 +303,12 @@ class DepositAllocationServiceTest extends TestCase
 
         $hoy->refresh();
         $this->assertEquals(-150.00, (float) $hoy->difference);
-        $this->assertFalse($hoy->isReadyToClose(), 'Un manifiesto sobre-depositado no se puede cerrar sin ajuste');
+        $this->assertTrue($hoy->isOverpaid());
+
+        // El sobrepago quedó justificado al registrar la boleta, así que el
+        // manifiesto se puede cerrar dejando constancia del exceso. Sobrar no
+        // bloquea el cierre; faltar sí.
+        $this->assertTrue($hoy->isReadyToClose(), 'Un sobrepago justificado no debe trabar el cierre');
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -215,7 +317,9 @@ class DepositAllocationServiceTest extends TestCase
 
     public function test_excess_never_reaches_a_manifest_of_another_warehouse(): void
     {
-        $otraBodega = $this->manifest(1000.00, daysAgo: 25, warehouse: $this->oas);
+        // Deuda chica y vieja: cumpliría todas las condiciones del barrido
+        // SALVO la bodega. Así el test aísla exactamente esa regla.
+        $otraBodega = $this->manifestConPendiente(100.00, pendiente: 5.00, daysAgo: 25, warehouse: $this->oas);
         $hoy = $this->manifest(100.00, daysAgo: 0, warehouse: $this->oac);
 
         $deposit = $this->service()->createDeposit(
@@ -230,13 +334,20 @@ class DepositAllocationServiceTest extends TestCase
         $this->assertInvariant($deposit);
         $otraBodega->refresh();
 
-        $this->assertEquals(1000.00, (float) $otraBodega->difference, 'La bodega OAS no debe recibir dinero de OAC');
-        $this->assertEquals(0.00, (float) DepositAllocation::totalForManifest($otraBodega->id));
+        $this->assertEquals(5.00, (float) $otraBodega->difference, 'La bodega OAS no debe recibir dinero de OAC');
+
+        // Su saldo depositado es el que ya traía de su propio depósito; lo que
+        // se verifica es que ESTA boleta no le aplicó nada.
+        $this->assertNotContains(
+            $otraBodega->id,
+            $deposit->allocations->pluck('manifest_id')->all(),
+            'La boleta de OAC no debe tener ninguna línea hacia un manifiesto de OAS'
+        );
     }
 
     public function test_excess_never_reaches_a_closed_manifest(): void
     {
-        $cerrado = $this->manifest(1000.00, daysAgo: 25);
+        $cerrado = $this->manifestConPendiente(100.00, pendiente: 5.00, daysAgo: 25);
         $cerrado->update(['status' => 'closed', 'closed_at' => now()]);
 
         $hoy = $this->manifest(100.00);
@@ -251,7 +362,7 @@ class DepositAllocationServiceTest extends TestCase
         );
 
         $this->assertInvariant($deposit);
-        $this->assertEquals(0.00, (float) DepositAllocation::totalForManifest($cerrado->id));
+        $this->assertEquals(5.00, (float) $cerrado->refresh()->difference, 'Un manifiesto cerrado no recibe dinero');
     }
 
     // ═══════════════════════════════════════════════════════════════

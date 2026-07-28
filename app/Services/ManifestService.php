@@ -43,11 +43,23 @@ class ManifestService
                 );
             }
 
-            if ((float) $manifest->difference != 0) {
+            if (round((float) $manifest->difference, 2) > 0) {
                 throw new RuntimeException(
                     "El manifiesto #{$manifest->number} no se puede cerrar: ".
-                    'la diferencia entre total a depositar y depositado es HNL '.
-                    number_format((float) $manifest->difference, 2).'.'
+                    'faltan HNL '.number_format((float) $manifest->difference, 2).
+                    ' por depositar.'
+                );
+            }
+
+            // Sobrepago sin justificación: no debería ocurrir (DepositService la
+            // exige al registrar), pero si un dato heredado o una carga manual
+            // lo produjo, no se cierra a ciegas.
+            if ($manifest->isOverpaid() && ! $manifest->hasJustifiedOverpayment()) {
+                throw new RuntimeException(
+                    "El manifiesto #{$manifest->number} está sobre-depositado por HNL ".
+                    number_format($manifest->overpaidAmount(), 2).
+                    ' y ninguno de sus depósitos tiene justificación registrada. '.
+                    'Revisá el depósito que generó el exceso antes de cerrarlo.'
                 );
             }
 
@@ -70,12 +82,36 @@ class ManifestService
             );
         }
 
-        DB::transaction(function () use ($manifest, $userId) {
+        $sobrepago = $manifest->overpaidAmount();
+
+        DB::transaction(function () use ($manifest, $userId, $sobrepago) {
             $manifest->update([
                 'status' => 'closed',
                 'closed_by' => $userId,
                 'closed_at' => now(),
             ]);
+
+            // Un cierre con sobrepago es un evento de negocio, no un cierre
+            // más: alguien dio por bueno que la empresa recibió plata de más.
+            // Queda en el canal `finance` con el monto y la justificación que
+            // lo habilitó, para poder responderlo meses después.
+            if ($sobrepago > 0) {
+                activity('finance')
+                    ->performedOn($manifest)
+                    ->causedBy(auth()->user())
+                    ->withProperties([
+                        'manifest_number' => $manifest->number,
+                        'sobrepago' => $sobrepago,
+                        'total_a_depositar' => (float) $manifest->total_to_deposit,
+                        'total_depositado' => (float) $manifest->total_deposited,
+                        'justificaciones' => $manifest->deposits()
+                            ->active()
+                            ->whereNotNull('justification')
+                            ->pluck('justification')
+                            ->all(),
+                    ])
+                    ->log('Manifiesto cerrado con sobrepago');
+            }
         });
     }
 
