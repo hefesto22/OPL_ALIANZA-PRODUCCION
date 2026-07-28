@@ -323,9 +323,26 @@ class DepositCasesSeeder extends Seeder
 
         // Limpiar SOLO los depósitos registrados desde este manifiesto. Las
         // allocations que otras boletas hayan dirigido acá no se tocan.
+        //
+        // OJO con los manifiestos AJENOS: si una corrida anterior repartió
+        // excedente de esta boleta a otros manifiestos, al borrar esas
+        // allocations sus totales quedan inflados — nadie los recalcula solo.
+        // Se anotan antes de borrar y se recalculan después. Sin esto queda un
+        // manifiesto con `total_deposited` fantasma, que es exactamente el tipo
+        // de número que arruina una demo.
+        $afectados = [];
+
         foreach ($manifest->deposits()->withTrashed()->get() as $previo) {
+            $afectados = array_merge($afectados, $previo->allocations()->pluck('manifest_id')->all());
             $previo->allocations()->delete();
             $previo->forceDelete();
+        }
+
+        $ajenos = array_diff(array_unique($afectados), [$manifest->id]);
+
+        foreach (Manifest::whereIn('id', $ajenos)->get() as $ajeno) {
+            $ajeno->recalculateTotals();
+            $this->command?->line("  ↳ recalculado #{$ajeno->number} (había recibido excedente de #{$case['number']})");
         }
 
         $deposito = Deposit::create([
