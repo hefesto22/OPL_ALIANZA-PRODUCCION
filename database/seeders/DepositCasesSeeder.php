@@ -63,6 +63,15 @@ class DepositCasesSeeder extends Seeder
     private const PRODUCTION_DATABASES = ['distribuidora_hozana'];
 
     /**
+     * Fecha ancla, calculada UNA sola vez por corrida.
+     *
+     * Sin este cache, cada caso sembrado se vuelve el nuevo "manifiesto más
+     * viejo" y el siguiente se ancla 60 días antes que él: las fechas salen
+     * separadas por meses y en orden INVERSO al definido en CASES.
+     */
+    private ?Carbon $ancla = null;
+
+    /**
      * Definición declarativa de los casos.
      *
      * lines:   [código de bodega => monto facturado]
@@ -399,13 +408,16 @@ class DepositCasesSeeder extends Seeder
      */
     private function fechaPara(int $days): string
     {
-        $masViejo = Manifest::min('date');
-
-        $base = $masViejo
+        // Se resuelve en la PRIMERA llamada y se congela. Ojo con recalcularla:
+        // los casos que se van creando pasan a ser los más viejos del entorno
+        // y arrastrarían el ancla hacia atrás en cada iteración.
+        $this->ancla ??= ($masViejo = Manifest::min('date'))
             ? Carbon::parse($masViejo)->subDays(60)
             : now()->subDays(60);
 
-        return $base->addDays(28 - $days)->toDateString();
+        // copy(): addDays() muta la instancia, y esta se reutiliza en todas
+        // las llamadas siguientes.
+        return $this->ancla->copy()->addDays(28 - $days)->toDateString();
     }
 
     /**
