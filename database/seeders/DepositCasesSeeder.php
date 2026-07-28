@@ -469,13 +469,23 @@ class DepositCasesSeeder extends Seeder
 
         $ajenos = [];
 
+        // PASE 1 — todos los depósitos y sus repartos, de TODOS los casos.
+        //
+        // Tiene que ir completo antes de borrar cualquier manifiesto: la
+        // boleta de un caso puede tener aplicaciones dirigidas a OTRO caso
+        // (es justo lo que hace el reparto FIFO). Borrando manifiesto por
+        // manifiesto, el primero que cae todavía está referenciado por el
+        // reparto de un hermano y Postgres rechaza el DELETE por FK.
         foreach ($manifiestos as $manifiesto) {
             foreach ($manifiesto->deposits()->withTrashed()->get() as $deposito) {
                 $ajenos = array_merge($ajenos, $deposito->allocations()->pluck('manifest_id')->all());
                 $deposito->allocations()->delete();
                 $deposito->forceDelete();
             }
+        }
 
+        // PASE 2 — recién ahora los manifiestos y todo lo que cuelga de ellos.
+        foreach ($manifiestos as $manifiesto) {
             $manifiesto->adjustments()->delete();
 
             foreach ($manifiesto->invoices()->get() as $factura) {
