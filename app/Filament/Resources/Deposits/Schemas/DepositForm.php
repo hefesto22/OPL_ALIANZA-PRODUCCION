@@ -191,7 +191,7 @@ class DepositForm
                             ->maxLength(1000)
                             ->rows(2)
                             ->columnSpan(2)
-                            ->placeholder('Ej.: una sola transferencia para cubrir dos manifiestos.')
+                            ->placeholder('Ej.: transferencia redondeada a pedido del encargado de bodega.')
                             ->helperText('Obligatoria. Queda registrada en la auditoría con tu nombre y la hora.'),
                     ]),
 

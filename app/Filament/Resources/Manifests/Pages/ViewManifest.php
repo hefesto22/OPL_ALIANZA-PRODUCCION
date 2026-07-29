@@ -185,7 +185,7 @@ class ViewManifest extends ViewRecord
                             ->minLength(15)
                             ->maxLength(1000)
                             ->rows(2)
-                            ->placeholder('Ej.: una sola transferencia para cubrir los manifiestos 785569 y 784907.')
+                            ->placeholder('Ej.: el banco redondeó la transferencia hacia arriba; el excedente se aplica al próximo manifiesto.')
                             ->helperText('Obligatoria. Queda registrada en la auditoría con tu nombre y la hora.')
                             ->columnSpanFull(),
 
