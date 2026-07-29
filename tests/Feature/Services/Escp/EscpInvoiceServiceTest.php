@@ -224,6 +224,111 @@ class EscpInvoiceServiceTest extends TestCase
         $this->assertStringContainsString('ORISOL BOLSC/V 700 mL MAYOREO1/20', $out);
     }
 
+    /**
+     * Regresión (factura real 002-001-01-03908303): una línea de 100 cajas de
+     * HARINA GOLD STAR se imprimía "10" en la matriz porque la columna Cj medía
+     * 2 caracteres y col() truncaba. No era un desajuste visual: era una
+     * CANTIDAD EQUIVOCADA en el documento que firma el cliente. El PDF/HTML sí
+     * mostraba 100, así que solo se veía en el papel.
+     */
+    public function test_three_digit_box_quantity_is_not_truncated(): void
+    {
+        $manifest = Manifest::factory()->create(['number' => (string) (++static::$manifestSeq)]);
+        $invoice = Invoice::factory()->for($manifest)->create(['invoice_number' => 'F77000101']);
+
+        InvoiceLine::factory()->for($invoice)->create([
+            'product_id' => '40300012',
+            'product_description' => 'HARINA GOLD STAR CLASI400GX25U',
+            'unit_sale' => 'CJ',
+            'quantity_box' => 100,
+            'quantity_fractions' => 2500,     // 100 × 25, CJ pura → sueltas 0
+            'quantity_min_sale' => 2500,
+            'quantity_decimal' => 100,
+            'conversion_factor' => 25,
+            'price' => 245.00,
+            'subtotal' => 23275.00,
+            'tax' => 0,
+            'tax18' => 0,
+            'total' => 23275.00,
+        ]);
+        $invoice->load('lines');
+
+        $preview = app(EscpInvoiceService::class)->previewText(collect([$invoice]));
+
+        // Cj = 100 (los tres dígitos), Und vacía, luego código y descripción
+        // completa: la descripción de 30 chars sigue cabiendo en la columna.
+        $this->assertMatchesRegularExpression(
+            '/^100\s+40300012\s+HARINA GOLD STAR CLASI400GX25U/m',
+            $preview
+        );
+    }
+
+    /**
+     * Blindaje del mismo defecto para cualquier cantidad: ni Cj ni Und se
+     * truncan aunque excedan su columna de 3 (4 dígitos). El excedente lo
+     * absorbe Descripcion, así que el ancho de línea NO crece y las columnas de
+     * dinero no se desplazan ni se recortan.
+     *
+     * OJO con los límites del esquema: quantity_fractions es decimal(10,4), o
+     * sea < 10^6, y fractions = cajas × factor + sueltas. Por eso NO se pueden
+     * tener 4 dígitos en Cj y en Und en la MISMA línea (exigiría fractions ≥
+     * 1,001,000 → overflow de Postgres). Se cubre una línea por caso.
+     */
+    public function test_four_digit_quantities_never_truncate_nor_widen_the_line(): void
+    {
+        $manifest = Manifest::factory()->create(['number' => (string) (++static::$manifestSeq)]);
+        $invoice = Invoice::factory()->for($manifest)->create(['invoice_number' => 'F77000102']);
+
+        // Cj de 4 dígitos: 1200 cajas de factor 120 + 119 sueltas = 144,119.
+        InvoiceLine::factory()->for($invoice)->create([
+            'product_id' => '40300012',
+            'product_description' => 'HARINA GOLD STAR',
+            'unit_sale' => 'CJ',
+            'quantity_box' => 1200,
+            'quantity_fractions' => 144119,
+            'quantity_min_sale' => 144119,
+            'quantity_decimal' => 1200.99,
+            'conversion_factor' => 120,
+            'price' => 807.00,
+            'subtotal' => 121050.00,
+            'tax' => 0,
+            'tax18' => 0,
+            'total' => 121050.00,
+        ]);
+
+        // Und de 4 dígitos: 900 cajas de factor 1001 + 1000 sueltas = 901,900.
+        InvoiceLine::factory()->for($invoice)->create([
+            'product_id' => '40300018',
+            'product_description' => 'HARINA G.S.BALEADA',
+            'unit_sale' => 'CJ',
+            'quantity_box' => 900,
+            'quantity_fractions' => 901900,
+            'quantity_min_sale' => 901900,
+            'quantity_decimal' => 900.99,
+            'conversion_factor' => 1001,
+            'price' => 265.00,
+            'subtotal' => 1258.75,
+            'tax' => 0,
+            'tax18' => 0,
+            'total' => 1258.75,
+        ]);
+        $invoice->load('lines');
+
+        $preview = app(EscpInvoiceService::class)->previewText(collect([$invoice]));
+
+        // Cantidades íntegras y sin separador de miles ("1200", no "1,200").
+        $this->assertMatchesRegularExpression('/^1200\s+119\s+40300012/m', $preview);
+        $this->assertMatchesRegularExpression('/^900\s+1000\s+40300018/m', $preview);
+        // El monto de la fila con Cj desbordada tampoco se recorta.
+        $this->assertStringContainsString('121,050.00', $preview);
+
+        // Ninguna línea excede el ancho útil: el excedente salió de Descripcion.
+        $cpl = max(40, (int) config('escp.chars_per_line', 92));
+        foreach (explode("\n", $preview) as $line) {
+            $this->assertLessThanOrEqual($cpl, mb_strlen($line), 'Linea mas ancha que cpl: '.$line);
+        }
+    }
+
     public function test_long_invoice_paginates_without_repeating_full_header(): void
     {
         // Una factura de muchos productos se parte en varias formas, pero el

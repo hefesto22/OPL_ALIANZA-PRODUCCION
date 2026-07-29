@@ -148,8 +148,9 @@ table.lines th { border-top:1px solid #000; border-bottom:1px solid #000; text-a
                 $sueltas = $eq['sueltas'];
             @endphp
             <tr>
-                <td>{{ $cajas > 0 ? number_format($cajas) : '' }}</td>
-                <td>{{ $sueltas > 0 ? number_format($sueltas) : '' }}</td>
+                {{-- Sin separador de miles: identico a la impresion ESC/P (qty()). --}}
+                <td>{{ $cajas > 0 ? (string) $cajas : '' }}</td>
+                <td>{{ $sueltas > 0 ? (string) $sueltas : '' }}</td>
                 <td>{{ $line->product_id }}</td>
                 <td>{{ $line->product_description }}</td>
                 <td class="r">{{ number_format((float) $line->price, 2) }}</td>

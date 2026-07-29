@@ -44,8 +44,16 @@ class EscpInvoiceService
      *
      * SubT y Total = 10 → sostienen montos de hasta 121,050.00 (10 chars) sin
      * truncar (regresion cubierta por test_large_amounts_are_not_truncated).
+     *
+     * Cj = 3 → sostiene hasta 999 cajas en una linea. Con Cj = 2 una linea de
+     * 100 cajas se imprimia "10": no era un problema de alineacion, era un
+     * NUMERO EQUIVOCADO en un documento fiscal (visto en la factura
+     * 002-001-01-03908303, 100 cajas de HARINA GOLD STAR). El excedente sale
+     * del ancho de Descripcion, que baja de 34 a 33 chars con cpl = 92 — sigue
+     * cubriendo el nombre mas largo conocido (33 chars, ver
+     * test_long_product_description_is_not_truncated).
      */
-    private const COL_WIDTHS = [2, 3, 8, 9, 10, 9, 10];
+    private const COL_WIDTHS = [3, 3, 8, 9, 10, 9, 10];
 
     /** Piso de ancho de la descripcion, aunque cpl sea muy chico. */
     private const DESC_MIN_WIDTH = 12;
@@ -448,13 +456,24 @@ class EscpInvoiceService
         foreach ($invoice->lines as $line) {
             [$cajas, $sueltas] = $this->boxBreakdown($line);
             $imp = (float) ($line->tax ?? 0) + (float) ($line->tax18 ?? 0);
+
+            $cj = $this->qty($cajas);
+            $und = $this->qty($sueltas);
+
+            // Las cantidades NO se truncan NUNCA. Perder un digito de un monto
+            // desalinea la fila; perder un digito de una CANTIDAD cambia el
+            // numero (100 cajas impresas como "10" → el bodeguero despacha 10 y
+            // la factura fisica contradice al sistema). Si una cantidad excede
+            // su columna, el excedente lo absorbe Descripcion — la unica columna
+            // elastica — para que el ancho de linea siga siendo exacto y las
+            // columnas de dinero no se muevan.
+            $excess = max(0, mb_strlen($cj) - $wCj) + max(0, mb_strlen($und) - $wUnd);
+
             $rows[] = $this->row([
-                // Columna en blanco cuando es cero → "2 cajas" se ve como "2"
-                // (sin el "0" ni las unidades redundantes) para no confundir.
-                [$cajas > 0 ? number_format($cajas, 0) : '', $wCj, 'L'],
-                [$sueltas > 0 ? number_format($sueltas, 0) : '', $wUnd, 'L'],
+                [$cj, max($wCj, mb_strlen($cj)), 'L'],
+                [$und, max($wUnd, mb_strlen($und)), 'L'],
                 [(string) $line->product_id, $wCod, 'L'],
-                [(string) $line->product_description, $wDesc, 'L'],
+                [(string) $line->product_description, max(self::DESC_MIN_WIDTH, $wDesc - $excess), 'L'],
                 [number_format((float) $line->price, 2), $wPU, 'R'],
                 [number_format((float) $line->subtotal, 2), $wSub, 'R'],
                 [number_format($imp, 2), $wImp, 'R'],
@@ -463,6 +482,16 @@ class EscpInvoiceService
         }
 
         return $rows;
+    }
+
+    /**
+     * Cantidad para las columnas Cj/Und: entero SIN separador de miles (la coma
+     * gastaria una columna entera en un contador) y VACIA cuando es cero, para
+     * que "2 cajas" se lea como "2" y no como "2 | 0".
+     */
+    private function qty(int $n): string
+    {
+        return $n > 0 ? (string) $n : '';
     }
 
     /**
