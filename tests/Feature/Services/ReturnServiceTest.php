@@ -672,15 +672,56 @@ class ReturnServiceTest extends TestCase
     public function test_update_invalidates_devoluciones_cache(): void
     {
         [$return, $invoice] = $this->createExistingReturn(boxes: 3);
+
+        // MISMA fuente de flakiness que arregló 5c75fa4 para createReturn(), que
+        // quedó viva en el camino de update: invalidateDevolucionesCacheForReturn()
+        // bumpea el contador de la fecha de PROCESO y el de la de EMISIÓN, y
+        // InvoiceFactory sortea invoice_date entre -15 días y hoy. Cuando el
+        // sorteo caía HOY ambos bumps golpeaban la MISMA clave, el contador subía
+        // a 12 en vez de 11 y el test fallaba por azar (~1 de cada 16 corridas;
+        // se cayó en CI el 29/07/2026 después de pasar en local). Fijar la
+        // emisión lejos del día de proceso separa las dos claves.
+        $emisionDate = now()->subDays(3)->toDateString();
+        $invoice->update(['invoice_date' => $emisionDate]);
+
         $cacheDate = $return->processed_date instanceof \DateTimeInterface
             ? $return->processed_date->format('Y-m-d')
             : (string) $return->processed_date;
         $cacheKey = "devoluciones:version:{$cacheDate}";
+        $emisionKey = "devoluciones:version:{$emisionDate}";
+        Cache::forget($cacheKey);
+        Cache::forget($emisionKey);
         Cache::put($cacheKey, 10);
+        Cache::put($emisionKey, 20);
 
         $this->service->updateReturn($return, $this->updatePayload($invoice, [5]));
 
         $this->assertSame(11, (int) Cache::get($cacheKey));
+        // El listar por fecha de EMISIÓN (contrato Jaremar) también se invalida.
+        // Antes no estaba cubierto: el test solo miraba la clave de proceso.
+        $this->assertSame(21, (int) Cache::get($emisionKey));
+    }
+
+    /**
+     * Espejo en el camino de UPDATE de test_same_day_invoice_bumps_the_version_
+     * counter_twice: si la factura se emitió el mismo día en que se procesa la
+     * devolución, proceso y emisión son la misma clave y recibe los DOS bumps.
+     *
+     * No es un bug y no hay que "deduplicarlo": invalidar de más cuesta una
+     * lectura fría de cache, invalidar de menos le sirve datos viejos a Jaremar.
+     */
+    public function test_update_on_same_day_invoice_bumps_the_version_counter_twice(): void
+    {
+        [$return, $invoice] = $this->createExistingReturn(boxes: 3);
+        $invoice->update(['invoice_date' => now()->toDateString()]);
+
+        $cacheKey = 'devoluciones:version:'.now()->toDateString();
+        Cache::forget($cacheKey);
+        Cache::put($cacheKey, 10);
+
+        $this->service->updateReturn($return, $this->updatePayload($invoice, [5]));
+
+        $this->assertSame(12, (int) Cache::get($cacheKey));
     }
 
     public function test_update_rejects_when_manifest_is_closed(): void
