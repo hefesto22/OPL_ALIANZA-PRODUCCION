@@ -3,7 +3,6 @@
 namespace Tests\Feature\Models;
 
 use App\Models\Deposit;
-use App\Models\DepositAllocation;
 use App\Models\Invoice;
 use App\Models\InvoiceReturn;
 use App\Models\Manifest;
@@ -380,26 +379,11 @@ class ManifestTest extends TestCase
         ]);
 
         // Dos depósitos parciales que NO cuadran con total_to_deposit.
-        //
-        // Cada uno lleva su línea de reparto: desde la aplicación
-        // multi-manifiesto, `total_deposited` se calcula desde
-        // deposit_allocations y NO desde deposits.manifest_id. Un depósito sin
-        // reparto es dinero que el sistema no sabe a qué manifiesto acreditar
-        // — por eso DepositService es el único que crea depósitos en la app,
-        // y siempre crea ambas filas en la misma transacción.
         foreach ([5000, 2000] as $monto) {
-            $deposito = Deposit::create([
+            Deposit::create([
                 'manifest_id' => $manifest->id,
                 'amount' => $monto,
-                'allocated_amount' => $monto,
                 'deposit_date' => now()->toDateString(),
-                'created_by' => $user->id,
-            ]);
-
-            DepositAllocation::create([
-                'deposit_id' => $deposito->id,
-                'manifest_id' => $manifest->id,
-                'amount' => $monto,
                 'created_by' => $user->id,
             ]);
         }

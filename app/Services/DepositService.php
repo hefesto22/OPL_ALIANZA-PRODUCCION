@@ -3,124 +3,88 @@
 namespace App\Services;
 
 use App\Models\Deposit;
-use App\Models\DepositAllocation;
 use App\Models\Manifest;
-use App\Models\User;
-use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 /**
  * Servicio de depósitos. Cada operación corre dentro de una transacción
- * con bloqueo pesimista (lockForUpdate) sobre los manifiestos involucrados.
+ * con bloqueo pesimista (lockForUpdate) sobre el manifiesto.
  *
  * Por qué el lock: los depósitos son operaciones financieras concurrentes.
  * Si dos usuarios registran depósitos del mismo manifiesto en paralelo, sin
- * lock ambos leen el mismo saldo pendiente, ambos validan contra él, y ambos
- * commitean — quedando el manifiesto sobre-depositado. El lock pesimista
- * serializa esas operaciones y elimina la carrera.
+ * lock ambos leen el mismo `total_to_deposit`, ambos calculan el mismo saldo
+ * y ambos commitean — quedando los totales descuadrados. El lock pesimista
+ * serializa esas operaciones sobre la fila del manifiesto.
  *
- * Por qué el lock se toma SIEMPRE en orden ascendente de id: desde la
- * aplicación multi-manifiesto un depósito toca N manifiestos, no uno. Si dos
- * transacciones bloquearan el mismo par de manifiestos en orden distinto
- * (A→B y B→A), Postgres detectaría un deadlock y mataría una de las dos.
- * Ordenar por id da un orden total consistente y hace el deadlock imposible.
- * Esto NO es un detalle de estilo: es la única razón por la que dos bodegas
- * pueden depositar al mismo tiempo sin abortar transacciones.
- *
- * Por qué el recálculo va DENTRO de la TX: recalculateTotals toca columnas
- * financieras (total_deposited, difference, warehouse_totals). Si la TX hace
- * rollback esas columnas deben volver al estado previo. Mantenerlo dentro
- * garantiza atomicidad ACID completa.
+ * Por qué el recálculo va DENTRO de la TX: el `recalculateTotals` toca
+ * columnas financieras (total_deposited, difference, warehouse_totals). Si
+ * la TX hace rollback, esas columnas deben volver al estado previo.
  *
  * Por qué las operaciones de archivo (deleteReceiptImage) usan DB::afterCommit:
  * el filesystem NO es transaccional. Si borráramos el archivo antes de la TX y
  * la TX hiciera rollback, quedaría una referencia rota. afterCommit ejecuta el
  * borrado solo si la TX commiteó.
+ *
+ * ─────────────────────────────────────────────────────────────────────
+ *  UN DEPÓSITO SE APLICA ÍNTEGRO A SU MANIFIESTO
+ * ─────────────────────────────────────────────────────────────────────
+ *  El monto puede superar el saldo pendiente: pasa cuando el encargado
+ *  redondea la transferencia o deposita de más a propósito. En ese caso el
+ *  manifiesto queda SOBREPAGADO y así se muestra — no se reparte nada a otros
+ *  manifiestos ni se guarda un saldo a favor. Es una decisión de la operación:
+ *  prefieren ver marcado exactamente dónde se depositó de más.
+ *
+ *  Lo único que se exige es una justificación escrita, porque es el caso que
+ *  un auditor va a cuestionar meses después.
  */
 class DepositService
 {
-    public function __construct(
-        private readonly DepositAllocationService $allocations,
-    ) {}
-
     /**
-     * Previsualización del reparto para la UI, sin persistir nada.
-     *
-     * @return array<int, array{manifest_id: int, number: string, date: string|null, amount: float, is_origin: bool, is_overflow: bool}>
-     */
-    public function previewAllocationPlan(Manifest $manifest, float $amount, ?User $user = null): array
-    {
-        return $this->allocations->plan($manifest, $amount, $user);
-    }
-
-    /**
-     * Crear un nuevo depósito, repartirlo entre manifiestos y recalcular
-     * los totales de todos los afectados.
-     *
-     * `$data['allocations']` es opcional: si viene (array de
-     * ['manifest_id' => int, 'amount' => float]) se respeta ese reparto
-     * manual; si no, se calcula automáticamente por FIFO.
+     * Crear un nuevo depósito y recalcular totales del manifiesto.
      */
     public function createDeposit(Manifest $manifest, array $data, int $userId): Deposit
     {
-        // Si se subió imagen, registrar la fecha/hora para el cleanup automático.
+        // Si se subió imagen, registrar la fecha/hora de subida para el cleanup automático.
         if (! empty($data['receipt_image'])) {
             $data['receipt_image_uploaded_at'] = now();
         }
 
-        $manualPlan = $this->extractManualPlan($data);
-        $amount = round((float) $data['amount'], 2);
-        $user = $userId ? User::find($userId) : null;
+        return DB::transaction(function () use ($manifest, $data, $userId) {
+            // Lock pesimista sobre el manifiesto. Re-leemos la fila desde BD
+            // para garantizar que el saldo calculado a continuación refleja
+            // cualquier depósito recién commiteado por otra sesión.
+            $manifestLocked = Manifest::query()
+                ->whereKey($manifest->id)
+                ->lockForUpdate()
+                ->firstOrFail();
 
-        // Plan preliminar SIN lock: solo sirve para saber QUÉ manifiestos hay
-        // que bloquear. El plan que se persiste se recalcula abajo, ya con los
-        // manifiestos bloqueados y con saldos frescos.
-        $preliminary = $manualPlan ?? $this->allocations->plan($manifest, $amount, $user);
+            $this->assertManifestOpen($manifestLocked);
 
-        return DB::transaction(function () use ($manifest, $data, $userId, $user, $amount, $manualPlan, $preliminary) {
-            $locked = $this->lockManifests(
-                $this->manifestIdsOf($preliminary, $manifest->id)
-            );
+            $amount = round((float) $data['amount'], 2);
+            $pending = $this->getPendingAmount($manifestLocked);
 
-            $origin = $locked[$manifest->id];
-
-            foreach ($locked as $target) {
-                $this->assertManifestOpen($target);
-            }
-
-            $originPending = $this->allocations->pendingFor($origin);
-            $this->assertJustifiedIfOverPending($data, $amount, $originPending, $origin);
-
-            // Reparto definitivo, con los manifiestos ya bloqueados.
-            $plan = $manualPlan
-                ? $this->validateManualPlan($manualPlan, $amount, $locked)
-                : $this->allocations->plan($origin, $amount, $user, $this->candidatesFrom($locked, $origin->id));
+            $this->assertJustifiedIfOverPending($data, $amount, $pending, $manifestLocked);
 
             $deposit = Deposit::create([
                 ...$data,
-                'manifest_id' => $origin->id,
+                'manifest_id' => $manifestLocked->id,
                 'amount' => $amount,
-                'allocated_amount' => $amount,
                 'created_by' => $userId,
                 'updated_by' => $userId,
             ]);
 
-            $this->persistAllocations($deposit, $plan, $userId);
-            $this->recalculateAll($locked, $plan);
-            $this->logSplit($deposit, $plan, $origin, 'Depósito registrado');
+            // Recálculo dentro de la TX: si falla, rollback de TODO el depósito.
+            $manifestLocked->recalculateTotals();
+
+            $this->logOverpaymentIfAny($deposit, $manifestLocked->refresh(), 'Depósito registrado por encima del total');
 
             return $deposit;
         });
     }
 
     /**
-     * Actualizar un depósito existente: se rehace el reparto completo.
-     *
-     * Cambiar el monto de una boleta que cubría tres manifiestos no tiene un
-     * "ajuste parcial" sensato — se borra el reparto viejo y se recalcula de
-     * cero. Ambos conjuntos de manifiestos (los que salen y los que entran)
-     * quedan bloqueados y se recalculan dentro de la misma transacción.
+     * Actualizar un depósito existente y recalcular totales.
      */
     public function updateDeposit(Deposit $deposit, array $data, int $userId): Deposit
     {
@@ -139,53 +103,43 @@ class DepositService
             $data['receipt_image_uploaded_at'] = now();
         }
 
-        $manualPlan = $this->extractManualPlan($data);
-        $amount = round((float) $data['amount'], 2);
-        $user = $userId ? User::find($userId) : null;
+        return DB::transaction(function () use ($deposit, $data, $userId, $shouldDeleteOld, $oldImage) {
+            $manifestLocked = Manifest::query()
+                ->whereKey($deposit->manifest_id)
+                ->lockForUpdate()
+                ->firstOrFail();
 
-        $previousIds = $deposit->allocations()->pluck('manifest_id')->all();
-        $preliminary = $manualPlan ?? $this->allocations->plan($deposit->manifest, $amount, $user);
+            $this->assertManifestOpen($manifestLocked);
 
-        return DB::transaction(function () use (
-            $deposit, $data, $userId, $user, $amount, $manualPlan, $preliminary, $previousIds, $shouldDeleteOld, $oldImage
-        ) {
-            $locked = $this->lockManifests(array_merge(
-                $previousIds,
-                $this->manifestIdsOf($preliminary, $deposit->manifest_id)
-            ));
+            // Saldo pendiente excluyendo el depósito actual: permite editar el
+            // mismo depósito sin que su propio monto cuente como ya cubierto.
+            // Se calcula con el manifiesto bloqueado para evitar TOCTOU.
+            $depositFresh = $deposit->fresh();
+            $pendingExcludingCurrent = max(
+                0,
+                (float) $manifestLocked->total_to_deposit
+                    - $this->getTotalDeposited($manifestLocked)
+                    - (float) $manifestLocked->adjustment_amount
+                    + (float) $depositFresh->amount
+            );
 
-            $origin = $locked[$deposit->manifest_id];
+            $amount = round((float) $data['amount'], 2);
 
-            foreach ($locked as $target) {
-                $this->assertManifestOpen($target);
-            }
-
-            // Borrar el reparto viejo ANTES de calcular el nuevo: así
-            // pendingFor() ya ve los saldos liberados y el mismo depósito no
-            // compite consigo mismo por el pendiente que él mismo ocupaba.
-            $deposit->allocations()->delete();
-
-            $originPending = $this->allocations->pendingFor($origin);
-            $this->assertJustifiedIfOverPending($data, $amount, $originPending, $origin);
-
-            $plan = $manualPlan
-                ? $this->validateManualPlan($manualPlan, $amount, $locked)
-                : $this->allocations->plan($origin, $amount, $user, $this->candidatesFrom($locked, $origin->id));
+            $this->assertJustifiedIfOverPending($data, $amount, $pendingExcludingCurrent, $manifestLocked);
 
             $deposit->update([
                 ...$data,
                 'amount' => $amount,
-                'allocated_amount' => $amount,
                 'updated_by' => $userId,
             ]);
 
-            $this->persistAllocations($deposit, $plan, $userId);
-            $this->recalculateAll($locked, $plan);
-            $this->logSplit($deposit, $plan, $origin, 'Depósito modificado');
+            $manifestLocked->recalculateTotals();
+
+            $this->logOverpaymentIfAny($deposit, $manifestLocked->refresh(), 'Depósito modificado por encima del total');
 
             // El borrado físico del archivo viejo solo ocurre tras commit
-            // exitoso. Si la TX hace rollback, el archivo queda intacto y la
-            // BD sigue apuntándolo correctamente — sin referencias rotas.
+            // exitoso. Si la TX hace rollback, el archivo queda intacto y la BD
+            // sigue apuntándolo correctamente — sin referencias rotas.
             if ($shouldDeleteOld && $oldImage) {
                 DB::afterCommit(function () use ($deposit, $oldImage) {
                     $deposit->receipt_image = $oldImage;
@@ -200,11 +154,9 @@ class DepositService
     /**
      * Cancelar un depósito con auditoría (soft-cancel con razón).
      *
-     * El depósito y su reparto permanecen en BD para trazabilidad; se marca
-     * cancelled_at y TODOS los manifiestos que recibían dinero de esta boleta
-     * se recalculan. Las allocations no se borran: el filtro por
-     * deposits.cancelled_at las excluye al leer, así que restaurar el
-     * depósito devuelve el reparto intacto sin backfill.
+     * El depósito permanece en BD para trazabilidad. Lo marcamos como
+     * cancelled_at/cancelled_by/cancellation_reason; el manifiesto se
+     * recalcula excluyendo este monto.
      *
      * Idempotente: cancelar un depósito ya cancelado es no-op.
      */
@@ -219,14 +171,14 @@ class DepositService
         // afterCommit. Una vez cancelado la imagen ya no es operativa —
         // liberamos el disco. La metadata del depósito se conserva.
         $receiptPath = $deposit->receipt_image;
-        $affectedIds = $deposit->allocations()->pluck('manifest_id')->all();
 
-        DB::transaction(function () use ($deposit, $reason, $userId, $affectedIds) {
-            $locked = $this->lockManifests(array_merge($affectedIds, [$deposit->manifest_id]));
+        DB::transaction(function () use ($deposit, $reason, $userId) {
+            $manifestLocked = Manifest::query()
+                ->whereKey($deposit->manifest_id)
+                ->lockForUpdate()
+                ->firstOrFail();
 
-            foreach ($locked as $target) {
-                $this->assertManifestOpen($target);
-            }
+            $this->assertManifestOpen($manifestLocked);
 
             // Re-fetch dentro del lock por si otro proceso lo canceló mientras
             // tanto. Sin esto: race condition en cancel concurrente que duplica
@@ -243,12 +195,10 @@ class DepositService
                 'updated_by' => $userId,
             ]);
 
-            foreach ($locked as $target) {
-                $target->recalculateTotals();
-            }
+            $manifestLocked->recalculateTotals();
 
-            // Log explícito en canal finance — el trait LogsActivity registra
-            // los cambios de columna automáticamente, pero esta entrada
+            // Log explícito en canal finance — el trait LogsActivity del modelo
+            // registra los cambios de columna automáticamente, pero esta entrada
             // documenta el evento de negocio con contexto rico para responder
             // "¿quién y por qué canceló este depósito?".
             activity('finance')
@@ -260,8 +210,7 @@ class DepositService
                     'bank' => $deposit->bank,
                     'reference' => $deposit->reference,
                     'manifest_id' => $deposit->manifest_id,
-                    'manifest_number' => $locked[$deposit->manifest_id]->number ?? null,
-                    'manifiestos_afectados' => collect($locked)->pluck('number')->values()->all(),
+                    'manifest_number' => $manifestLocked->number,
                     'reason' => $reason,
                 ])
                 ->log('Depósito cancelado');
@@ -282,19 +231,19 @@ class DepositService
      *
      * El flujo normal de "anular" es cancelDeposit(), que preserva el
      * registro. forceDelete se usa para errores de captura (datos de prueba,
-     * carga accidental). Las allocations se van por cascade de la FK.
+     * carga accidental).
      */
     public function forceDeleteDeposit(Deposit $deposit, int $userId): void
     {
         $receiptPath = $deposit->receipt_image;
-        $affectedIds = $deposit->allocations()->pluck('manifest_id')->all();
 
-        DB::transaction(function () use ($deposit, $receiptPath, $affectedIds) {
-            $locked = $this->lockManifests(array_merge($affectedIds, [$deposit->manifest_id]));
+        DB::transaction(function () use ($deposit, $receiptPath) {
+            $manifestLocked = Manifest::query()
+                ->whereKey($deposit->manifest_id)
+                ->lockForUpdate()
+                ->firstOrFail();
 
-            foreach ($locked as $target) {
-                $this->assertManifestOpen($target);
-            }
+            $this->assertManifestOpen($manifestLocked);
 
             // Activity log ANTES del forceDelete: una vez borrado el modelo no
             // se puede performedOn() porque el id desaparece.
@@ -307,17 +256,14 @@ class DepositService
                     'bank' => $deposit->bank,
                     'reference' => $deposit->reference,
                     'manifest_id' => $deposit->manifest_id,
-                    'manifest_number' => $locked[$deposit->manifest_id]->number ?? null,
-                    'manifiestos_afectados' => collect($locked)->pluck('number')->values()->all(),
+                    'manifest_number' => $manifestLocked->number,
                     'was_cancelled' => $deposit->isCancelled(),
                 ])
                 ->log('Depósito eliminado permanentemente');
 
             $deposit->forceDelete();
 
-            foreach ($locked as $target) {
-                $target->recalculateTotals();
-            }
+            $manifestLocked->recalculateTotals();
 
             if ($receiptPath) {
                 DB::afterCommit(function () use ($deposit, $receiptPath) {
@@ -329,224 +275,27 @@ class DepositService
     }
 
     /**
-     * Total aplicado a un manifiesto — excluye depósitos cancelados.
-     *
-     * La fuente es deposit_allocations, no deposits: una boleta registrada
-     * desde otro manifiesto puede tener dinero aplicado acá, y una registrada
-     * acá puede tener parte aplicada en otro lado.
+     * Total depositado para un manifiesto — excluye cancelados.
      */
     public function getTotalDeposited(Manifest $manifest): float
     {
-        return DepositAllocation::totalForManifest($manifest->id);
+        return (float) $manifest->deposits()->active()->sum('amount');
     }
 
     /**
-     * Diferencia pendiente de depositar (nunca negativa).
+     * Saldo pendiente de depositar (nunca negativo).
+     *
+     * Descuenta también los ajustes de centavos: un manifiesto ajustado a cero
+     * no tiene nada pendiente aunque sus depósitos no lleguen al total.
      */
     public function getPendingAmount(Manifest $manifest): float
     {
-        return $this->allocations->pendingFor($manifest);
-    }
-
-    // ═══════════════════════════════════════════════════════════════
-    //  Internos
-    // ═══════════════════════════════════════════════════════════════
-
-    /**
-     * Bloquea los manifiestos indicados SIEMPRE en orden ascendente de id.
-     * Ver la cabecera de la clase para por qué el orden es obligatorio.
-     *
-     * @param  array<int, int|string>  $ids
-     * @return array<int, Manifest> indexado por id
-     */
-    private function lockManifests(array $ids): array
-    {
-        $ids = collect($ids)->map(fn ($id) => (int) $id)->unique()->sort()->values()->all();
-
-        /** @var EloquentCollection<int, Manifest> $manifests */
-        $manifests = Manifest::query()
-            ->whereIn('id', $ids)
-            ->orderBy('id')
-            ->lockForUpdate()
-            ->get();
-
-        if ($manifests->count() !== count($ids)) {
-            throw ValidationException::withMessages([
-                'amount' => 'Uno de los manifiestos del reparto ya no existe. Recargá la pantalla e intentá de nuevo.',
-            ]);
-        }
-
-        return $manifests->keyBy('id')->all();
-    }
-
-    /**
-     * Ids de manifiesto presentes en un plan, más el de origen.
-     *
-     * @param  array<int, array{manifest_id: int, amount: float}>  $plan
-     * @return array<int, int>
-     */
-    private function manifestIdsOf(array $plan, int $originId): array
-    {
-        return collect($plan)->pluck('manifest_id')->push($originId)->all();
-    }
-
-    /**
-     * Candidatos ya bloqueados (todos menos el de origen), en orden FIFO.
-     *
-     * @param  array<int, Manifest>  $locked
-     * @return \Illuminate\Support\Collection<int, Manifest>
-     */
-    private function candidatesFrom(array $locked, int $originId)
-    {
-        return collect($locked)
-            ->reject(fn (Manifest $m) => (int) $m->id === $originId)
-            ->sortBy([['date', 'asc'], ['id', 'asc']])
-            ->values();
-    }
-
-    /**
-     * Extrae y normaliza el reparto manual del payload, si viene.
-     * Se saca de $data porque `allocations` no es una columna de deposits.
-     *
-     * @return array<int, array{manifest_id: int, amount: float}>|null
-     */
-    private function extractManualPlan(array &$data): ?array
-    {
-        if (! array_key_exists('allocations', $data)) {
-            return null;
-        }
-
-        $raw = $data['allocations'];
-        unset($data['allocations']);
-
-        if (empty($raw)) {
-            return null;
-        }
-
-        return collect($raw)
-            ->map(fn ($line) => [
-                'manifest_id' => (int) $line['manifest_id'],
-                'amount' => round((float) $line['amount'], 2),
-            ])
-            ->all();
-    }
-
-    /**
-     * Valida un reparto manual contra la invariante SUM(reparto) == monto y
-     * contra el conjunto de manifiestos bloqueados.
-     *
-     * @param  array<int, array{manifest_id: int, amount: float}>  $plan
-     * @param  array<int, Manifest>  $locked
-     * @return array<int, array{manifest_id: int, number: string, date: string|null, amount: float, is_origin: bool, is_overflow: bool}>
-     */
-    private function validateManualPlan(array $plan, float $amount, array $locked): array
-    {
-        $sum = round(collect($plan)->sum('amount'), 2);
-
-        if ($sum !== round($amount, 2)) {
-            throw ValidationException::withMessages([
-                'amount' => sprintf(
-                    'El reparto suma HNL %s pero el depósito es de HNL %s. Todo el monto debe quedar aplicado.',
-                    number_format($sum, 2),
-                    number_format($amount, 2)
-                ),
-            ]);
-        }
-
-        return collect($plan)
-            ->map(function (array $line) use ($locked) {
-                if ($line['amount'] <= 0) {
-                    throw ValidationException::withMessages([
-                        'allocations' => 'Cada línea del reparto debe tener un monto mayor a cero.',
-                    ]);
-                }
-
-                $manifest = $locked[$line['manifest_id']] ?? null;
-
-                if (! $manifest) {
-                    throw ValidationException::withMessages([
-                        'allocations' => 'El reparto incluye un manifiesto que ya no está disponible.',
-                    ]);
-                }
-
-                return [
-                    'manifest_id' => (int) $manifest->id,
-                    'number' => (string) $manifest->number,
-                    'date' => $manifest->date?->toDateString(),
-                    'amount' => $line['amount'],
-                    'is_origin' => false,
-                    'is_overflow' => false,
-                ];
-            })
-            ->values()
-            ->all();
-    }
-
-    /**
-     * @param  array<int, array{manifest_id: int, amount: float}>  $plan
-     */
-    private function persistAllocations(Deposit $deposit, array $plan, int $userId): void
-    {
-        foreach ($plan as $line) {
-            DepositAllocation::create([
-                'deposit_id' => $deposit->id,
-                'manifest_id' => $line['manifest_id'],
-                'amount' => $line['amount'],
-                'created_by' => $userId,
-            ]);
-        }
-    }
-
-    /**
-     * Recalcula los totales de todos los manifiestos tocados por la operación.
-     *
-     * @param  array<int, Manifest>  $locked
-     * @param  array<int, array{manifest_id: int, amount: float}>  $plan
-     *
-     * @phpstan-ignore-next-line  $plan se conserva por simetría de la firma
-     */
-    private function recalculateAll(array $locked, array $plan): void
-    {
-        // Se recalculan TODOS los bloqueados, no solo los del plan: en un
-        // update, los manifiestos que SALIERON del reparto también cambiaron
-        // su saldo y quedarían con totales viejos si se omitieran.
-        foreach ($locked as $manifest) {
-            $manifest->recalculateTotals();
-        }
-    }
-
-    /**
-     * Deja constancia del reparto en el canal `finance` cuando la boleta
-     * tocó más de un manifiesto o quedó sobre-depositada. Un depósito simple
-     * (una boleta, un manifiesto, dentro del pendiente) no genera ruido:
-     * el LogsActivity del modelo ya lo cubre.
-     *
-     * @param  array<int, array{manifest_id: int, number: string, amount: float, is_overflow?: bool}>  $plan
-     */
-    private function logSplit(Deposit $deposit, array $plan, Manifest $origin, string $event): void
-    {
-        $isOverflow = collect($plan)->contains(fn ($l) => ! empty($l['is_overflow']));
-
-        if (count($plan) <= 1 && ! $isOverflow) {
-            return;
-        }
-
-        activity('finance')
-            ->performedOn($deposit)
-            ->causedBy(auth()->user())
-            ->withProperties([
-                'amount' => (float) $deposit->amount,
-                'bank' => $deposit->bank,
-                'reference' => $deposit->reference,
-                'manifiesto_origen' => $origin->number,
-                'justificacion' => $deposit->justification,
-                'sobredeposito' => $isOverflow,
-                'reparto' => collect($plan)
-                    ->map(fn ($l) => ['manifiesto' => $l['number'], 'monto' => $l['amount']])
-                    ->values()
-                    ->all(),
-            ])
-            ->log($event.' aplicado a '.count($plan).' manifiesto(s)');
+        return round(max(
+            0,
+            (float) $manifest->total_to_deposit
+                - $this->getTotalDeposited($manifest)
+                - (float) $manifest->adjustment_amount
+        ), 2);
     }
 
     /**
@@ -557,33 +306,31 @@ class DepositService
     {
         if ($manifest->isClosed()) {
             throw ValidationException::withMessages([
-                'manifest_id' => "No se puede aplicar dinero al manifiesto #{$manifest->number}: está cerrado.",
+                'manifest_id' => 'No se puede modificar un depósito de un manifiesto cerrado.',
             ]);
         }
     }
 
     /**
-     * Exige justificación cuando el monto de la boleta supera el saldo
-     * pendiente del manifiesto de origen.
+     * Exige justificación cuando el monto supera el saldo pendiente.
      *
-     * Ese es exactamente el caso que el cliente pidió habilitar (una sola
-     * transferencia para varios manifiestos, o un depósito por encima del
-     * total), y es el que un auditor va a cuestionar. Se valida acá y no solo
-     * en el formulario: la UI se puede saltar, el Service no.
+     * Depositar de más está PERMITIDO — es lo que el cliente pidió: a veces
+     * transfieren una cifra redondeada o de más a propósito. Lo que no se
+     * permite es que quede sin explicación: ese manifiesto va a aparecer
+     * sobrepagado y alguien, meses después, va a preguntar por qué.
      *
      * NOTA — Aquí vivía un margen de tolerancia de HNL 0.01
      * (`$amount > $pending + 0.01`) que dejaba pasar depósitos un centavo por
-     * encima del pendiente. Ese margen es el origen de los manifiestos con
-     * difference = -0.01 que quedaron varados en producción (no se pueden
-     * cerrar porque isReadyToClose exige cero exacto). Se eliminó a propósito:
-     * ahora cualquier exceso, aunque sea de un centavo, se reparte o se
-     * justifica explícitamente.
+     * encima del pendiente sin pedir nada. Ese margen es el origen de los
+     * manifiestos con difference = -0.01 que quedaron varados en producción,
+     * imposibles de cerrar y sin rastro de quién los generó. Se eliminó: ahora
+     * cualquier exceso, aunque sea de un centavo, queda justificado.
      */
     private function assertJustifiedIfOverPending(
         array $data,
         float $amount,
         float $pending,
-        Manifest $origin,
+        Manifest $manifest,
     ): void {
         if (round($amount, 2) <= round($pending, 2)) {
             return;
@@ -597,10 +344,41 @@ class DepositService
                     'El monto (HNL %s) supera el saldo pendiente del manifiesto #%s (HNL %s). '.
                     'Escribí una justificación de al menos 15 caracteres explicando por qué se deposita de más.',
                     number_format($amount, 2),
-                    $origin->number,
+                    $manifest->number,
                     number_format($pending, 2)
                 ),
             ]);
         }
+    }
+
+    /**
+     * Deja constancia en el canal `finance` cuando el manifiesto queda
+     * sobrepagado.
+     *
+     * Un depósito normal no genera ruido: el LogsActivity del modelo ya lo
+     * cubre. Este registro existe para el caso excepcional, con el monto del
+     * exceso y la justificación juntos, que es lo que hace falta para
+     * responder la pregunta meses después.
+     */
+    private function logOverpaymentIfAny(Deposit $deposit, Manifest $manifest, string $event): void
+    {
+        if (! $manifest->isOverpaid()) {
+            return;
+        }
+
+        activity('finance')
+            ->performedOn($deposit)
+            ->causedBy(auth()->user())
+            ->withProperties([
+                'amount' => (float) $deposit->amount,
+                'bank' => $deposit->bank,
+                'reference' => $deposit->reference,
+                'manifest_number' => $manifest->number,
+                'total_a_depositar' => (float) $manifest->total_to_deposit,
+                'total_depositado' => (float) $manifest->total_deposited,
+                'sobrepago' => $manifest->overpaidAmount(),
+                'justificacion' => $deposit->justification,
+            ])
+            ->log($event);
     }
 }

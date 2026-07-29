@@ -3,7 +3,6 @@
 namespace Tests\Feature\Services;
 
 use App\Models\Deposit;
-use App\Models\DepositAllocation;
 use App\Models\Invoice;
 use App\Models\Manifest;
 use App\Models\Supplier;
@@ -93,20 +92,12 @@ class ManifestAdjustmentServiceTest extends TestCase
      */
     private function seedLegacyOverDeposit(float $amount): void
     {
-        $deposito = Deposit::create([
+        Deposit::create([
             'manifest_id' => $this->manifest->id,
             'amount' => $amount,
-            'allocated_amount' => $amount,
             'deposit_date' => now()->toDateString(),
             'bank' => 'BAC',
             'reference' => 'LEGACY-'.fake()->unique()->numerify('#####'),
-            'created_by' => $this->user->id,
-        ]);
-
-        DepositAllocation::create([
-            'deposit_id' => $deposito->id,
-            'manifest_id' => $this->manifest->id,
-            'amount' => $amount,
             'created_by' => $this->user->id,
         ]);
 

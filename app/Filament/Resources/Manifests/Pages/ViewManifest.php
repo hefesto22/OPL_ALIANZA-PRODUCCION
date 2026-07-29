@@ -11,7 +11,6 @@ use Filament\Actions\ActionGroup;
 use Filament\Actions\EditAction;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\FileUpload;
-use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -20,7 +19,6 @@ use Filament\Resources\Pages\ViewRecord;
 use Filament\Schemas\Components\Utilities\Get;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Crypt;
-use Illuminate\Support\HtmlString;
 
 class ViewManifest extends ViewRecord
 {
@@ -156,9 +154,9 @@ class ViewManifest extends ViewRecord
                     $record = $this->record;
                     $pending = $service->getPendingAmount($record);
 
-                    // El monto ya NO tiene tope: una sola boleta puede cubrir
-                    // varios manifiestos. Este closure decide cuándo mostrar el
-                    // desglose del reparto y exigir justificación.
+                    // El monto ya NO tiene tope: pueden depositar más de lo que
+                    // el manifiesto debe. Este closure decide cuándo exigir la
+                    // justificación del exceso.
                     $exceedsPending = fn (Get $get): bool => round((float) ($get('amount') ?? 0), 2) > round($pending, 2);
 
                     return [
@@ -174,59 +172,11 @@ class ViewManifest extends ViewRecord
                             // saldos de los manifiestos candidatos — dispararlo por
                             // pulsación sería una query por dígito tecleado.
                             ->live(onBlur: true)
-                            ->helperText(function () use ($pending): string {
-                                $allocation = app(\App\Services\DepositAllocationService::class);
-
-                                return 'Saldo pendiente: HNL '.number_format($pending, 2).
-                                    '. Podés registrar un monto mayor. El excedente cubre primero deudas '.
-                                    'chicas y viejas de la misma bodega (hasta HNL '.
-                                    number_format($allocation->topePendiente(), 2).
-                                    ' en manifiestos de más de '.$allocation->antiguedadMinima().
-                                    ' días); lo que quede se registra en este manifiesto como sobrepago.';
-                            }),
-
-                        // ── Desglose del reparto ──────────────────────────
-                        // Solo aparece cuando el monto supera el pendiente.
-                        // Es una previsualización: el reparto definitivo se
-                        // recalcula al guardar, con los manifiestos bloqueados
-                        // y saldos frescos (otro usuario pudo depositar entre
-                        // medias). Por eso se advierte que es estimado.
-                        Placeholder::make('reparto_preview')
-                            ->label('Así se va a repartir el depósito')
-                            ->visible($exceedsPending)
-                            ->content(function (Get $get) use ($record, $service): HtmlString {
-                                $amount = round((float) ($get('amount') ?? 0), 2);
-
-                                if ($amount <= 0) {
-                                    return new HtmlString('<span class="text-sm text-gray-500">Ingresá un monto.</span>');
-                                }
-
-                                $plan = $service->previewAllocationPlan($record, $amount, Auth::user());
-
-                                $rows = collect($plan)->map(function (array $line): string {
-                                    $fecha = $line['date'] ? \Carbon\Carbon::parse($line['date'])->format('d/m/Y') : '';
-                                    $etiqueta = $line['is_overflow']
-                                        ? ' <span class="text-warning-600 font-medium">(excede el total — requiere justificación)</span>'
-                                        : ($line['is_origin'] ? ' <span class="text-gray-500">(este manifiesto)</span>' : '');
-
-                                    return sprintf(
-                                        '<li class="flex justify-between gap-4 py-1 border-b border-gray-200 dark:border-gray-700">'.
-                                        '<span>#%s <span class="text-gray-500 text-xs">%s</span>%s</span>'.
-                                        '<span class="font-semibold">HNL %s</span></li>',
-                                        e($line['number']),
-                                        e($fecha),
-                                        $etiqueta,
-                                        number_format($line['amount'], 2)
-                                    );
-                                })->implode('');
-
-                                return new HtmlString(
-                                    '<ul class="text-sm w-full">'.$rows.'</ul>'.
-                                    '<p class="text-xs text-gray-500 mt-2">Estimado al día de hoy. '.
-                                    'Si otro usuario deposita antes de que guardes, el reparto se recalcula al guardar.</p>'
-                                );
-                            })
-                            ->columnSpanFull(),
+                            ->helperText(
+                                'Saldo pendiente: HNL '.number_format($pending, 2).
+                                '. Podés registrar un monto mayor: el depósito se aplica completo a este '.
+                                'manifiesto y el exceso queda marcado como sobrepago.'
+                            ),
 
                         Textarea::make('justification')
                             ->label('Justificación del depósito en exceso')
@@ -236,7 +186,7 @@ class ViewManifest extends ViewRecord
                             ->maxLength(1000)
                             ->rows(2)
                             ->placeholder('Ej.: una sola transferencia para cubrir los manifiestos 785569 y 784907.')
-                            ->helperText('Obligatoria. Queda registrada en la auditoría junto con el reparto.')
+                            ->helperText('Obligatoria. Queda registrada en la auditoría con tu nombre y la hora.')
                             ->columnSpanFull(),
 
                         DatePicker::make('deposit_date')
@@ -293,21 +243,17 @@ class ViewManifest extends ViewRecord
                     // los nuevos totales (total_deposited, difference, etc.)
                     $this->record->refresh();
 
-                    // El cuerpo detalla el reparto cuando la boleta tocó más de
-                    // un manifiesto: sin esto el operador vería "HNL 5,000
-                    // registrados" y no sabría que 0.32 se fueron a tapar el
-                    // manifiesto de la semana pasada.
-                    $deposit->load('allocations.manifest:id,number');
-
-                    $detalle = $deposit->allocations->count() > 1
-                        ? $deposit->allocations
-                            ->map(fn ($a) => '#'.$a->manifest->number.': HNL '.number_format((float) $a->amount, 2))
-                            ->implode(' · ')
-                        : ($deposit->bank ?? 'Sin banco');
+                    // Si el manifiesto quedó sobrepagado se dice en el mismo
+                    // aviso: es la única forma de que el operador se entere en
+                    // el momento, y no dos semanas después al querer cerrarlo.
+                    $sobrepago = $this->record->overpaidAmount();
 
                     Notification::make()
                         ->title('Depósito registrado correctamente')
-                        ->body('HNL '.number_format($deposit->amount, 2).' — '.$detalle)
+                        ->body(
+                            'HNL '.number_format($deposit->amount, 2).' — '.($deposit->bank ?? 'Sin banco').
+                            ($sobrepago > 0 ? ' · Sobrepago de HNL '.number_format($sobrepago, 2) : '')
+                        )
                         ->success()
                         ->send();
                 }),

@@ -32,39 +32,6 @@ return [
     |
     */
 
-    /*
-    |--------------------------------------------------------------------------
-    | Reparto automático del excedente de un depósito
-    |--------------------------------------------------------------------------
-    |
-    | Cuando una boleta supera el saldo del manifiesto, el excedente barre
-    | deudas viejas antes de quedarse en el manifiesto de origen.
-    |
-    | El barrido es DELIBERADAMENTE ANGOSTO. Su único trabajo es desatascar
-    | manifiestos que llevan semanas sin poder cerrarse por centavos: no es un
-    | motor de aplicación de pagos. Si el excedente pudiera cubrir deudas
-    | grandes o recientes, el sistema le estaría adelantando el pago a
-    | manifiestos que el operador tenía en su conciliación en curso, y nadie
-    | entendería por qué su manifiesto de anteayer aparece pagado solo.
-    |
-    | Lo que no entra en el barrido se queda en el manifiesto de origen como
-    | SOBREPAGO visible. Eso es intencional: así se sabe exactamente en cuál
-    | se depositó de más y cuánto.
-    |
-    */
-
-    'reparto' => [
-
-        // Antigüedad mínima del manifiesto para recibir excedente. Por debajo
-        // de esto se asume que sigue en conciliación activa y no se toca.
-        'antiguedad_minima_dias' => (int) env('MANIFESTS_REPARTO_ANTIGUEDAD_DIAS', 15),
-
-        // Saldo pendiente máximo que el barrido puede cubrir, por manifiesto.
-        // Cubre centavos y diferencias chicas de redondeo bancario; una deuda
-        // mayor se deposita explícitamente, no se tapa con un sobrante.
-        'tope_pendiente_hnl' => (float) env('MANIFESTS_REPARTO_TOPE_HNL', 10.00),
-    ],
-
     'ajustes' => [
 
         // ── tope_hnl ────────────────────────────────────────────────────

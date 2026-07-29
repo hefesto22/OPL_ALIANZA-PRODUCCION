@@ -135,19 +135,6 @@ class Manifest extends Model
     }
 
     /**
-     * Dinero aplicado a este manifiesto, venga de la boleta que venga.
-     *
-     * NO es lo mismo que deposits(): un depósito registrado desde OTRO
-     * manifiesto puede tener una allocation acá (reparto FIFO), y un depósito
-     * registrado desde acá puede tener parte de su monto aplicado a otros.
-     * Para todo cálculo financiero del manifiesto, la fuente es esta.
-     */
-    public function allocations(): HasMany
-    {
-        return $this->hasMany(DepositAllocation::class);
-    }
-
-    /**
      * Ajustes manuales de centavos (ver ManifestAdjustment).
      */
     public function adjustments(): HasMany
@@ -382,14 +369,10 @@ class Manifest extends Model
             ")
             ->first();
 
-        // Depósitos: la fuente es deposit_allocations, NO deposits.
-        //
-        // Desde la aplicación multi-manifiesto una boleta puede repartirse
-        // entre varios manifiestos, así que sumar deposits.amount por
-        // manifest_id acreditaría a este manifiesto plata que en realidad
-        // fue a otro. totalForManifest() suma solo las líneas de reparto
-        // dirigidas acá, excluyendo depósitos cancelados o borrados.
-        $totalDeposited = DepositAllocation::totalForManifest($this->id);
+        // Deposits: una sola SUM (tabla independiente, no se puede fusionar).
+        // Filtro active() excluye depósitos cancelados — un cancelado existe
+        // en BD para auditoría pero NO cuenta como dinero ingresado.
+        $totalDeposited = (float) $this->deposits()->active()->sum('amount');
 
         // Ajustes manuales de centavos. Se mantienen SEPARADOS de
         // total_deposited a propósito: la columna "Depositado" debe seguir

@@ -4,13 +4,11 @@ namespace App\Filament\Resources\Deposits\Schemas;
 
 use App\Models\Deposit;
 use App\Models\Manifest;
-use App\Services\DepositService;
 use App\Services\ReceiptImageService;
 use App\Support\WarehouseScope;
 use Carbon\Carbon;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\FileUpload;
-use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -19,8 +17,6 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\HtmlString;
 
 class DepositForm
 {
@@ -155,8 +151,8 @@ class DepositForm
                             ->placeholder('0.00')
                             ->live(onBlur: true)
                             ->helperText(
-                                'Depósito parcial: menor al saldo. Una sola transferencia para varios '.
-                                'manifiestos: mayor al saldo — el excedente se reparte automáticamente.'
+                                'Menor al saldo para un depósito parcial. Mayor al saldo si transfirieron '.
+                                'de más: el exceso queda como sobrepago del manifiesto.'
                             ),
 
                         DatePicker::make('deposit_date')
@@ -183,44 +179,10 @@ class DepositForm
                             ->columnSpan(2)
                             ->placeholder('Notas adicionales...'),
 
-                        // ── Reparto y justificación ───────────────────────
-                        // Ambos aparecen solo cuando el monto supera el saldo
-                        // del manifiesto elegido. Ver DepositAllocationService
-                        // para el orden del reparto y DepositService para la
-                        // validación de la justificación (que se revalida en
-                        // el servicio: la UI se puede saltar, el Service no).
-                        Placeholder::make('reparto_preview')
-                            ->label('Así se va a repartir el depósito')
-                            ->visible(fn (Get $get): bool => self::exceedsPending($get))
-                            ->content(function (Get $get): HtmlString {
-                                $manifest = Manifest::find($get('manifest_id'));
-                                $amount = round((float) ($get('amount') ?? 0), 2);
-
-                                if (! $manifest || $amount <= 0) {
-                                    return new HtmlString('<span class="text-sm text-gray-500">Elegí manifiesto y monto.</span>');
-                                }
-
-                                $plan = app(DepositService::class)
-                                    ->previewAllocationPlan($manifest, $amount, Auth::user());
-
-                                $rows = collect($plan)->map(function (array $line): string {
-                                    $etiqueta = $line['is_overflow']
-                                        ? ' <span class="text-warning-600 font-medium">(excede el total — requiere justificación)</span>'
-                                        : ($line['is_origin'] ? ' <span class="text-gray-500">(manifiesto elegido)</span>' : '');
-
-                                    return sprintf(
-                                        '<li class="flex justify-between gap-4 py-1 border-b border-gray-200 dark:border-gray-700">'.
-                                        '<span>#%s%s</span><span class="font-semibold">HNL %s</span></li>',
-                                        e($line['number']),
-                                        $etiqueta,
-                                        number_format($line['amount'], 2)
-                                    );
-                                })->implode('');
-
-                                return new HtmlString('<ul class="text-sm w-full">'.$rows.'</ul>');
-                            })
-                            ->columnSpan(2),
-
+                        // ── Justificación del exceso ──────────────────────
+                        // Aparece solo cuando el monto supera el saldo. Se
+                        // revalida en DepositService: la UI se puede saltar,
+                        // el servicio no.
                         Textarea::make('justification')
                             ->label('Justificación del depósito en exceso')
                             ->visible(fn (Get $get): bool => self::exceedsPending($get))
@@ -230,7 +192,7 @@ class DepositForm
                             ->rows(2)
                             ->columnSpan(2)
                             ->placeholder('Ej.: una sola transferencia para cubrir dos manifiestos.')
-                            ->helperText('Obligatoria. Queda registrada en la auditoría junto con el reparto.'),
+                            ->helperText('Obligatoria. Queda registrada en la auditoría con tu nombre y la hora.'),
                     ]),
 
                     // ── Comprobante de depósito ────────────────────────

@@ -146,10 +146,10 @@ class DepositServiceTest extends TestCase
         $this->manifest->refresh();
 
         $this->assertEquals(1500.00, (float) $deposit->amount);
-        // Invariante: todo el monto queda aplicado, sin dinero en el limbo.
-        $this->assertEquals(1500.00, (float) $deposit->allocations()->sum('amount'));
-        // Sin candidatos donde repartir, el excedente se queda acá.
+        // El depósito se aplica íntegro a su manifiesto: el exceso queda acá,
+        // marcado como sobrepago, y no se mueve a ningún otro lado.
         $this->assertEquals(-500.00, (float) $this->manifest->difference);
+        $this->assertTrue($this->manifest->isOverpaid());
     }
 
     public function test_create_deposit_with_receipt_image_sets_uploaded_at(): void

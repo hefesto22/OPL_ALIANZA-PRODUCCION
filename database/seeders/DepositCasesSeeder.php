@@ -5,50 +5,38 @@ declare(strict_types=1);
 namespace Database\Seeders;
 
 use App\Models\Deposit;
-use App\Models\DepositAllocation;
 use App\Models\Invoice;
 use App\Models\Manifest;
 use App\Models\Supplier;
 use App\Models\User;
 use App\Models\Warehouse;
 use App\Services\DepositService;
-use Carbon\Carbon;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Casos de prueba para la aplicación multi-manifiesto y el ajuste de centavos.
+ * Casos de prueba para el sobrepago y el ajuste de centavos.
  *
- * PENSADO PARA pruebas.hozana.cloud — NO correr en producción. Crea
- * manifiestos en el rango 95xxxx, que no colisiona con la numeración real de
- * Jaremar (78xxxx) ni con la del DemoDataSeeder (90xxxx).
- *
- * Idempotente: si un manifiesto ya existe, se deja intacto. Para regenerar,
- * borrarlos primero desde el panel.
+ * PENSADO PARA pruebas.hozana.cloud — NO correr en producción. Usa el rango
+ * 95xxxx, que no colisiona con la numeración real de Jaremar (78xxxx) ni con
+ * la del DemoDataSeeder (90xxxx).
  *
  * ─────────────────────────────────────────────────────────────────────
- *  EL ESCENARIO
+ *  QUÉ SE PRUEBA
  * ─────────────────────────────────────────────────────────────────────
- *  Los manifiestos están fechados a propósito para que el reparto FIFO
- *  (del más antiguo al más nuevo) sea verificable a mano:
+ *  Un depósito se aplica ÍNTEGRO al manifiesto donde se registra. Puede
+ *  superar el total: en ese caso el manifiesto queda sobrepagado, se exige
+ *  justificación, y aun así se puede cerrar. Nada se mueve solo a otro
+ *  manifiesto.
  *
- *   #       Bodega      Días  Total      Depositado  Diferencia   Rol en la prueba
- *   ─────────────────────────────────────────────────────────────────────────────
- *   950005  OAC          28   1,000.00     999.50      +0.50      candidato FIFO 1º
- *   950006  OAC          25     500.00     499.75      +0.25      candidato FIFO 2º
- *   950001  OAC          20   1,000.00     999.68      +0.32      candidato FIFO 3º
- *   950002  OAC          15     500.00     500.01      −0.01      solo se cierra con AJUSTE
- *   950008  OAC          12     300.00     300.00       0.00      CERRADO — nunca recibe
- *   950009  OAC+OAS       8     700.00       0.00    +700.00      multi-bodega
- *   950010  OAC           5   1,000.00     995.00      +5.00      supera el tope de ajuste
- *   950004  OAS          10     300.00       0.00    +300.00      aislamiento entre bodegas
- *   950003  OAC           0     800.00       0.00    +800.00      manifiesto de trabajo
- *   950007  OAC           0     200.00       0.00    +200.00      sobredepósito extremo
- *
- *  Los centavos pendientes de OAC suman exactamente 0.50 + 0.25 + 0.32 = 1.07,
- *  así que un depósito de 801.07 registrado desde el 950003 debe dejar CUATRO
- *  manifiestos en cero de un solo golpe. Ese es el número mágico de la demo.
+ *   #       Diferencia   Rol en la prueba
+ *   ─────────────────────────────────────────────────────────────────
+ *   950001    +0.32      faltan centavos → se cierra con AJUSTE positivo
+ *   950002    −0.01      sobran centavos SIN justificación (dato heredado)
+ *                        → solo se cierra con AJUSTE negativo
+ *   950003  +800.00      manifiesto de trabajo → probar el SOBREPAGO acá
+ *   950004    0.00       CERRADO — control de que no admite cambios
  */
 class DepositCasesSeeder extends Seeder
 {
@@ -63,78 +51,42 @@ class DepositCasesSeeder extends Seeder
     private const PRODUCTION_DATABASES = ['distribuidora_hozana'];
 
     /**
-     * Fecha ancla, calculada UNA sola vez por corrida.
+     * Números que el reset debe limpiar.
      *
-     * Sin este cache, cada caso sembrado se vuelve el nuevo "manifiesto más
-     * viejo" y el siguiente se ancla 60 días antes que él: las fechas salen
-     * separadas por meses y en orden INVERSO al definido en CASES.
+     * Incluye casos de versiones anteriores del seeder (950005–950011, del
+     * modelo de reparto multi-manifiesto que se descartó). Si no estuvieran
+     * acá quedarían huérfanos en la base de pruebas para siempre.
+     *
+     * @var array<int, string>
      */
-    private ?Carbon $ancla = null;
+    private const PURGE_NUMBERS = [
+        '950001', '950002', '950003', '950004', '950005', '950006',
+        '950007', '950008', '950009', '950010', '950011',
+    ];
 
     /**
-     * Definición declarativa de los casos.
-     *
-     * lines:   [código de bodega => monto facturado]
-     * deposit: monto a depositar (null = sin depósito)
-     * closed:  si queda cerrado tras cuadrar
-     *
-     * @var array<int, array{number: string, days: int, lines: array<string, float>, deposit: float|null, closed?: bool, nota: string}>
+     * @var array<int, array{number: string, days: int, warehouse: string, total: float, deposit: float|null, legacy?: bool, closed?: bool, nota: string}>
      */
     private const CASES = [
         [
-            'number' => '950005', 'days' => 28,
-            'lines' => ['OAC' => 1000.00], 'deposit' => 999.50,
-            'nota' => 'falta 0.50 — primer candidato del reparto FIFO',
+            'number' => '950001', 'days' => 20, 'warehouse' => 'OAC',
+            'total' => 1000.00, 'deposit' => 999.68,
+            'nota' => 'faltan 0.32 — se cierra con ajuste positivo',
         ],
         [
-            'number' => '950006', 'days' => 25,
-            'lines' => ['OAC' => 500.00], 'deposit' => 499.75,
-            'nota' => 'falta 0.25 — segundo candidato FIFO',
+            'number' => '950002', 'days' => 15, 'warehouse' => 'OAC',
+            'total' => 500.00, 'deposit' => 500.01, 'legacy' => true,
+            'nota' => 'sobran 0.01 SIN justificación (heredado) — solo con ajuste',
         ],
         [
-            'number' => '950001', 'days' => 20,
-            'lines' => ['OAC' => 1000.00], 'deposit' => 999.68,
-            'nota' => 'falta 0.32 — tercer candidato FIFO',
+            'number' => '950003', 'days' => 0, 'warehouse' => 'OAC',
+            'total' => 800.00, 'deposit' => null,
+            'nota' => 'manifiesto de trabajo — registrar acá el sobrepago',
         ],
         [
-            'number' => '950002', 'days' => 15,
-            'lines' => ['OAC' => 500.00], 'deposit' => 500.01, 'legacy' => true,
-            'nota' => 'SOBRA 0.01 — dato HEREDADO: el código nuevo ya no puede generarlo',
-        ],
-        [
-            'number' => '950008', 'days' => 12,
-            'lines' => ['OAC' => 300.00], 'deposit' => 300.00, 'closed' => true,
-            'nota' => 'CERRADO — jamás debe recibir dinero del reparto',
-        ],
-        [
-            'number' => '950004', 'days' => 10,
-            'lines' => ['OAS' => 300.00], 'deposit' => null,
-            'nota' => 'bodega OAS pura — control de aislamiento entre bodegas',
-        ],
-        [
-            'number' => '950009', 'days' => 8,
-            'lines' => ['OAC' => 400.00, 'OAS' => 300.00], 'deposit' => 696.00,
-            'nota' => 'MULTI-BODEGA (OAC+OAS), le faltan 4.00 — entra al barrido de las dos bodegas',
-        ],
-        [
-            'number' => '950010', 'days' => 5,
-            'lines' => ['OAC' => 1000.00], 'deposit' => 975.00,
-            'nota' => 'falta 25.00 — vieja pero GRANDE: ni el barrido ni el ajuste la tocan',
-        ],
-        [
-            'number' => '950003', 'days' => 0,
-            'lines' => ['OAC' => 800.00], 'deposit' => null,
-            'nota' => 'manifiesto de trabajo — registrar acá el depósito de 801.07',
-        ],
-        [
-            'number' => '950007', 'days' => 0,
-            'lines' => ['OAC' => 200.00], 'deposit' => null,
-            'nota' => 'para probar el sobrepago (más de lo que hay dónde aplicar)',
-        ],
-        [
-            'number' => '950011', 'days' => 0, 'reciente' => true,
-            'lines' => ['OAC' => 100.00], 'deposit' => 98.00,
-            'nota' => 'RECIENTE (3 días) con deuda chica — el barrido NO debe tocarlo',
+            'number' => '950004', 'days' => 12, 'warehouse' => 'OAS',
+            'total' => 300.00, 'deposit' => 300.00, 'closed' => true,
+            'nota' => 'CERRADO — no admite depósitos ni ajustes',
         ],
     ];
 
@@ -163,8 +115,8 @@ class DepositCasesSeeder extends Seeder
         $this->command?->info("Sembrando casos de prueba en la base: {$database}");
 
         // DEPOSIT_CASES_RESET=1 borra los casos y los vuelve a sembrar desde
-        // cero. Necesario para repetir la demo: una vez que los manifiestos
-        // quedan cuadrados, el reparto ya no tiene nada que mostrar.
+        // cero. Necesario para repetir la demo: una vez ajustados o cerrados,
+        // los manifiestos ya no muestran nada.
         if (env('DEPOSIT_CASES_RESET')) {
             $this->purge();
         }
@@ -176,22 +128,18 @@ class DepositCasesSeeder extends Seeder
         $service = app(DepositService::class);
 
         foreach (self::CASES as $case) {
-            $manifest = $this->manifest($case, $supplier->id, $warehouses);
+            $manifest = $this->manifest($case, $supplier->id, $warehouses[$case['warehouse']]);
 
             if (! $manifest) {
                 continue;
             }
 
-            if ($case['legacy'] ?? false) {
-                // Caso heredado: NO puede sembrarse por el servicio. Ver
-                // seedLegacyOverDeposit() para el porqué.
-                $this->seedLegacyOverDeposit($manifest, $case, $user->id);
-            } elseif ($case['deposit'] !== null && $manifest->deposits()->count() === 0) {
-                $service->createDeposit(
-                    $manifest,
-                    $this->depositData($case, $manifest),
-                    $user->id,
-                );
+            if ($case['deposit'] !== null && $manifest->deposits()->count() === 0) {
+                if ($case['legacy'] ?? false) {
+                    $this->seedLegacyOverDeposit($manifest, $case, $user->id);
+                } else {
+                    $service->createDeposit($manifest, $this->depositData($case), $user->id);
+                }
 
                 $manifest->refresh();
             }
@@ -211,13 +159,11 @@ class DepositCasesSeeder extends Seeder
     }
 
     /**
-     * Crea el manifiesto con una factura por bodega, o devuelve el existente
-     * sin tocarlo.
+     * Crea el manifiesto con una factura, o devuelve el existente sin tocarlo.
      *
-     * @param  array{number: string, days: int, lines: array<string, float>}  $case
-     * @param  \Illuminate\Support\Collection<string, Warehouse>  $warehouses
+     * @param  array{number: string, days: int, total: float}  $case
      */
-    private function manifest(array $case, int $supplierId, $warehouses): ?Manifest
+    private function manifest(array $case, int $supplierId, Warehouse $warehouse): ?Manifest
     {
         $existing = Manifest::where('number', $case['number'])->first();
 
@@ -227,58 +173,47 @@ class DepositCasesSeeder extends Seeder
             return $existing;
         }
 
-        // Los casos 'reciente' se fechan contra HOY, no contra el ancla: su
-        // razón de existir es quedar por DEBAJO de la antigüedad mínima del
-        // barrido, y anclarlos meses atrás los volvería elegibles.
-        $date = ($case['reciente'] ?? false)
-            ? now()->subDays(3)->toDateString()
-            : $this->fechaPara($case['days']);
+        $date = now()->subDays($case['days'])->toDateString();
 
         $manifest = Manifest::create([
             'supplier_id' => $supplierId,
-            // warehouse_id NULL a propósito: replica cómo entran los manifiestos
-            // por la API de Jaremar (la bodega vive en las facturas). Es lo que
-            // hace que el caso multi-bodega sea realista.
+            // warehouse_id NULL a propósito: replica cómo entran los
+            // manifiestos por la API de Jaremar (la bodega vive en las
+            // facturas).
             'warehouse_id' => null,
             'number' => $case['number'],
             'date' => $date,
             'status' => 'imported',
         ]);
 
-        $i = 0;
-        foreach ($case['lines'] as $code => $total) {
-            $warehouse = $warehouses[$code];
-            $i++;
-
-            Invoice::create([
-                'manifest_id' => $manifest->id,
-                'warehouse_id' => $warehouse->id,
-                'status' => 'imported',
-                'invoice_number' => 'PRB'.$case['number'].'-'.$i,
-                'jaremar_id' => (int) $case['number'] * 10 + $i,
-                'invoice_date' => $date,
-                'due_date' => $date,
-                'seller_id' => 'VEN01',
-                'seller_name' => 'Vendedor de Pruebas',
-                'client_id' => 'CLI'.$case['number'].$i,
-                'client_name' => "Cliente de Pruebas {$case['number']}-{$code}",
-                'client_rtn' => '08019000000000',
-                'deliver_to' => 'Cliente de Pruebas',
-                'department' => $warehouse->department ?? 'Copán',
-                'municipality' => 'Santa Rosa de Copán',
-                'address' => 'Barrio Centro',
-                'route_number' => '230',
-                'payment_type' => 'CONTADO',
-                'credit_days' => 0,
-                'invoice_type' => 'FAC',
-                'cai' => '2F0037-619ACD-2A66E0-63BE03-0909DC-56',
-                'range_start' => '002-001-01-04000001',
-                'range_end' => '002-001-01-04999999',
-                'total' => $total,
-                'isv15' => 0,
-                'isv18' => 0,
-            ]);
-        }
+        Invoice::create([
+            'manifest_id' => $manifest->id,
+            'warehouse_id' => $warehouse->id,
+            'status' => 'imported',
+            'invoice_number' => 'PRB'.$case['number'],
+            'jaremar_id' => (int) $case['number'],
+            'invoice_date' => $date,
+            'due_date' => $date,
+            'seller_id' => 'VEN01',
+            'seller_name' => 'Vendedor de Pruebas',
+            'client_id' => 'CLI'.$case['number'],
+            'client_name' => 'Cliente de Pruebas '.$case['number'],
+            'client_rtn' => '08019000000000',
+            'deliver_to' => 'Cliente de Pruebas',
+            'department' => $warehouse->department ?? 'Copán',
+            'municipality' => 'Santa Rosa de Copán',
+            'address' => 'Barrio Centro',
+            'route_number' => '230',
+            'payment_type' => 'CONTADO',
+            'credit_days' => 0,
+            'invoice_type' => 'FAC',
+            'cai' => '2F0037-619ACD-2A66E0-63BE03-0909DC-56',
+            'range_start' => '002-001-01-04000001',
+            'range_end' => '002-001-01-04999999',
+            'total' => $case['total'],
+            'isv15' => 0,
+            'isv18' => 0,
+        ]);
 
         $manifest->recalculateTotals();
 
@@ -286,206 +221,75 @@ class DepositCasesSeeder extends Seeder
     }
 
     /**
-     * @param  array{number: string, days: int, deposit: float|null}  $case
-     * @return array<string, mixed>
-     */
-    private function depositData(array $case, Manifest $manifest): array
-    {
-        $data = [
-            'amount' => $case['deposit'],
-            // Un día después del manifiesto (o hoy si el manifiesto es de hoy):
-            // así la fecha del depósito nunca queda antes de la del manifiesto.
-            'deposit_date' => ($case['reciente'] ?? false)
-                ? now()->subDays(2)->toDateString()
-                : $this->fechaPara(max(0, $case['days'] - 1)),
-            'bank' => 'BAC',
-            'reference' => 'PRB-'.$case['number'],
-            'observations' => 'Depósito sembrado por DepositCasesSeeder.',
-        ];
-
-        // Si el monto supera el pendiente, el Service exige justificación.
-        // Es justamente el caso del 950002 (deposita 500.01 sobre 500.00).
-        if ($case['deposit'] > (float) $manifest->difference) {
-            $data['justification'] = 'Caso de prueba: el banco redondeó hacia arriba en la transferencia.';
-        }
-
-        return $data;
-    }
-
-    /**
-     * Siembra un manifiesto SOBRE-DEPOSITADO escribiendo el depósito y su
-     * reparto directo en la base, sin pasar por DepositService.
+     * Siembra un manifiesto SOBRE-DEPOSITADO y SIN justificación, escribiendo
+     * el depósito directo en la base.
      *
-     * ─────────────────────────────────────────────────────────────────
-     *  POR QUÉ NO SE PUEDE USAR EL SERVICIO
-     * ─────────────────────────────────────────────────────────────────
-     *  Si le pedimos al servicio que deposite 500.01 sobre un manifiesto que
-     *  debe 500.00, hace exactamente lo que fue diseñado para hacer: reparte
-     *  el centavo sobrante al manifiesto más antiguo con saldo pendiente. El
-     *  manifiesto de origen queda en CERO, no en −0.01.
-     *
-     *  Es decir: con el código nuevo un manifiesto sobre-depositado por
-     *  centavos ya no puede existir. Los que hay en producción (4 al
-     *  28/07/2026) los generó el código VIEJO, cuando assertAmountWithinPending
-     *  tenía un margen de tolerancia de +0.01 que dejaba pasar el exceso sin
-     *  repartirlo ni justificarlo.
-     *
-     *  Para poder probar la acción "Ajustar Diferencia" hay que reproducir ese
-     *  estado heredado tal cual: depósito y allocation escritos a mano, con el
-     *  monto completo aplicado al propio manifiesto.
-     *
-     *  Si el manifiesto ya quedó en otro estado por una corrida anterior del
-     *  seeder, se limpian sus depósitos y se reescribe — esto es una base de
-     *  pruebas, no hay auditoría que preservar.
+     * No se puede usar DepositService: exige justificación en cuanto el monto
+     * supera el pendiente, justamente para que este estado no vuelva a
+     * generarse. Los manifiestos así que hay en producción vienen del
+     * validador viejo, que tenía un margen de tolerancia de un centavo y lo
+     * dejaba pasar sin pedir nada. Sin justificación, el cierre está bloqueado
+     * y solo el ajuste puede desatascarlos: eso es lo que este caso permite
+     * probar.
      *
      * @param  array{number: string, days: int, deposit: float|null}  $case
      */
     private function seedLegacyOverDeposit(Manifest $manifest, array $case, int $userId): void
     {
-        $esperada = round((float) $manifest->total_to_deposit - (float) $case['deposit'], 2);
-
-        if ($manifest->deposits()->exists() && round((float) $manifest->difference, 2) === $esperada) {
-            $this->command?->line("  #{$case['number']} ya está sobre-depositado — se deja como está.");
-
-            return;
-        }
-
-        // Limpiar SOLO los depósitos registrados desde este manifiesto. Las
-        // allocations que otras boletas hayan dirigido acá no se tocan.
-        //
-        // OJO con los manifiestos AJENOS: si una corrida anterior repartió
-        // excedente de esta boleta a otros manifiestos, al borrar esas
-        // allocations sus totales quedan inflados — nadie los recalcula solo.
-        // Se anotan antes de borrar y se recalculan después. Sin esto queda un
-        // manifiesto con `total_deposited` fantasma, que es exactamente el tipo
-        // de número que arruina una demo.
-        $afectados = [];
-
-        foreach ($manifest->deposits()->withTrashed()->get() as $previo) {
-            $afectados = array_merge($afectados, $previo->allocations()->pluck('manifest_id')->all());
-            $previo->allocations()->delete();
-            $previo->forceDelete();
-        }
-
-        $ajenos = array_diff(array_unique($afectados), [$manifest->id]);
-
-        foreach (Manifest::whereIn('id', $ajenos)->get() as $ajeno) {
-            $ajeno->recalculateTotals();
-            $this->command?->line("  ↳ recalculado #{$ajeno->number} (había recibido excedente de #{$case['number']})");
-        }
-
-        $deposito = Deposit::create([
+        Deposit::create([
             'manifest_id' => $manifest->id,
             'amount' => $case['deposit'],
-            'allocated_amount' => $case['deposit'],
-            'deposit_date' => $this->fechaPara(max(0, $case['days'] - 1)),
+            'deposit_date' => now()->subDays(max(0, $case['days'] - 1))->toDateString(),
             'bank' => 'BAC',
             'reference' => 'PRB-'.$case['number'],
-            'observations' => 'Depósito HEREDADO simulado (código anterior al reparto multi-manifiesto).',
+            'observations' => 'Depósito HEREDADO simulado (código anterior a la justificación obligatoria).',
             'created_by' => $userId,
             'updated_by' => $userId,
-        ]);
-
-        DepositAllocation::create([
-            'deposit_id' => $deposito->id,
-            'manifest_id' => $manifest->id,
-            'amount' => $case['deposit'],
-            'created_by' => $userId,
         ]);
 
         $manifest->recalculateTotals();
         $manifest->refresh();
 
         $this->command?->line(
-            "  #{$case['number']} sembrado como sobre-depositado (diferencia ".
+            "  #{$case['number']} sembrado como sobre-depositado sin justificación (diferencia ".
             number_format((float) $manifest->difference, 2).')'
         );
     }
 
     /**
-     * Fecha del caso, anclada ANTES de cualquier manifiesto del entorno.
-     *
-     * ─────────────────────────────────────────────────────────────────
-     *  POR QUÉ NO SE USA now()->subDays()
-     * ─────────────────────────────────────────────────────────────────
-     *  El reparto FIFO va del manifiesto más antiguo al más nuevo. Si el
-     *  entorno tiene manifiestos reales anteriores a los sembrados —en
-     *  pruebas hay uno del 27/06/2026 con L 61,000 pendientes— ese se lleva
-     *  TODO el excedente y los casos de prueba nunca reciben nada. La demo
-     *  parece rota cuando en realidad el sistema está haciendo lo correcto.
-     *
-     *  Anclando los casos 60 días antes del manifiesto más viejo existente,
-     *  quedan siempre a la cabeza de la cola y el reparto es predecible.
-     *  Se conserva el espaciado relativo entre ellos (28, 25, 20… días).
+     * @param  array{number: string, days: int, deposit: float|null}  $case
+     * @return array<string, mixed>
      */
-    private function fechaPara(int $days): string
+    private function depositData(array $case): array
     {
-        // Se resuelve en la PRIMERA llamada y se congela. Ojo con recalcularla:
-        // los casos que se van creando pasan a ser los más viejos del entorno
-        // y arrastrarían el ancla hacia atrás en cada iteración.
-        $this->ancla ??= ($masViejo = Manifest::min('date'))
-            ? Carbon::parse($masViejo)->subDays(60)
-            : now()->subDays(60);
-
-        // copy(): addDays() muta la instancia, y esta se reutiliza en todas
-        // las llamadas siguientes.
-        return $this->ancla->copy()->addDays(28 - $days)->toDateString();
+        return [
+            'amount' => $case['deposit'],
+            'deposit_date' => now()->subDays(max(0, $case['days'] - 1))->toDateString(),
+            'bank' => 'BAC',
+            'reference' => 'PRB-'.$case['number'],
+            'observations' => 'Depósito sembrado por DepositCasesSeeder.',
+        ];
     }
 
     /**
      * Borra los casos de prueba para poder re-sembrarlos.
      *
-     * Solo se activa con DEPOSIT_CASES_RESET=1. Recalcula los manifiestos
-     * AJENOS que hubieran recibido excedente de estas boletas: si no, quedan
-     * con `total_deposited` inflado apuntando a allocations que ya no existen.
-     *
-     * Se aborta si algún depósito EXTERNO aplicó dinero a un manifiesto de
-     * prueba: borrarlo rompería la invariante SUM(allocations) == amount de
-     * una boleta que no nos pertenece.
+     * Solo se activa con DEPOSIT_CASES_RESET=1. Limpia también los números de
+     * versiones anteriores del seeder (ver PURGE_NUMBERS).
      */
     private function purge(): void
     {
-        $manifiestos = Manifest::whereIn('number', array_column(self::CASES, 'number'))->get();
+        $manifiestos = Manifest::whereIn('number', self::PURGE_NUMBERS)->get();
 
         if ($manifiestos->isEmpty()) {
             return;
         }
 
-        $ids = $manifiestos->pluck('id')->all();
-
-        $externas = DepositAllocation::whereIn('deposit_allocations.manifest_id', $ids)
-            ->join('deposits', 'deposits.id', '=', 'deposit_allocations.deposit_id')
-            ->whereNotIn('deposits.manifest_id', $ids)
-            ->count();
-
-        if ($externas > 0) {
-            $this->command?->error(
-                "RESET ABORTADO: {$externas} aplicación(es) de boletas externas apuntan a los manifiestos de prueba. ".
-                'Borrarlos dejaría esas boletas descuadradas. Cancelá esos depósitos primero.'
-            );
-
-            return;
-        }
-
-        $ajenos = [];
-
-        // PASE 1 — todos los depósitos y sus repartos, de TODOS los casos.
-        //
-        // Tiene que ir completo antes de borrar cualquier manifiesto: la
-        // boleta de un caso puede tener aplicaciones dirigidas a OTRO caso
-        // (es justo lo que hace el reparto FIFO). Borrando manifiesto por
-        // manifiesto, el primero que cae todavía está referenciado por el
-        // reparto de un hermano y Postgres rechaza el DELETE por FK.
         foreach ($manifiestos as $manifiesto) {
             foreach ($manifiesto->deposits()->withTrashed()->get() as $deposito) {
-                $ajenos = array_merge($ajenos, $deposito->allocations()->pluck('manifest_id')->all());
-                $deposito->allocations()->delete();
                 $deposito->forceDelete();
             }
-        }
 
-        // PASE 2 — recién ahora los manifiestos y todo lo que cuelga de ellos.
-        foreach ($manifiestos as $manifiesto) {
             $manifiesto->adjustments()->delete();
 
             foreach ($manifiesto->invoices()->get() as $factura) {
@@ -497,38 +301,34 @@ class DepositCasesSeeder extends Seeder
             $manifiesto->forceDelete();
         }
 
-        foreach (Manifest::whereIn('id', array_diff(array_unique($ajenos), $ids))->get() as $ajeno) {
-            $ajeno->recalculateTotals();
-            $this->command?->line("  ↳ recalculado #{$ajeno->number} (había recibido excedente de los casos)");
-        }
-
-        $this->command?->warn('Casos de prueba borrados. Se vuelven a sembrar desde cero.');
+        $this->command?->warn(
+            'Casos de prueba borrados ('.$manifiestos->count().'). Se vuelven a sembrar desde cero.'
+        );
     }
 
     private function summary(): void
     {
         $rows = Manifest::whereIn('number', array_column(self::CASES, 'number'))
-            ->orderBy('date')
-            ->get(['number', 'date', 'total_to_deposit', 'total_deposited', 'difference', 'status']);
+            ->orderBy('number')
+            ->get(['number', 'date', 'total_to_deposit', 'total_deposited', 'adjustment_amount', 'difference', 'status']);
 
         $this->command?->newLine();
         $this->command?->info('Casos de prueba listos:');
 
         $this->command?->table(
-            ['#', 'Fecha', 'A depositar', 'Depositado', 'Diferencia', 'Estado'],
+            ['#', 'Fecha', 'A depositar', 'Depositado', 'Ajuste', 'Diferencia', 'Estado'],
             $rows->map(fn ($m) => [
                 $m->number,
                 $m->date?->format('d/m/Y'),
                 number_format((float) $m->total_to_deposit, 2),
                 number_format((float) $m->total_deposited, 2),
+                number_format((float) $m->adjustment_amount, 2),
                 number_format((float) $m->difference, 2),
                 $m->status,
             ])->all()
         );
 
-        $this->command?->info('Barrido: solo deudas <= HNL '.number_format((float) config('manifests.reparto.tope_pendiente_hnl'), 2).
-            ' en manifiestos de más de '.config('manifests.reparto.antiguedad_minima_dias').' días.');
-        $this->command?->info('Centavos barribles en OAC: 0.50 + 0.25 + 0.32 = 1.07');
-        $this->command?->info('→ Un depósito de HNL 801.07 desde el #950003 debe dejar 4 manifiestos en cero.');
+        $this->command?->info('Tope del ajuste: HNL '.number_format((float) config('manifests.ajustes.tope_hnl'), 2));
+        $this->command?->info('→ Depositar HNL 850.00 en el #950003 debe dejarlo con sobrepago de HNL 50.00 y cerrable.');
     }
 }

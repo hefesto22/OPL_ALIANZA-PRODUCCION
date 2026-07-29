@@ -15,11 +15,12 @@ use Illuminate\Validation\ValidationException;
  * ─────────────────────────────────────────────────────────────────────
  *  QUÉ RESUELVE
  * ─────────────────────────────────────────────────────────────────────
- *  El reparto FIFO tapa los centavos que FALTAN — llega dinero real y se
- *  aplica al manifiesto viejo. Pero no puede hacer nada con los que SOBRAN:
- *  un manifiesto con difference = -0.01 ya recibió de más y no hay plata que
- *  mover. Como isReadyToClose() exige cero exacto, esos manifiestos quedaban
- *  varados de por vida.
+ *  Un manifiesto puede quedar con una diferencia de centavos que ningún
+ *  depósito va a cubrir: el banco redondeó al transferir, o el depósito entró
+ *  con un centavo de más cuando el validador viejo aún lo dejaba pasar sin
+ *  pedir explicación. Como isReadyToClose() exige cero exacto en los
+ *  faltantes, esos manifiestos quedaban varados de por vida — al 28/07/2026
+ *  había 13 así en producción.
  *
  *  Este servicio es la única vía para llevar esa diferencia a cero, y deja
  *  constancia de quién lo hizo y por qué.
