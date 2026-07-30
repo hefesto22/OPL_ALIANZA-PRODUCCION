@@ -329,6 +329,41 @@ class EscpInvoiceServiceTest extends TestCase
         }
     }
 
+    /**
+     * Regresion: la linea "Cliente:" se armaba concatenando sin pasar por el
+     * ancho util, asi que una razon social larga la empujaba mas alla del
+     * margen derecho (95 chars contra 92). Con el margen derecho fijado por
+     * software en buildHardened (ESC Q), la impresora envuelve el sobrante y
+     * el "Ruta:" -- el dato que lee el motorista -- se cae a la linea
+     * siguiente. Debe PARTIRSE por palabras, sin perder ningun dato.
+     */
+    public function test_long_client_name_wraps_without_losing_route_or_rtn(): void
+    {
+        $manifest = Manifest::factory()->create(['number' => (string) (++static::$manifestSeq)]);
+        $invoice = Invoice::factory()->for($manifest)->create([
+            'invoice_number' => 'F77000103',
+            'client_id' => 'CLI1411',
+            'client_name' => 'DISTRIBUIDORA Y COMERCIALIZADORA DE PRODUCTOS ALIMENTICIOS DEL OCCIDENTE',
+            'client_rtn' => '42851109784665',
+            'payment_type' => 'CONTADO',
+            'route_number' => '25',
+        ]);
+        InvoiceLine::factory()->for($invoice)->create();
+        $invoice->load('lines');
+
+        $preview = app(EscpInvoiceService::class)->previewText(collect([$invoice]));
+
+        $cpl = max(40, (int) config('escp.chars_per_line', 92));
+        foreach (explode("\n", $preview) as $line) {
+            $this->assertLessThanOrEqual($cpl, mb_strlen($line), 'Linea mas ancha que cpl: '.$line);
+        }
+
+        // Nada se pierde al partir: RTN, forma de pago y ruta siguen ahi.
+        $this->assertStringContainsString('42851109784665', $preview);
+        $this->assertStringContainsString('Pago: CONTADO', $preview);
+        $this->assertStringContainsString('Ruta: 25', $preview);
+    }
+
     public function test_long_invoice_paginates_without_repeating_full_header(): void
     {
         // Una factura de muchos productos se parte en varias formas, pero el

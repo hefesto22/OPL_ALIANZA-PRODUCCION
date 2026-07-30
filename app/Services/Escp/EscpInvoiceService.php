@@ -399,13 +399,22 @@ class EscpInvoiceService
         $w = $this->cpl;
         $L = [];
 
-        $L[] = 'Factura: '.$invoice->invoice_number
+        $L = array_merge($L, $this->fitOrWrap(
+            'Factura: '.$invoice->invoice_number
             .'   Fecha: '.$this->date($invoice->invoice_date)
-            .'   Limite: '.$this->date($invoice->print_limit_date);
-        $L[] = 'Cliente: '.$invoice->client_id.'-'.$invoice->client_name
+            .'   Limite: '.$this->date($invoice->print_limit_date)
+        ));
+
+        // El overhead fijo de esta linea (RTN + Pago + Ruta + etiquetas) come
+        // ~60 columnas, asi que una razon social larga la desborda. Se PARTE,
+        // no se recorta: recortar se comeria el Ruta, que es justo lo que lee
+        // el motorista.
+        $L = array_merge($L, $this->fitOrWrap(
+            'Cliente: '.$invoice->client_id.'-'.$invoice->client_name
             .'   RTN: '.($invoice->client_rtn ?? '')
             .'   Pago: '.($invoice->payment_type ?? 'CONTADO')
-            .'   Ruta: '.$invoice->route_number;
+            .'   Ruta: '.$invoice->route_number
+        ));
 
         $municipality = strtoupper(trim((string) ($invoice->municipality ?? '')));
         $department = strtoupper(trim((string) ($invoice->department ?? '')));
@@ -534,13 +543,20 @@ class EscpInvoiceService
 
         $sub = (float) ($invoice->importe_gravado ?? 0) + (float) ($invoice->importe_excento ?? 0) + (float) ($invoice->importe_exonerado ?? 0);
 
-        return [
+        $lines = [
             str_repeat('-', $w),
             $this->lr('', 'SubTotal:      L. '.number_format($sub, 2), $w),
             $this->lr('', 'Impuesto 18%:  L. '.number_format((float) ($invoice->isv18 ?? 0), 2), $w),
             $this->lr('', 'Impuesto 15%:  L. '.number_format((float) ($invoice->isv15 ?? 0), 2), $w),
             $this->lr('', 'TOTAL:         L. '.number_format((float) $invoice->total, 2), $w),
-            'SON: '.strtoupper(NumberHelper::toWords((float) $invoice->total)),
+        ];
+
+        // El SON es texto fiscal: si el monto en letras no cabe se PARTE.
+        $lines = array_merge($lines, $this->fitOrWrap(
+            'SON: '.strtoupper(NumberHelper::toWords((float) $invoice->total))
+        ));
+
+        return array_merge($lines, [
             '',
             '',
             $this->row([
@@ -553,7 +569,7 @@ class EscpInvoiceService
                 ['No. Identificacion', 20, 'C'],
                 ['Firma de Recibido', 20, 'C'],
             ]),
-        ];
+        ]);
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────
@@ -626,6 +642,21 @@ class EscpInvoiceService
     private function fit(string $line): string
     {
         return mb_strlen($line) > $this->cpl ? mb_substr($line, 0, $this->cpl) : $line;
+    }
+
+    /**
+     * La linea tal cual si cabe en el ancho util; partida por palabras si no.
+     * NO trunca: se usa en las lineas que llevan datos que tienen que salir
+     * completos (RTN, Pago, Ruta, el SON del total). Mientras la linea quepa
+     * -- el caso de toda factura normal -- la salida es byte-identica a la
+     * historica, porque wrap() colapsa los espacios triples de separacion y
+     * solo se paga ese costo cuando la alternativa era salirse del margen.
+     *
+     * @return string[]
+     */
+    private function fitOrWrap(string $line): array
+    {
+        return mb_strlen($line) <= $this->cpl ? [$line] : $this->wrap($line, $this->cpl);
     }
 
     /**
