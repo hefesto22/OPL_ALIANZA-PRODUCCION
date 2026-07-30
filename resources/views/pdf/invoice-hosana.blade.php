@@ -48,8 +48,18 @@
     #invoices { margin-top:0; padding:0; background:none; }
 }
 
-table.lines { width:100%; border-collapse:collapse; table-layout:fixed; margin-top:2px; }
-table.lines th, table.lines td { padding:1px 2px; overflow:hidden; white-space:nowrap; }
+/* Anchos AUTOMATICOS + nowrap: cada columna de dinero toma exactamente el
+   ancho que necesita su monto, asi ninguno se recorta ni queda pegado al de al
+   lado. Antes era table-layout:fixed con porcentajes y overflow:hidden, y la
+   columna Imp (8% = ~7.5 caracteres) CORTABA "1,565.20" a la mitad del ultimo
+   digito: un monto mal impreso en un documento fiscal, no un detalle visual.
+   El padding de 5px da la separacion que faltaba entre P.Unit y SubT. */
+table.lines { width:100%; border-collapse:collapse; table-layout:auto; margin-top:2px; }
+table.lines th, table.lines td { padding:1px 5px; white-space:nowrap; }
+/* La descripcion es la UNICA columna elastica (absorbe el ancho restante) y la
+   unica que puede envolver, para que un nombre largo no empuje la tabla fuera
+   de la hoja ni robe espacio a los montos. Mismo criterio que el ESC/P. */
+table.lines th.desc, table.lines td.desc { width:100%; white-space:normal; }
 table.lines th { border-top:1px solid #000; border-bottom:1px solid #000; text-align:left; }
 .hr { border-top:1px solid #000; margin:3px 0; }
 .totales td { padding:0 2px; }
@@ -121,14 +131,14 @@ table.lines th { border-top:1px solid #000; border-bottom:1px solid #000; text-a
     <table class="lines">
         <thead>
             <tr>
-                <th style="width:5%;">Cj</th>
-                <th style="width:5%;">Und</th>
-                <th style="width:13%;">Código</th>
-                <th style="width:37%;">Descripción</th>
-                <th style="width:11%; text-align:right;">P.Unit</th>
-                <th style="width:10%; text-align:right;">SubT</th>
-                <th style="width:8%; text-align:right;">Imp</th>
-                <th style="width:11%; text-align:right;">Total</th>
+                <th>Cj</th>
+                <th>Und</th>
+                <th>Código</th>
+                <th class="desc">Descripción</th>
+                <th style="text-align:right;">P.Unit</th>
+                <th style="text-align:right;">SubT</th>
+                <th style="text-align:right;">Imp</th>
+                <th style="text-align:right;">Total</th>
             </tr>
         </thead>
         <tbody>
@@ -152,7 +162,7 @@ table.lines th { border-top:1px solid #000; border-bottom:1px solid #000; text-a
                 <td>{{ $cajas > 0 ? (string) $cajas : '' }}</td>
                 <td>{{ $sueltas > 0 ? (string) $sueltas : '' }}</td>
                 <td>{{ $line->product_id }}</td>
-                <td>{{ $line->product_description }}</td>
+                <td class="desc">{{ $line->product_description }}</td>
                 <td class="r">{{ number_format((float) $line->price, 2) }}</td>
                 <td class="r">{{ number_format((float) $line->subtotal, 2) }}</td>
                 <td class="r">{{ number_format($imp, 2) }}</td>
