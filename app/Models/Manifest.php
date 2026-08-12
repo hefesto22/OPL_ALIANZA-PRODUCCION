@@ -44,7 +44,7 @@ class Manifest extends Model
             if ($manifest->date && $manifest->returns_deadline_at === null) {
                 $manifest->returns_deadline_at = BusinessDays::deadline(
                     $manifest->date,
-                    (int) config('api.devoluciones_ventana_dias_habiles', 5),
+                    (int) config('api.devoluciones_ventana_dias_habiles', 7),
                 );
             }
         });
@@ -55,7 +55,7 @@ class Manifest extends Model
                 && $manifest->getOriginal('returns_deadline_at') !== null) {
                 $manifest->returns_deadline_at = BusinessDays::deadline(
                     $manifest->date,
-                    (int) config('api.devoluciones_ventana_dias_habiles', 5),
+                    (int) config('api.devoluciones_ventana_dias_habiles', 7),
                 );
             }
         });

@@ -11,9 +11,10 @@ use Carbon\CarbonInterface;
  * si se necesitan, agregar aquí una lista configurable, no en los callers.
  *
  * Uso principal: la ventana de registro de devoluciones (regla operativa
- * 2026-07-21). Un manifiesto que llega el viernes con ventana de 5 días
- * hábiles cuenta: viernes(1), sábado(2), lunes(3), martes(4), miércoles(5)
- * → cierra el miércoles a las 11:59:59 pm hora Honduras.
+ * 2026-07-21, ampliada a 7 días el 2026-08-12). Un manifiesto que llega el
+ * viernes con ventana de 7 días hábiles cuenta: viernes(1), sábado(2),
+ * lunes(3), martes(4), miércoles(5), jueves(6), viernes(7) → cierra el
+ * viernes siguiente a las 11:59:59 pm hora Honduras.
  *
  * Todas las fechas se calculan en el timezone operativo
  * (config manifests.dates.timezone) — Honduras no aplica DST.

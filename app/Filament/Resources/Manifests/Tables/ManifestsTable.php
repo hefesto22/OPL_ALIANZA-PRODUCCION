@@ -112,7 +112,7 @@ class ManifestsTable
                     ->sortable()
                     ->toggleable(),
 
-                // ── Ventana de devoluciones (regla 5 días hábiles) ────────
+                // ── Ventana de devoluciones (N días hábiles, ver config) ──
                 // Cuenta regresiva para que las bodegas registren devoluciones:
                 // lun–sáb desde la llegada del manifiesto (domingo no cuenta).
                 // Al cierre (11:59 pm del día límite) el paquete se publica a

@@ -36,10 +36,11 @@ class ReturnServiceVentanaDevolucionesTest extends TestCase
     {
         parent::setUp();
 
-        // Esta suite SÍ prueba la ventana: activar la regla real (5 días
-        // hábiles). El TestCase base la desactiva para el resto de suites
-        // porque las factories crean manifiestos con fechas del pasado.
-        config(['api.devoluciones_ventana_dias_habiles' => 5]);
+        // Esta suite SÍ prueba la ventana: activar la regla real (7 días
+        // hábiles desde 2026-08-12). El TestCase base la desactiva para el
+        // resto de suites porque las factories crean manifiestos con fechas
+        // del pasado.
+        config(['api.devoluciones_ventana_dias_habiles' => 7]);
 
         $this->warehouse = Warehouse::factory()->create(['code' => 'OAC', 'name' => 'Copán']);
         $this->reason = ReturnReason::factory()->create();
@@ -101,7 +102,8 @@ class ReturnServiceVentanaDevolucionesTest extends TestCase
 
     public function test_deadline_se_fija_automaticamente_al_crear_manifiesto(): void
     {
-        // 2026-07-24 es viernes → cierre miércoles 2026-07-29 a las 11:59 pm.
+        // 2026-07-24 es viernes → vie(1), sáb(2), lun(3), mar(4), mié(5),
+        // jue(6), vie(7): cierra el viernes 2026-07-31 a las 11:59 pm.
         $manifest = Manifest::factory()->create([
             'date' => '2026-07-24',
             'warehouse_id' => $this->warehouse->id,
@@ -109,7 +111,7 @@ class ReturnServiceVentanaDevolucionesTest extends TestCase
 
         $this->assertNotNull($manifest->returns_deadline_at);
         $this->assertSame(
-            '2026-07-29 23:59:59',
+            '2026-07-31 23:59:59',
             $manifest->returnsDeadline()->format('Y-m-d H:i:s'),
         );
     }
@@ -126,8 +128,9 @@ class ReturnServiceVentanaDevolucionesTest extends TestCase
 
     public function test_ventana_cerrada_bloquea_registrar_devolucion(): void
     {
-        // Manifiesto que llegó hace 15 días: la ventana hábil (5 días)
-        // cerró hace rato — el candado aplica a TODOS los roles.
+        // Manifiesto que llegó hace 15 días: la ventana hábil (7 días
+        // hábiles ≈ 9 calendario en el peor caso) cerró hace rato — el
+        // candado aplica a TODOS los roles.
         [, $invoice, $line] = $this->makeManifestConFactura(now()->subDays(15)->toDateString());
 
         try {
@@ -224,12 +227,12 @@ class ReturnServiceVentanaDevolucionesTest extends TestCase
         // La columna persistida y el cálculo directo nunca deben divergir
         // (contrato del backfill y del hook saving()).
         $manifest = Manifest::factory()->create([
-            'date' => '2026-07-18', // sábado → cierra jueves 23
+            'date' => '2026-07-18', // sábado → sáb(1), lun(2)…sáb(7): cierra sábado 25
             'warehouse_id' => $this->warehouse->id,
         ]);
 
         $this->assertEquals(
-            BusinessDays::deadline('2026-07-18', (int) config('api.devoluciones_ventana_dias_habiles', 5))->timestamp,
+            BusinessDays::deadline('2026-07-18', (int) config('api.devoluciones_ventana_dias_habiles', 7))->timestamp,
             $manifest->returns_deadline_at->timestamp,
         );
     }

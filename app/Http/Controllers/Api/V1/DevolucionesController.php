@@ -93,8 +93,9 @@ class DevolucionesController extends Controller
      *
      * Cache:
      *   - Rango "abierto" (fechas cuyo paquete aún puede cambiar/publicarse):
-     *     5 minutos. En modo emisión eso cubre los últimos ~9 días (ventana
-     *     hábil máxima + margen); en legacy, solo si el rango incluye hoy.
+     *     5 minutos. En modo emisión el horizonte se DERIVA de la ventana
+     *     hábil configurada (con 7 días hábiles ≈ 12 calendario con margen);
+     *     en legacy, solo si el rango incluye hoy.
      *   - Rango totalmente consolidado: 60 minutos.
      *   La clave usa una versión COMPUESTA de los contadores por-día del rango
      *   (devoluciones:version:{día}); cuando cambia cualquier día, la caché del
@@ -213,13 +214,22 @@ class DevolucionesController extends Controller
 
         // ── 3. Modo de filtro + TTL según si el rango está "abierto" ──
         // Modo emisión: una fecha queda consolidada cuando la ventana hábil
-        // de sus manifiestos ya cerró — en el peor caso ~8 días calendario
-        // después (5 hábiles + domingos + llegada retrasada). Con margen: 9.
+        // de TODOS sus manifiestos ya cerró. El horizonte se DERIVA de la
+        // ventana configurada — estaba hardcodeado en 9 (atado a los 5 días
+        // hábiles originales) y al ampliar la regla a 7 se habría quedado
+        // corto en silencio: un rango todavía "abierto" cacheado 60 minutos
+        // retrasa la publicación del paquete a Jaremar hasta una hora.
+        //   N días hábiles (lun–sáb) ocupan, en el peor arranque (domingo),
+        //   N + floor(N/6) + 1 días calendario; +3 de margen por manifiesto
+        //   que llega tarde. N=5 → 9 (el valor histórico); N=7 → 12.
         // Modo legacy: processed_date nunca es futuro; "abierto" = incluye hoy.
         $filtroEmision = (bool) config('api.devoluciones_filtro_emision', true);
 
+        $ventanaHabil = max(1, (int) config('api.devoluciones_ventana_dias_habiles', 7));
+        $diasHorizonte = $ventanaHabil + intdiv($ventanaHabil, 6) + 1 + 3;
+
         $horizonteAbierto = $filtroEmision
-            ? now()->subDays(9)->toDateString()
+            ? now()->subDays($diasHorizonte)->toDateString()
             : now()->toDateString();
         $rangoAbierto = $hasta >= $horizonteAbierto;
         $ttl = $rangoAbierto ? 300 : 3600; // 5 min abierto, 60 min consolidado

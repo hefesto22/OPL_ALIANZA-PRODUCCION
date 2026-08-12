@@ -16,7 +16,8 @@ abstract class TestCase extends BaseTestCase
         // candado de ReturnService haría flaky cualquier suite que registre
         // devoluciones. Las suites que SÍ prueban la ventana fijan su propio
         // valor o deadline explícito:
-        //   - ReturnServiceVentanaDevolucionesTest (config = 5)
+        //   - ReturnServiceVentanaDevolucionesTest (config = 7)
+        //   - ExtendReturnsWindowMigrationTest (config = 7, backfill)
         //   - DevolucionesControllerVentanaTest (returns_deadline_at directo)
         config(['api.devoluciones_ventana_dias_habiles' => 10000]);
     }

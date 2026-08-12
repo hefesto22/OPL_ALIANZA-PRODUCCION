@@ -80,8 +80,18 @@ return [
     //   a las 11:59 pm hora Honduras) el paquete se publica a Jaremar y
     //   queda CONGELADO: no se puede crear, editar ni cancelar ninguna
     //   devolución de ese manifiesto — para ningún rol, sin excepciones.
-    //   Ej.: llega viernes → vie(1), sáb(2), lun(3), mar(4), mié(5) →
-    //   cierra miércoles 11:59 pm; el jueves Jaremar lo consulta completo.
+    //   Ej.: llega viernes → vie(1), sáb(2), lun(3), mar(4), mié(5),
+    //   jue(6), vie(7) → cierra el viernes siguiente 11:59 pm; el sábado
+    //   Jaremar lo consulta completo.
+    //
+    //   VALOR VIGENTE: 7 (subido desde 5 el 2026-08-12 — con 5 días las
+    //   bodegas no alcanzaban a registrar todas las devoluciones antes del
+    //   congelamiento). Mover este número cambia la ventana SOLO de los
+    //   manifiestos NUEVOS: returns_deadline_at se persiste al crear cada
+    //   uno. El stock existente necesita un backfill explícito (ver
+    //   2026_08_12_..._extend_returns_window_to_seven_business_days) y una
+    //   decisión sobre los ya cerrados, que Jaremar consumió como paquete
+    //   completo e inmutable — reabrirlos puede perder devoluciones.
     //
     // devoluciones_filtro_emision
     //   Punto 1 del contrato con Jaremar (correo de Isack, 2026-07-20): el
@@ -93,7 +103,7 @@ return [
     //             retención). Red de seguridad para revertir la transición
     //             sin deploy si Jaremar lo pidiera.
     //
-    'devoluciones_ventana_dias_habiles' => (int) env('DEVOLUCIONES_VENTANA_DIAS_HABILES', 5),
+    'devoluciones_ventana_dias_habiles' => (int) env('DEVOLUCIONES_VENTANA_DIAS_HABILES', 7),
     'devoluciones_filtro_emision' => filter_var(env('DEVOLUCIONES_FILTRO_EMISION', true), FILTER_VALIDATE_BOOLEAN),
 
 ];

@@ -91,6 +91,27 @@ class ConfigDefaultsTest extends TestCase
         );
     }
 
+    public function test_ventana_de_devoluciones_default_es_de_siete_dias_habiles(): void
+    {
+        // Contrato OPERATIVO, no técnico (Mauricio, 2026-08-12): la ventana
+        // de registro de devoluciones es de 7 días hábiles. Está acordada
+        // con las bodegas y define cuándo se congela el manifiesto y cuándo
+        // Jaremar recibe el paquete completo. Cambiar el número no es un
+        // tuning: obliga a avisar a bodegas y a Jaremar, y a decidir qué
+        // pasa con los manifiestos abiertos (backfill) y con los ya
+        // cerrados (que NO se reabren: su paquete ya se publicó inmutable).
+        // Este test fuerza que el cambio sea deliberado y visible en el diff.
+        $contents = file_get_contents(base_path('config/api.php'));
+
+        $this->assertMatchesRegularExpression(
+            "/'devoluciones_ventana_dias_habiles'\s*=>\s*\(int\)\s*env\(\s*'DEVOLUCIONES_VENTANA_DIAS_HABILES'\s*,\s*7\s*\)/",
+            $contents,
+            'config/api.php debe declarar la ventana de devoluciones con default 7 días hábiles. '.
+            'Si la regla operativa cambió de verdad, actualizá este test en el mismo commit, '.
+            'agregá el backfill de los manifiestos abiertos y avisá a bodegas y a Jaremar.'
+        );
+    }
+
     public function test_logging_has_domain_separated_channels(): void
     {
         // Contrato: debe haber channels separados por dominio para que el
