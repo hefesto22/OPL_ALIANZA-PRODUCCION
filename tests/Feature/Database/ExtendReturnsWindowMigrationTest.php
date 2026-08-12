@@ -19,7 +19,7 @@ use Tests\TestCase;
  *     de fechas de emisión que probablemente ya no vuelve a consultar.
  *   - Rellenar un NULL ("sin límite", transición 2026-07-21) le pone plazo
  *     a un backlog que se acordó registrar sin plazo.
- *   - La excepción 796008 (bodega que no alcanzó a registrar) es puntual y
+ *   - La excepción 796078 (bodega que no alcanzó a registrar) es puntual y
  *     con fecha fija: no es el cálculo de 7 hábiles, que ya no la alcanza.
  */
 class ExtendReturnsWindowMigrationTest extends TestCase
@@ -113,14 +113,14 @@ class ExtendReturnsWindowMigrationTest extends TestCase
         $this->assertNull($manifest->fresh()->returns_deadline_at);
     }
 
-    public function test_excepcion_796008_se_reabre_con_plazo_fijo(): void
+    public function test_excepcion_796078_se_reabre_con_plazo_fijo(): void
     {
         // La bodega no alcanzó a registrar sus devoluciones antes del cierre
         // (decisión Mauricio, 2026-08-12): se reabre hasta el sábado 15/08 y
         // al vencer sale en el siguiente lote que consulte Jaremar.
         $manifest = $this->conDeadline(
             Manifest::factory()->create([
-                'number' => '796008',
+                'number' => '796078',
                 'date' => now()->subDays(10)->toDateString(),
             ]),
             '2026-08-10 23:59:59',

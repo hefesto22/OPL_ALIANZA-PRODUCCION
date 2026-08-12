@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Log;
 
 return new class extends Migration
 {
-    private const EXCEPCION_MANIFIESTO = '796008';
+    private const EXCEPCION_MANIFIESTO = '796078';
 
     private const EXCEPCION_DEADLINE = '2026-08-15 23:59:59';
 
@@ -35,7 +35,8 @@ return new class extends Migration
      *   3. SIN LÍMITE (NULL, transición 2026-07-21) → NO SE TOCAN. El NULL
      *      es deliberado y nunca se rellena solo (ver hooks de Manifest).
      *
-     * EXCEPCIÓN PUNTUAL — manifiesto 796008: la bodega no alcanzó a
+     * EXCEPCIÓN PUNTUAL — manifiesto 796078 (llegó el 06/08, cerró el
+     * 11/08 con 0 devoluciones sobre 17 facturas): la bodega no alcanzó a
      * registrar sus devoluciones antes del cierre. Se reabre con plazo FIJO
      * hasta el sábado 2026-08-15 11:59:59 pm (hora Honduras), no con el
      * cálculo de 7 hábiles, que ya no lo alcanzaría. Al vencer se congela
