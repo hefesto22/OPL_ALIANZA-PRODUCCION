@@ -30,7 +30,6 @@ class ApiInvoiceImporterServiceValidateWarehousesTest extends TestCase
         // Inyectamos el warehouseMap directamente para no depender de BD.
         $prop = (new ReflectionClass(ApiInvoiceImporterService::class))
             ->getProperty('warehouseMap');
-        $prop->setAccessible(true);
         $prop->setValue($service, [
             'OAC' => 1,
             'OAS' => 2,
@@ -44,7 +43,6 @@ class ApiInvoiceImporterServiceValidateWarehousesTest extends TestCase
     {
         $method = (new ReflectionClass(ApiInvoiceImporterService::class))
             ->getMethod('validateWarehouses');
-        $method->setAccessible(true);
 
         return $method->invoke($svc, $invoices);
     }

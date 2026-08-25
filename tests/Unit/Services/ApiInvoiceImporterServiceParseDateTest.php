@@ -34,7 +34,6 @@ class ApiInvoiceImporterServiceParseDateTest extends TestCase
 
         $method = (new ReflectionClass(ApiInvoiceImporterService::class))
             ->getMethod('parseDate');
-        $method->setAccessible(true);
 
         return $method->invoke($service, $input);
     }

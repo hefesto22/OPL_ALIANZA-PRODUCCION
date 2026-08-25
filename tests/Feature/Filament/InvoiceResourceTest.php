@@ -208,7 +208,6 @@ class InvoiceResourceTest extends TestCase
         // Si alguien activa la navegación por accidente, este test rompe.
         $reflection = new \ReflectionClass(InvoiceResource::class);
         $property = $reflection->getProperty('shouldRegisterNavigation');
-        $property->setAccessible(true);
 
         $this->assertFalse($property->getValue());
     }
