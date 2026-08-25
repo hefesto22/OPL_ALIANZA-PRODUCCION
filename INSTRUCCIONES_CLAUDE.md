@@ -39,7 +39,8 @@ Estas son las herramientas en uso. No propongo reemplazos salvo que Mauricio lo 
 | Base de datos | PostgreSQL | 16+ |
 | Cache / Sesión / Colas | Redis + Laravel Horizon | ^5.45 |
 | API auth | Laravel Sanctum | ^4.0 |
-| PDFs y reportes visuales | spatie/browsershot | ^5.2 |
+| Impresión de facturas (matriz) | ESC/P propio (`App\Services\Escp`) + QZ Tray | — |
+| Impresión de reportes | HTML servido + `window.print()` del navegador | — |
 | Exportaciones Excel/CSV | maatwebsite/excel | ^3.1 |
 | Auditoría | spatie/laravel-activitylog | ^4.11 |
 | Códigos de barras | picqer/php-barcode-generator | ^3.2 |
@@ -51,7 +52,7 @@ Estas son las herramientas en uso. No propongo reemplazos salvo que Mauricio lo 
 
 **Reglas firmes derivadas del stack:**
 
-- PDFs → **siempre Browsershot**. Nunca DomPDF, nunca mPDF, nunca TCPDF. Si alguien lo sugiere, explico técnicamente por qué Browsershot es la elección correcta para este proyecto (renderizado Chromium real, CSS moderno, gráficas, tablas complejas) y por qué cambiar acumularía deuda visual.
+- Impresión → **no hay generación de PDF server-side**. Las facturas salen por ESC/P directo a la Epson LX-350 (`App\Services\Escp\EscpInvoiceService`, vía QZ Tray) y los reportes se sirven como HTML que el navegador imprime. `spatie/browsershot` estuvo declarado en el stack pero **nunca se usó** — se removió el 2026-08-25 junto con `puppeteer`, que arrastraba un advisory alto de `extract-zip` sin parche y ponía el CI en rojo. Si algún día se necesita un PDF real generado en el servidor (envío por correo, archivo firmado), eso es una decisión de arquitectura a tomar en ese momento con su caso de negocio — no un default que ya esté resuelto.
 - Excel/CSV → **siempre Maatwebsite Excel**. Nunca PhpSpreadsheet directo. La interfaz `FromQuery + ShouldQueue + WithChunkReading` es la única forma defendible de generar reportes grandes sin reventar memoria.
 - Auditoría → **siempre Spatie ActivityLog** con `LogsActivity` trait. Nunca event listeners manuales para auditoría — duplicaría infraestructura ya resuelta.
 - Autorización Filament → **siempre Filament Shield + Policy por modelo**. Nunca `->visible(fn() => auth()->user()->isAdmin())` inline.
@@ -273,7 +274,8 @@ Cinco filtros, en este orden:
 | Operación lenta (>500ms) | Laravel Job + Horizon queue dedicada | No bloquear request, observabilidad, retry |
 | Scope automático (por bodega, por estado) | Global Scope o Local Scope según contexto | El que ya está en `App\Support\WarehouseScope` |
 | Auditoría de cambios | Spatie ActivityLog con `LogsActivity` trait | Estandarizado, ya en el stack |
-| Reporte PDF | Service dedicado + Blade view en `resources/views/pdf/` + Browsershot | Patrón ya en uso en `InvoicePdfService` |
+| Reporte imprimible | Controller que arma el HTML + Blade view en `resources/views/pdf/` + `window.print()` | Patrón ya en uso en `PrintReportsController` y `PrintInvoicesController` |
+| Factura a matriz de punto | `EscpInvoiceService` (bytes ESC/P) + su gemelo HTML para vista previa | Los dos renders tienen que decidir IGUAL: la lógica compartida vive en `App\Support` |
 | Export grande (>5k filas) | Class en `app/Exports/` con `ShouldQueue + WithChunkReading` | Sin reventar memoria, asíncrono |
 | Import grande (API o archivo) | Job dedicado + estado persistido en tabla de imports | Ya en uso con `ApiInvoiceImport` y `ProcessManifestImport` |
 | Recálculo de totales | Job idempotente | Ya en uso con `RecalculateManifestTotalsJob` |
@@ -471,25 +473,21 @@ Patrón ya en uso en `InvoicePdfService`. Lo mantengo y lo replico.
 ```php
 class InvoicePdfService
 {
-    public function generar(Invoice $invoice): string
+    // NO genera un PDF: firma un payload y devuelve la URL de impresion. El
+    // Controller carga las facturas, arma el HTML y el navegador lo imprime.
+    public function generatePrintUrl(Manifest $manifest, array $invoiceIds = []): string
     {
-        $invoice->loadMissing(['lines.product', 'warehouse', 'manifest']);
+        $payload = Crypt::encryptString(json_encode([
+            'manifest_id' => $manifest->id,
+            'invoice_ids' => $invoiceIds,
+        ]));
 
-        $html = view('pdf.invoice', compact('invoice'))->render();
-        $ruta = storage_path("app/private/invoices/invoice-{$invoice->id}.pdf");
-
-        Browsershot::html($html)
-            ->format('Letter')
-            ->margins(15, 15, 15, 15)
-            ->showBackground()
-            ->savePdf($ruta);
-
-        return $ruta;
+        return route('invoices.print', ['payload' => $payload]);
     }
 }
 ```
 
-Nunca DomPDF. Nunca mPDF. Si Mauricio pide alternativa, le explico el costo de migrar todos los layouts ya hechos.
+El payload viaja **cifrado**: sin eso, cualquiera podría cambiar el `manifest_id` en la URL e imprimir facturas de otra bodega. El guard de bodega y el rate limit viven en el Controller (`PrintInvoicesController`), no acá.
 
 ---
 
@@ -834,7 +832,7 @@ No soy un asistente que dice sí a todo. Soy un socio técnico — y un socio te
 - Correr `composer require`, `npm install`, `php artisan migrate`, `migrate:rollback`, `db:wipe`, ni cualquier comando destructivo o de deploy — esos los corre Mauricio. Yo sí corro `php artisan make:*`, `pint`, y comandos read-only.
 - Entregar código sin tests que demuestren que no se rompió nada — la red de seguridad es innegociable.
 - Ignorar señales de deuda técnica 🔴 crítica aunque no me las hayan pedido revisar (las 🟡 y 🟢 las registro, las críticas me detienen).
-- Proponer DomPDF, mPDF, TCPDF u otra librería de PDF — siempre es Browsershot.
+- Reintroducir una librería de PDF (Browsershot, DomPDF, mPDF, TCPDF) sin un caso de negocio concreto que la justifique — hoy no se genera ningún PDF en el servidor y el sistema no lo necesita.
 - Proponer PhpSpreadsheet directo — siempre es Maatwebsite Excel.
 - Proponer micro-servicios donde un monolito modular es suficiente.
 - Escribir lógica de negocio en Controllers, Models o Filament Resources.

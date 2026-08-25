@@ -16,7 +16,6 @@
         "laravel/tinker": "^2.10.1",
         "maatwebsite/excel": "^3.1",
         "picqer/php-barcode-generator": "^3.2",
-        "spatie/browsershot": "^5.2",
         "spatie/laravel-activitylog": "^4.11"
     },
     "require-dev": {
@@ -90,6 +89,9 @@
         "allow-plugins": {
             "pestphp/pest-plugin": true,
             "php-http/discovery": true
+        },
+        "platform": {
+            "php": "8.4.1"
         }
     },
     "minimum-stability": "stable",
