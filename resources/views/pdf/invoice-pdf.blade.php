@@ -231,7 +231,7 @@ table.lines td {
     <table style="margin-top:2px; font-size:7.5pt;">
         <tr>
             <td style="width:48%; vertical-align:top;">
-                <b>Facturado</b> {{ $invoice->client_name }}<br>
+                <b>Facturado</b> {{ \App\Support\InvoiceParty::clientName($invoice) }}<br>
                 <b>RTN</b> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; {{ $invoice->client_rtn }}<br>
                 @php
                     // Formato Jaremar de la línea 2 de Direccion:
@@ -258,7 +258,7 @@ table.lines td {
             <td style="width:52%; vertical-align:top;">
                 <b>Cliente No.</b> {{ $invoice->client_id }}
                 &nbsp; <b>Ruta</b> {{ $invoice->route_number }}<br>
-                <b>Entregar:</b> {{ $invoice->deliver_to ?? $invoice->client_name }}<br>
+                <b>Entregar:</b> {{ \App\Support\InvoiceParty::deliverTo($invoice) ?: \App\Support\InvoiceParty::clientName($invoice) }}<br>
                 <b>No Correlativo de orden compra exenta:</b><br>
                 <b>No Correlativo de constancia de registro exonerado:</b><br>
                 <b>No Identificativo del registro de la S.A.G.:</b>

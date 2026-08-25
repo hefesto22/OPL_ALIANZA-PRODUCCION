@@ -6,6 +6,7 @@ use App\Helpers\NumberHelper;
 use App\Models\Invoice;
 use App\Models\InvoiceLine;
 use App\Support\BoxEquivalence;
+use App\Support\InvoiceParty;
 use Illuminate\Support\Collection;
 
 /**
@@ -410,11 +411,26 @@ class EscpInvoiceService
         // no se recorta: recortar se comeria el Ruta, que es justo lo que lee
         // el motorista.
         $L = array_merge($L, $this->fitOrWrap(
-            'Cliente: '.$invoice->client_id.'-'.$invoice->client_name
+            'Cliente: '.$invoice->client_id.'-'.InvoiceParty::clientName($invoice)
             .'   RTN: '.($invoice->client_rtn ?? '')
             .'   Pago: '.($invoice->payment_type ?? 'CONTADO')
             .'   Ruta: '.$invoice->route_number
         ));
+
+        // Destinatario fisico, SOLO cuando aporta algo distinto del cliente
+        // facturado. En 9,514 de 9,617 facturas de prod Jaremar repite el mismo
+        // nombre en Cliente y EntregarA: imprimirlo siempre seria ruido que
+        // ademas cuesta 1 de las 44 lineas de la forma. En las facturas a
+        // "CONSUMIDOR FINAL" es el UNICO dato que le dice al motorista a que
+        // negocio va la mercaderia (ver App\Support\InvoiceParty).
+        //
+        // No reemplaza al Cliente: este es un documento fiscal y el ente
+        // facturado tiene que seguir saliendo. La factura original de Jaremar
+        // hace lo mismo -- lleva los dos campos por separado.
+        $deliverTo = InvoiceParty::deliverTo($invoice);
+        if ($deliverTo !== '') {
+            $L = array_merge($L, $this->fitOrWrap('Entregar a: '.$deliverTo));
+        }
 
         $municipality = strtoupper(trim((string) ($invoice->municipality ?? '')));
         $department = strtoupper(trim((string) ($invoice->department ?? '')));

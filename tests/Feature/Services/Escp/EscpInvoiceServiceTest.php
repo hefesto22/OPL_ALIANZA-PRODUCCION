@@ -40,6 +40,48 @@ class EscpInvoiceServiceTest extends TestCase
         return $invoice;
     }
 
+    public function test_deliver_to_line_is_printed_when_it_names_a_different_business(): void
+    {
+        // Caso real: factura 002-001-01-03931792. Jaremar factura a
+        // "CONSUMIDOR FINAL" y manda EntregarA = POIT 24/7. Sin esta linea el
+        // motorista no tiene forma de saber a que negocio va la mercaderia.
+        $invoice = $this->invoiceWithLines([
+            'client_name' => '"CONSUMIDOR FINAL"',
+            'deliver_to' => 'POIT 24/7',
+        ]);
+
+        $out = app(EscpInvoiceService::class)->previewText(collect([$invoice]));
+
+        $this->assertStringContainsString('Entregar a: POIT 24/7', $out);
+        // El ente FACTURADO sigue saliendo: es un documento fiscal, la linea
+        // nueva se suma, no sustituye.
+        $this->assertStringContainsString('CONSUMIDOR FINAL', $out);
+    }
+
+    public function test_client_name_is_printed_without_the_quotes_jaremar_sends(): void
+    {
+        $invoice = $this->invoiceWithLines(['client_name' => '"CONSUMIDOR FINAL"']);
+
+        $out = app(EscpInvoiceService::class)->previewText(collect([$invoice]));
+
+        $this->assertStringContainsString('-CONSUMIDOR FINAL', $out);
+        $this->assertStringNotContainsString('"CONSUMIDOR FINAL"', $out);
+    }
+
+    public function test_deliver_to_line_is_omitted_when_it_only_repeats_the_client(): void
+    {
+        // El 98.9% de las facturas de prod. Una linea de las 44 de la forma no
+        // se gasta en repetir un dato que ya salio arriba.
+        $invoice = $this->invoiceWithLines([
+            'client_name' => 'PULPERIA PRUEBA',
+            'deliver_to' => 'PULPERIA PRUEBA',
+        ]);
+
+        $out = app(EscpInvoiceService::class)->previewText(collect([$invoice]));
+
+        $this->assertStringNotContainsString('Entregar a:', $out);
+    }
+
     public function test_includes_quality_and_darkening_commands(): void
     {
         $out = app(EscpInvoiceService::class)->build(collect([$this->invoiceWithLines()]));

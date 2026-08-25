@@ -131,6 +131,64 @@ class PrintInvoicesControllerTest extends TestCase
         $response->assertSee('<td>48</td>', false);
     }
 
+    /**
+     * Contrato WYSIWYG: la vista HTML Hosana y el flujo ESC/P que sale por la
+     * matriz tienen que decidir IGUAL si imprimen "Entregar a". La condicion
+     * vive en App\Support\InvoiceParty justamente para no duplicarla, pero
+     * solo un test que renderice la vista real prueba que el Blade compila y
+     * que la linea sale.
+     */
+    public function test_hosana_view_shows_deliver_to_when_it_names_a_different_business(): void
+    {
+        $invoice = Invoice::factory()
+            ->for($this->manifest, 'manifest')
+            ->for($this->warehouseOAC, 'warehouse')
+            ->create([
+                'client_name' => '"CONSUMIDOR FINAL"',
+                'deliver_to' => 'POIT 24/7',
+            ]);
+
+        InvoiceLine::factory()->for($invoice, 'invoice')->create();
+
+        $payload = $this->encryptedPayload([
+            'manifest_id' => $this->manifest->id,
+            'invoice_ids' => [$invoice->id],
+        ]);
+
+        $response = $this->actingAs($this->user)
+            ->get(route('invoices.print.hosana', ['payload' => $payload]));
+
+        $response->assertOk();
+        $response->assertSee('Entregar a: POIT 24/7');
+        // El ente facturado sigue saliendo, sin las comillas de Jaremar.
+        $response->assertSee('CONSUMIDOR FINAL');
+        $response->assertDontSee('"CONSUMIDOR FINAL"', false);
+    }
+
+    public function test_hosana_view_omits_deliver_to_when_it_only_repeats_the_client(): void
+    {
+        $invoice = Invoice::factory()
+            ->for($this->manifest, 'manifest')
+            ->for($this->warehouseOAC, 'warehouse')
+            ->create([
+                'client_name' => 'PULPERIA JARED',
+                'deliver_to' => 'PULPERIA JARED',
+            ]);
+
+        InvoiceLine::factory()->for($invoice, 'invoice')->create();
+
+        $payload = $this->encryptedPayload([
+            'manifest_id' => $this->manifest->id,
+            'invoice_ids' => [$invoice->id],
+        ]);
+
+        $response = $this->actingAs($this->user)
+            ->get(route('invoices.print.hosana', ['payload' => $payload]));
+
+        $response->assertOk();
+        $response->assertDontSee('Entregar a:');
+    }
+
     public function test_show_does_not_mark_invoices_as_printed(): void
     {
         // Cambio central de este sprint: la vista NO marca is_printed.

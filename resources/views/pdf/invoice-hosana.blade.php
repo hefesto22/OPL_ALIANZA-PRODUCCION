@@ -100,6 +100,10 @@ table.lines th { border-top:1px solid #000; border-bottom:1px solid #000; text-a
         : trim("{$municipality} {$department}");
     $dir1 = trim(($invoice->address ?? '').' '.$loc);
     $dir2 = trim('Barrio '.($invoice->neighborhood ?? '').' '.$municipality);
+
+    // Espejo exacto de EscpInvoiceService::metaLines(): '' cuando EntregarA
+    // solo repite al cliente facturado, y entonces la linea no se imprime.
+    $deliverTo = \App\Support\InvoiceParty::deliverTo($invoice);
 @endphp
 <div class="invoice-page">
 
@@ -122,7 +126,12 @@ table.lines th { border-top:1px solid #000; border-bottom:1px solid #000; text-a
 
     {{-- ══ Factura / Cliente ══ --}}
     <div style="margin-top:6px;">Factura: {{ $invoice->invoice_number }} &nbsp; Fecha: {{ \Carbon\Carbon::parse($invoice->invoice_date)->format('d/m/Y') }} &nbsp; Limite: {{ $invoice->print_limit_date ? \Carbon\Carbon::parse($invoice->print_limit_date)->format('d/m/Y') : '' }}</div>
-    <div>Cliente: {{ $invoice->client_id }}-{{ $invoice->client_name }} &nbsp; RTN: {{ $invoice->client_rtn }} &nbsp; Pago: {{ $invoice->payment_type ?? 'CONTADO' }} &nbsp; Ruta: {{ $invoice->route_number }}</div>
+    <div>Cliente: {{ $invoice->client_id }}-{{ \App\Support\InvoiceParty::clientName($invoice) }} &nbsp; RTN: {{ $invoice->client_rtn }} &nbsp; Pago: {{ $invoice->payment_type ?? 'CONTADO' }} &nbsp; Ruta: {{ $invoice->route_number }}</div>
+    {{-- Si esta condicion se desincroniza del servicio ESC/P, la vista previa
+         deja de ser WYSIWYG respecto de lo que sale por la matriz. --}}
+    @if ($deliverTo !== '')
+        <div>Entregar a: {{ $deliverTo }}</div>
+    @endif
     <div>Direccion:</div>
     <div>{{ $dir1 }}</div>
     <div>{{ $dir2 }}</div>
