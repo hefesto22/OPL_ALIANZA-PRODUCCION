@@ -45,7 +45,11 @@ class InvoiceReturn extends Model
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
-            ->logOnly(['type', 'status', 'total', 'return_reason_id', 'invoice_id'])
+            // warehouse_id se audita porque el traslado de facturas entre
+            // bodegas arrastra la devolución (InvoiceWarehouseTransferService).
+            // Fuera de ese caso nunca cambia, así que logOnlyDirty lo mantiene
+            // en silencio y no ensucia la bitácora.
+            ->logOnly(['type', 'status', 'total', 'return_reason_id', 'invoice_id', 'warehouse_id'])
             ->logOnlyDirty()
             ->dontSubmitEmptyLogs();
     }

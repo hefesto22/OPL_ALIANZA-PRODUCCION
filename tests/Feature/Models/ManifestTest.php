@@ -601,4 +601,100 @@ class ManifestTest extends TestCase
                 ->pluck('id')->contains($manifest->id)
         );
     }
+
+    // ── recalculateWarehouseTotals: filas huérfanas ──────────────────────
+
+    public function test_recalculate_warehouse_totals_deletes_the_row_of_a_warehouse_left_without_invoices(): void
+    {
+        $manifest = Manifest::factory()->create();
+        $oac = Warehouse::factory()->oac()->create();
+        $oas = Warehouse::factory()->oas()->create();
+
+        $mudada = Invoice::factory()->create([
+            'manifest_id' => $manifest->id,
+            'warehouse_id' => $oac->id,
+            'total' => 1000,
+        ]);
+        Invoice::factory()->create([
+            'manifest_id' => $manifest->id,
+            'warehouse_id' => $oas->id,
+            'total' => 500,
+        ]);
+
+        $manifest->recalculateTotals();
+        $this->assertSame(2, ManifestWarehouseTotal::where('manifest_id', $manifest->id)->count());
+
+        // La factura se va a OAS: OAC queda sin nada en este manifiesto.
+        $mudada->update(['warehouse_id' => $oas->id]);
+        $manifest->recalculateTotals();
+
+        // Antes del fix la fila de OAC sobrevivía con sus L 1,000 y el Reporte
+        // de Ventas por Bodega le seguía acreditando ventas inexistentes.
+        $this->assertNull(
+            ManifestWarehouseTotal::where('manifest_id', $manifest->id)
+                ->where('warehouse_id', $oac->id)
+                ->first()
+        );
+        $this->assertEquals(
+            1500.00,
+            (float) ManifestWarehouseTotal::where('manifest_id', $manifest->id)
+                ->where('warehouse_id', $oas->id)
+                ->value('total_invoices')
+        );
+    }
+
+    public function test_an_invoice_without_warehouse_does_not_block_the_orphan_cleanup(): void
+    {
+        $manifest = Manifest::factory()->create();
+        $oac = Warehouse::factory()->oac()->create();
+        $oas = Warehouse::factory()->oas()->create();
+
+        $mudada = Invoice::factory()->create([
+            'manifest_id' => $manifest->id,
+            'warehouse_id' => $oac->id,
+            'total' => 1000,
+        ]);
+        $sinBodega = Invoice::factory()->create([
+            'manifest_id' => $manifest->id,
+            'warehouse_id' => $oas->id,
+            'total' => 500,
+        ]);
+
+        $manifest->recalculateTotals();
+
+        $mudada->update(['warehouse_id' => $oas->id]);
+        $sinBodega->update(['warehouse_id' => null, 'status' => 'pending_warehouse']);
+        $manifest->recalculateTotals();
+
+        // El trampolín de SQL: si la subconsulta de bodegas vigentes dejara
+        // pasar el NULL de esta factura, `NOT IN (..., NULL)` evaluaría a NULL
+        // y el DELETE no borraría absolutamente nada — OAC se quedaría con su
+        // fila para siempre y en silencio.
+        $this->assertNull(
+            ManifestWarehouseTotal::where('manifest_id', $manifest->id)
+                ->where('warehouse_id', $oac->id)
+                ->first()
+        );
+        $this->assertSame(1, ManifestWarehouseTotal::where('manifest_id', $manifest->id)->count());
+    }
+
+    public function test_recalculate_warehouse_totals_clears_every_row_when_no_invoice_has_a_warehouse(): void
+    {
+        $manifest = Manifest::factory()->create();
+        $oac = Warehouse::factory()->oac()->create();
+
+        $invoice = Invoice::factory()->create([
+            'manifest_id' => $manifest->id,
+            'warehouse_id' => $oac->id,
+            'total' => 1000,
+        ]);
+
+        $manifest->recalculateTotals();
+        $this->assertSame(1, ManifestWarehouseTotal::where('manifest_id', $manifest->id)->count());
+
+        $invoice->update(['warehouse_id' => null, 'status' => 'pending_warehouse']);
+        $manifest->recalculateTotals();
+
+        $this->assertSame(0, ManifestWarehouseTotal::where('manifest_id', $manifest->id)->count());
+    }
 }

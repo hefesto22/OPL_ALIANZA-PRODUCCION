@@ -192,13 +192,23 @@ class SystemFreshBootstrapTest extends TestCase
         );
 
         // super_admin: Shield le asigna TODOS los permisos al promoverlo
-        // (shield:super-admin syncPermissions internamente). Además queda
-        // gateado por intercept_gate='before' como belt-and-suspenders.
+        // (shield:super-admin syncPermissions internamente). Y es la ÚNICA vía:
+        // con define_via_gate=false no hay Gate::before que lo cubra, así que
+        // un permiso creado después de esta fase NO le llega solo.
         $superAdminRole = Role::query()->where('name', Utils::getSuperAdminName())->first();
         $this->assertGreaterThan(
             0,
             $superAdminRole->permissions()->count(),
             'Shield asigna todos los permisos al rol super_admin.'
+        );
+
+        // Contrato de orden: CustomPermissionSeeder (fase 4) tiene que correr
+        // ANTES de promover al super_admin (fase 5). Si alguien invierte esas
+        // fases, los permisos custom quedan creados pero sin dueño y acciones
+        // como el traslado de bodega no las puede ejecutar nadie.
+        $this->assertTrue(
+            $superAdminRole->hasPermissionTo('TransferWarehouse:Invoice'),
+            'super_admin debe recibir los permisos custom creados antes de su promoción.'
         );
 
         // ── Bodegas ──────────────────────────────────────────────

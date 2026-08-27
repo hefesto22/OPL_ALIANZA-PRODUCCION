@@ -41,13 +41,22 @@ use Spatie\Permission\PermissionRegistrar;
  *  (local, staging, producción).
  *
  * ──────────────────────────────────────────────────────────────────────
- *  EL SUPER_ADMIN NO RECIBE ASIGNACIÓN
+ *  EL SUPER_ADMIN NO SE ASIGNA ACÁ (PERO SÍ RECIBE PERMISOS)
  * ──────────────────────────────────────────────────────────────────────
- *  config/filament-shield.php tiene super_admin.intercept_gate='before'
- *  → Shield registra un Gate::before que devuelve true para super_admin
- *  sobre CUALQUIER permiso. Asignarle permisos explícitamente sería
- *  duplicar lógica y crear sorpresas (¿qué pasa si alguien quita un
- *  permiso del super_admin desde el panel? Nada — el gate gana).
+ *  Ojo con lo que decía este bloque antes: afirmaba que Shield registra un
+ *  Gate::before que le concede al super_admin cualquier ability. NO es así en
+ *  este proyecto. Shield solo registra ese gate cuando
+ *  `super_admin.define_via_gate` es true (ver FilamentShieldServiceProvider::
+ *  packageBooted → Utils::isSuperAdminDefinedViaGate), y acá está en FALSE:
+ *  el super_admin es un rol tradicional con TODOS los permisos asignados
+ *  explícitamente en BD.
+ *
+ *  Quién se los asigna: `shield:super-admin`, que corre en la fase 5 del
+ *  bootstrap y le da los permisos que existen EN ESE MOMENTO. Consecuencia
+ *  operativa que hay que tener presente: **un permiso creado después NO le
+ *  llega solo**. Hay que marcarlo en Shield → Roles → super_admin, o
+ *  asignarlo con un givePermissionTo puntual. En prod, donde este seeder no
+ *  se corre nunca (tiene deltas manuales), esa es la única vía.
  */
 class RolePermissionSeeder extends Seeder
 {

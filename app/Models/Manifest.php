@@ -447,5 +447,33 @@ class Manifest extends Model
                 ]
             );
         }
+
+        // ── Limpieza de filas huérfanas ───────────────────────────────────
+        //
+        // El updateOrCreate de arriba solo toca bodegas que TIENEN facturas.
+        // Si una bodega se queda en cero — todas sus facturas se trasladaron a
+        // otra, o se borraron — su fila sobrevivía con los montos viejos.
+        //
+        // No es cosmético: `manifest_warehouse_totals` es la fuente del Reporte
+        // de Ventas por Bodega (PrintReportsController) y del gráfico
+        // ReturnsByWarehouseChart. Una fila huérfana le acredita a la bodega
+        // equivocada ventas que ya no tiene, y la suma de las bodegas deja de
+        // dar el total del manifiesto.
+        //
+        // Se usa una subconsulta en vez de la lista que ya tenemos en PHP para
+        // que Postgres evalúe el conjunto de bodegas vigentes dentro del mismo
+        // statement del DELETE: así nunca se borra la fila de una bodega cuyas
+        // facturas ya estaban commiteadas. El whereNotNull es obligatorio — un
+        // NULL dentro de un NOT IN vuelve la condición NULL y el DELETE no
+        // borraría absolutamente nada.
+        $this->warehouseTotals()
+            ->whereNotIn(
+                'warehouse_id',
+                Invoice::query()
+                    ->where('manifest_id', $this->id)
+                    ->whereNotNull('warehouse_id')
+                    ->select('warehouse_id')
+            )
+            ->delete();
     }
 }

@@ -253,6 +253,8 @@ return [
         'ReportPdfSinIsv:Manifest',
         'ReportWarehouseSales:Manifest',
         'ExportExcel:Manifest',
+        // Traslado de una factura entre bodegas (solo super_admin).
+        'TransferWarehouse:Invoice',
     ],
 
     /*

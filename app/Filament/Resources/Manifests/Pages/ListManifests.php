@@ -281,7 +281,7 @@ class ListManifests extends ListRecords
                 // Permisos custom (CustomPermissionSeeder), administrables
                 // desde Shield → Permisos personalizados. El grupo se
                 // muestra si el usuario tiene AL MENOS uno de los cuatro.
-                // super_admin pasa vía intercept_gate de Shield.
+                // super_admin lo tiene asignado por shield:super-admin.
                 ->visible(function (): bool {
                     /** @var \App\Models\User $user */
                     $user = Auth::user();

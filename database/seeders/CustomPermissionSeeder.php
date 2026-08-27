@@ -39,8 +39,13 @@ use Spatie\Permission\PermissionRegistrar;
  *  y DESPUÉS de migrate (que crea la tabla permissions). En el bootstrap
  *  va justo antes de RolePermissionSeeder. Es idempotente (firstOrCreate).
  *
- *  El super_admin NO necesita estos permisos explícitos: el
- *  intercept_gate='before' de Shield le concede cualquier ability.
+ *  El super_admin SÍ necesita estos permisos explícitos. Con
+ *  `define_via_gate=false` (la configuración de este proyecto) Shield NO
+ *  registra ningún Gate::before — el super_admin es un rol normal con todos
+ *  los permisos asignados en BD por `shield:super-admin`. Por eso este seeder
+ *  corre ANTES de promover al super_admin en el bootstrap: para que ese
+ *  comando alcance a asignárselos. Un permiso agregado a esta lista DESPUÉS
+ *  de que un entorno ya está bootstrapeado hay que asignarlo a mano.
  */
 class CustomPermissionSeeder extends Seeder
 {
@@ -86,6 +91,15 @@ class CustomPermissionSeeder extends Seeder
         'ReportPdfSinIsv:Manifest',       // botón "Ver Reporte Sin ISV"
         'ReportWarehouseSales:Manifest',  // botón "Reporte por Bodega"
         'ExportExcel:Manifest',           // botón "Exportar Excel"
+
+        // ── Traslado de bodega ──────────────────────────────────────
+        // Mover una factura de una bodega a otra cambia qué bodega la
+        // reporta como venta y quién responde por su depósito. Deliberadamente
+        // NO se asigna a ningún rol operativo en RolePermissionSeeder: queda
+        // reservado al super_admin, que lo recibe de shield:super-admin al
+        // promoverlo. Si alguna vez hace falta dárselo a alguien más, se marca
+        // a mano desde Shield → Roles → Permisos personalizados.
+        'TransferWarehouse:Invoice',      // acción "Cambiar bodega"
     ];
 
     public function run(): void

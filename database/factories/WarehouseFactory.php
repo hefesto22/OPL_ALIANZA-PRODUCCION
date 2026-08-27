@@ -8,9 +8,10 @@ use Illuminate\Database\Eloquent\Factories\Factory;
 /**
  * @extends Factory<Warehouse>
  *
- * Hozana maneja 3 bodegas reales: OAC (Copán), OAS (Santa Bárbara) y OAO
- * (Ocotepeque). La factory ofrece un helper por cada una para que los tests
- * puedan generar datos con los códigos canónicos en vez de inventar strings.
+ * Hozana maneja 4 bodegas reales: OAC (Copán), OAS (Santa Bárbara), OAO
+ * (Ocotepeque) y OAI (Intibucá). La factory ofrece un helper por cada una
+ * para que los tests puedan generar datos con los códigos canónicos en vez
+ * de inventar strings.
  */
 class WarehouseFactory extends Factory
 {
@@ -71,6 +72,16 @@ class WarehouseFactory extends Factory
             'name' => 'Oficina Administrativa Ocotepeque',
             'city' => 'Ocotepeque',
             'department' => 'Ocotepeque',
+        ]);
+    }
+
+    public function oai(): static
+    {
+        return $this->state(fn () => [
+            'code' => 'OAI',
+            'name' => 'Oficina Administrativa Intibucá',
+            'city' => 'La Esperanza',
+            'department' => 'Intibucá',
         ]);
     }
 

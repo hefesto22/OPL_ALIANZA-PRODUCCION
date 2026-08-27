@@ -48,6 +48,7 @@ class InvoicesRelationManager extends RelationManager
                         'OAC' => 'info',
                         'OAO' => 'success',
                         'OAS' => 'warning',
+                        'OAI' => 'danger',
                         default => 'gray',
                     })
                     ->placeholder('—')

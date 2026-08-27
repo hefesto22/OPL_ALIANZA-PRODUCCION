@@ -16,7 +16,9 @@ use Tests\TestCase;
  * Cubrimos:
  *  - Matriz de permisos por rol: cada rol recibe exactamente lo que le toca.
  *  - Graceful skip: sin permisos en BD no rompe, solo advierte.
- *  - super_admin no recibe permisos (gateado vía intercept_gate).
+ *  - super_admin no recibe permisos DE ESTE SEEDER (se los asigna
+ *    shield:super-admin al promoverlo; ver test_super_admin_receives_no_
+ *    explicit_permissions).
  *  - Idempotencia: correr 2 veces deja el mismo estado.
  *  - syncPermissions sobrescribe permisos manuales (la matriz es ley).
  *
@@ -104,6 +106,14 @@ class RolePermissionSeederTest extends TestCase
         $this->assertNotContains('ViewAny:Role', $permissions);
         $this->assertNotContains('Create:Role', $permissions);
         $this->assertNotContains('Delete:Role', $permissions);
+
+        // Trasladar una factura de bodega NO entra en la matriz de ningún rol
+        // operativo: cambia qué bodega reporta la venta y quién responde por el
+        // depósito, así que queda reservado al super_admin (que lo recibe vía
+        // shield:super-admin, no vía gate). Si algún día hay que dárselo a
+        // alguien más se marca a mano en Shield, no acá — este assert existe
+        // para que nadie lo agregue de paso.
+        $this->assertNotContains('TransferWarehouse:Invoice', $permissions);
     }
 
     public function test_encargado_can_edit_warehouse_data_but_not_destroy(): void
@@ -129,6 +139,10 @@ class RolePermissionSeederTest extends TestCase
         // No gestiona usuarios ni roles
         $this->assertNotContains('ViewAny:User', $permissions);
         $this->assertNotContains('ViewAny:Role', $permissions);
+
+        // Update:Invoice sí, traslado de bodega NO: corregir la captura de su
+        // bodega no es lo mismo que mover plata a otra.
+        $this->assertNotContains('TransferWarehouse:Invoice', $permissions);
     }
 
     public function test_operador_is_read_only_except_creating_returns(): void
@@ -304,9 +318,14 @@ class RolePermissionSeederTest extends TestCase
 
         $superAdmin = Role::query()->where('name', 'super_admin')->first();
 
-        // super_admin queda VACÍO de permisos explícitos.
-        // El acceso total se lo da Gate::before configurado por Shield
-        // (config/filament-shield.php: super_admin.intercept_gate='before').
+        // super_admin queda vacío de permisos DE ESTE SEEDER — no porque no
+        // los necesite, sino porque no es este seeder quien se los da.
+        //
+        // Ojo, acá había una afirmación falsa: decía que el acceso total se lo
+        // daba un Gate::before de Shield. Shield solo registra ese gate cuando
+        // `super_admin.define_via_gate` es true, y en este proyecto está en
+        // false. Quien le asigna TODOS los permisos es `shield:super-admin`,
+        // en la fase 5 del bootstrap (ver SystemFreshBootstrapTest).
         $this->assertSame(0, $superAdmin->permissions()->count());
     }
 
