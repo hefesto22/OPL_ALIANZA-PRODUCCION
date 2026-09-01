@@ -4,6 +4,7 @@ namespace App\Filament\Resources\Deposits\Schemas;
 
 use App\Models\Deposit;
 use App\Models\Manifest;
+use App\Services\DepositService;
 use App\Services\ReceiptImageService;
 use App\Support\WarehouseScope;
 use Carbon\Carbon;
@@ -17,6 +18,7 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
+use Illuminate\Support\Facades\Auth;
 
 class DepositForm
 {
@@ -142,6 +144,29 @@ class DepositForm
                 ->schema([
                     Grid::make(2)->schema([
 
+                        // ── Bodega del depósito ──────────────────────────
+                        // Solo aparece cuando el manifiesto elegido tiene
+                        // facturas de varias bodegas y el usuario abarca más
+                        // de una. En el caso normal (manifiesto de una sola
+                        // bodega) el servicio la deduce y este campo no se ve.
+                        Select::make('warehouse_id')
+                            ->label('Bodega del depósito')
+                            ->native(false)
+                            ->options(function (Get $get): array {
+                                $manifest = Manifest::find($get('manifest_id'));
+
+                                return $manifest === null
+                                    ? []
+                                    : app(DepositService::class)->warehouseOptions($manifest, Auth::user());
+                            })
+                            ->visible(fn (Get $get): bool => self::needsWarehouse($get))
+                            ->required(fn (Get $get): bool => self::needsWarehouse($get))
+                            ->columnSpan(2)
+                            ->helperText(
+                                'Este manifiesto tiene facturas de varias bodegas. Indicá a cuál corresponde '.
+                                'esta boleta para que el desglose por bodega la cuente donde va.'
+                            ),
+
                         TextInput::make('amount')
                             ->label('Monto a Depositar')
                             ->required()
@@ -220,6 +245,27 @@ class DepositForm
                         ->columnSpanFull(),
                 ]),
         ]);
+    }
+
+    /**
+     * ¿Hay que preguntar la bodega del depósito?
+     *
+     * Solo cuando el servicio no puede deducirla del manifiesto ni del usuario
+     * (ver DepositService::resolveWarehouseId) y además hay opciones que
+     * ofrecer. Sin manifiesto elegido todavía, no.
+     */
+    private static function needsWarehouse(Get $get): bool
+    {
+        $manifest = Manifest::find($get('manifest_id'));
+
+        if ($manifest === null) {
+            return false;
+        }
+
+        $service = app(DepositService::class);
+
+        return $service->resolveWarehouseId($manifest, Auth::user()) === null
+            && $service->warehouseOptions($manifest, Auth::user()) !== [];
     }
 
     /**

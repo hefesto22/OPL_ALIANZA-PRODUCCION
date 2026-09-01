@@ -13,10 +13,12 @@ use Illuminate\Database\Eloquent\Factories\Factory;
  * de comprobante. Los tests que necesiten un monto específico, banco
  * distinto, o un comprobante asociado, deben pasar el override en make().
  *
- * Nota: Deposit NO tiene warehouse_id propio — la pertenencia a bodega se
- * deriva siempre vía la relación manifest.warehouse_id. Cuando un test
- * necesita un depósito de bodega X, debe pasar un Manifest de esa bodega
- * vía ->for(...) o un manifest_id explícito.
+ * Nota: desde 2026-08-27 Deposit SÍ tiene `warehouse_id` propio — antes la
+ * pertenencia se derivaba de manifest.warehouse_id, que en un manifiesto
+ * multi-bodega no significa nada. El default lo deja en NULL a propósito
+ * (espeja los depósitos históricos y los que el backfill no pudo atribuir);
+ * los tests que necesiten un depósito imputado a una bodega usan
+ * ->forWarehouse($bodega).
  */
 class DepositFactory extends Factory
 {
@@ -34,6 +36,16 @@ class DepositFactory extends Factory
             'receipt_image' => null,
             'receipt_image_uploaded_at' => null,
         ];
+    }
+
+    /**
+     * Depósito imputado a una bodega concreta.
+     */
+    public function forWarehouse(\App\Models\Warehouse|int $warehouse): static
+    {
+        return $this->state(fn () => [
+            'warehouse_id' => $warehouse instanceof \App\Models\Warehouse ? $warehouse->id : $warehouse,
+        ]);
     }
 
     public function withReceipt(): static

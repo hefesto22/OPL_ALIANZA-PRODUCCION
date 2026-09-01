@@ -228,7 +228,22 @@ class DepositsRelationManager extends RelationManager
             $pending = $pending + (float) $record->amount;
         }
 
+        // ── Bodega del depósito ────────────────────────────────────────
+        // Acá el Select aparece siempre que el manifiesto tenga más de una
+        // bodega, aunque el servicio pueda deducirla — a diferencia del alta,
+        // este formulario también sirve para CORREGIR una boleta imputada a la
+        // bodega equivocada, y para eso el campo tiene que estar a la vista.
+        $warehouseOptions = $depositService->warehouseOptions($manifest, Auth::user());
+
         return [
+            Select::make('warehouse_id')
+                ->label('Bodega del depósito')
+                ->options($warehouseOptions)
+                ->native(false)
+                ->visible(count($warehouseOptions) > 1)
+                ->required(count($warehouseOptions) > 1)
+                ->helperText('A qué bodega se le acredita esta boleta en el desglose por bodega.'),
+
             TextInput::make('amount')
                 ->label('Monto')
                 ->required()

@@ -3,7 +3,10 @@
 namespace App\Services;
 
 use App\Models\Deposit;
+use App\Models\Invoice;
 use App\Models\Manifest;
+use App\Models\User;
+use App\Models\Warehouse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -69,6 +72,10 @@ class DepositService
             $deposit = Deposit::create([
                 ...$data,
                 'manifest_id' => $manifestLocked->id,
+                // La bodega puede venir del formulario (cuando hubo que
+                // preguntarla) o resolverse sola. Ver resolveWarehouseId.
+                'warehouse_id' => $data['warehouse_id']
+                    ?? $this->resolveWarehouseId($manifestLocked, User::find($userId)),
                 'amount' => $amount,
                 'created_by' => $userId,
                 'updated_by' => $userId,
@@ -288,6 +295,89 @@ class DepositService
      * Descuenta también los ajustes de centavos: un manifiesto ajustado a cero
      * no tiene nada pendiente aunque sus depósitos no lleguen al total.
      */
+    /**
+     * Bodega a la que corresponde un depósito, cuando es deducible sin adivinar.
+     *
+     * Reglas, en orden:
+     *   1. Si el manifiesto tiene UNA sola bodega, es esa. No importa quién
+     *      deposite — en un manifiesto de una bodega no hay ambigüedad posible,
+     *      y este es el 95% de los casos: nadie ve un campo nuevo.
+     *   2. Si el usuario tiene exactamente UNA de las bodegas del manifiesto,
+     *      es esa. El encargado de Santa Bárbara deposita lo de Santa Bárbara.
+     *   3. Si no (usuario global, o de varias de las bodegas del manifiesto),
+     *      devuelve NULL: hay que preguntárselo, y de eso se encarga la UI.
+     *
+     * Devolver NULL no bloquea el depósito. Se guarda sin bodega, sigue
+     * contando en el total del manifiesto —que es lo que gobierna el
+     * sobrepago y el cierre— y solo queda fuera del desglose por bodega.
+     * Preferimos un depósito sin atribuir a uno atribuido a la bodega
+     * equivocada: el primero se ve y se corrige, el segundo miente en
+     * silencio dentro de un reporte financiero.
+     */
+    public function resolveWarehouseId(Manifest $manifest, ?User $user): ?int
+    {
+        $manifestWarehouseIds = $this->manifestWarehouseIds($manifest);
+
+        if (count($manifestWarehouseIds) === 1) {
+            return $manifestWarehouseIds[0];
+        }
+
+        if ($manifestWarehouseIds === [] || $user === null) {
+            return null;
+        }
+
+        $userWarehouseIds = $user->warehouseIds();
+
+        if ($userWarehouseIds === []) {
+            return null;
+        }
+
+        $candidates = array_values(array_intersect($manifestWarehouseIds, $userWarehouseIds));
+
+        return count($candidates) === 1 ? $candidates[0] : null;
+    }
+
+    /**
+     * Opciones de bodega para el Select del formulario: las bodegas presentes
+     * en ESE manifiesto, acotadas a las del usuario si es de bodega.
+     *
+     * No se ofrecen todas las bodegas del sistema a propósito — imputarle un
+     * depósito a una bodega que no tiene facturas en el manifiesto genera una
+     * fila fantasma en el desglose.
+     *
+     * @return array<int, string> [warehouse_id => código]
+     */
+    public function warehouseOptions(Manifest $manifest, ?User $user): array
+    {
+        $ids = $this->manifestWarehouseIds($manifest);
+
+        if ($user !== null && $user->warehouseIds() !== []) {
+            $ids = array_values(array_intersect($ids, $user->warehouseIds()));
+        }
+
+        return Warehouse::query()
+            ->whereIn('id', $ids)
+            ->orderBy('code')
+            ->pluck('code', 'id')
+            ->all();
+    }
+
+    /**
+     * Bodegas con facturas vivas en el manifiesto.
+     *
+     * @return array<int, int>
+     */
+    private function manifestWarehouseIds(Manifest $manifest): array
+    {
+        return Invoice::query()
+            ->where('manifest_id', $manifest->id)
+            ->whereNotNull('warehouse_id')
+            ->distinct()
+            ->pluck('warehouse_id')
+            ->map(fn ($id): int => (int) $id)
+            ->all();
+    }
+
     public function getPendingAmount(Manifest $manifest): float
     {
         return round(max(

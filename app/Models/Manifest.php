@@ -426,11 +426,35 @@ class Manifest extends Model
             ->get()
             ->keyBy('warehouse_id');
 
+        // ── Depósitos imputados a cada bodega ──────────────────────────────
+        //
+        // Hasta 2026-08-27 `deposits` no sabía de qué bodega era la plata, así
+        // que estas dos columnas existían en la tabla pero SIEMPRE quedaban en
+        // cero. Ahora se llenan.
+        //
+        // Se excluyen los depósitos sin bodega (históricos y los que el
+        // backfill no pudo atribuir sin adivinar): cuentan en el total del
+        // manifiesto pero no se le regalan a ninguna bodega en particular.
+        //
+        // CONSECUENCIA que hay que tener presente: la suma de `difference` por
+        // bodega NO tiene por qué dar la `difference` del manifiesto. Se
+        // separan por dos cosas que viven solo a nivel manifiesto — los
+        // depósitos sin bodega y el ajuste de centavos (adjustment_amount).
+        // Por eso el desglose por bodega es informativo y el saldo global
+        // sigue gobernando el sobrepago y el cierre.
+        $depositsByWarehouse = $this->deposits()
+            ->active()
+            ->whereNotNull('warehouse_id')
+            ->selectRaw('warehouse_id, COALESCE(SUM(amount), 0) AS total_deposited')
+            ->groupBy('warehouse_id')
+            ->pluck('total_deposited', 'warehouse_id');
+
         foreach ($byWarehouse as $row) {
             $returnData = $returnsByWarehouse[$row->warehouse_id] ?? null;
             $returns = $returnData ? (float) $returnData->total_returns : 0.0;
             $returnsCount = $returnData ? (int) $returnData->returns_count : 0;
             $toDeposit = (float) $row->total - $returns;
+            $deposited = (float) ($depositsByWarehouse[$row->warehouse_id] ?? 0);
 
             ManifestWarehouseTotal::updateOrCreate(
                 [
@@ -441,6 +465,8 @@ class Manifest extends Model
                     'total_invoices' => $row->total,
                     'total_returns' => $returns,
                     'total_to_deposit' => $toDeposit,
+                    'total_deposited' => $deposited,
+                    'difference' => $toDeposit - $deposited,
                     'invoices_count' => $row->count,
                     'returns_count' => $returnsCount,
                     'clients_count' => (int) $row->clients_count,

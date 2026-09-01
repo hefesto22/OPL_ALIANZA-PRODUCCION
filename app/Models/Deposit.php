@@ -36,7 +36,7 @@ class Deposit extends Model
     }
 
     protected $fillable = [
-        'manifest_id', 'amount', 'deposit_date',
+        'manifest_id', 'warehouse_id', 'amount', 'deposit_date',
         'bank', 'reference', 'observations',
         'receipt_image', 'receipt_image_uploaded_at', 'justification',
         'cancelled_at', 'cancelled_by', 'cancellation_reason',
@@ -98,10 +98,26 @@ class Deposit extends Model
         return $this->cancelled_at !== null;
     }
 
+    /**
+     * Bodega a la que se imputa el depósito.
+     *
+     * Nullable a propósito: los depósitos anteriores a 2026-08-27 no la
+     * tienen, y los que el backfill no pudo atribuir sin adivinar tampoco.
+     * Un depósito sin bodega sigue contando en el total del manifiesto —
+     * solo no aparece en el desglose por bodega.
+     */
+    public function warehouse(): BelongsTo
+    {
+        return $this->belongsTo(Warehouse::class);
+    }
+
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
-            ->logOnly(['amount', 'deposit_date', 'bank', 'reference', 'justification'])
+            // warehouse_id se audita porque decide en qué bodega cae la plata:
+            // un cambio ahí mueve el saldo de una bodega a otra y tiene que
+            // poder atribuirse a alguien.
+            ->logOnly(['amount', 'deposit_date', 'bank', 'reference', 'justification', 'warehouse_id'])
             ->logOnlyDirty()
             ->dontSubmitEmptyLogs();
     }

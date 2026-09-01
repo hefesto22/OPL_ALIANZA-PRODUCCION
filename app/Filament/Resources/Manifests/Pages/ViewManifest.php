@@ -159,7 +159,28 @@ class ViewManifest extends ViewRecord
                     // justificación del exceso.
                     $exceedsPending = fn (Get $get): bool => round((float) ($get('amount') ?? 0), 2) > round($pending, 2);
 
+                    // ── Bodega del depósito ──────────────────────────────
+                    // Solo se pregunta cuando el servicio no puede deducirla:
+                    // manifiesto multi-bodega Y usuario que abarca más de una
+                    // (o global). En un manifiesto de una sola bodega —el caso
+                    // normal— este campo ni aparece.
+                    $warehouseId = $service->resolveWarehouseId($record, Auth::user());
+                    $warehouseOptions = $warehouseId === null
+                        ? $service->warehouseOptions($record, Auth::user())
+                        : [];
+
                     return [
+                        Select::make('warehouse_id')
+                            ->label('Bodega del depósito')
+                            ->options($warehouseOptions)
+                            ->native(false)
+                            ->required()
+                            ->visible($warehouseId === null && $warehouseOptions !== [])
+                            ->helperText(
+                                'Este manifiesto tiene facturas de varias bodegas. Indicá a cuál corresponde '.
+                                'esta boleta para que el desglose por bodega la cuente donde va.'
+                            ),
+
                         TextInput::make('amount')
                             ->label('Monto')
                             ->required()

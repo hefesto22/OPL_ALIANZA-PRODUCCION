@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\Manifests\Schemas;
 
 use App\Models\User;
+use Filament\Infolists\Components\RepeatableEntry;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
@@ -347,6 +348,113 @@ class ManifestInfolist
                             ? 'Se depositó de más. El manifiesto puede cerrarse dejando constancia del exceso.'
                             : null),
                 ]),
+
+            // ══════════════════════════════════════════════════════════════
+            // FILA 4: Resumen Financiero / Bodega
+            //
+            // Aparece SOLO en manifiestos con más de una bodega. En los de una
+            // sola —el caso normal— no se muestra nada: el Resumen Financiero
+            // de arriba ya es el de esa bodega y repetirlo sería ruido.
+            //
+            // Es INFORMATIVO. El sobrepago, el progreso de depósito y el
+            // "listo para cerrar" siguen mirando el manifiesto entero, igual
+            // que antes. Este bloque responde una sola pregunta: cuánto de esa
+            // deuda global le toca a cada bodega.
+            //
+            // Por qué hacía falta: hasta que existieron los manifiestos
+            // multi-bodega, el total del manifiesto ERA el de la bodega. Desde
+            // que dejó de serlo, el encargado de Santa Bárbara leía como suyo
+            // el saldo de todo el manifiesto.
+            // ══════════════════════════════════════════════════════════════
+            Section::make('Resumen Financiero / Bodega')
+                ->icon('heroicon-o-building-storefront')
+                ->description('Cuánto de este manifiesto le corresponde a cada bodega. El saldo que gobierna el cierre sigue siendo el total de arriba.')
+                ->columnSpanFull()
+                ->visible(fn ($record): bool => Auth::user()->hasAnyRole(['super_admin', 'admin', 'encargado', 'finance'])
+                    && $record->warehouseTotals->count() > 1
+                )
+                ->schema([
+                    RepeatableEntry::make('warehouseTotals')
+                        ->hiddenLabel()
+                        ->columnSpanFull()
+                        ->columns(6)
+                        ->schema([
+                            // La bodega del usuario se pinta distinto para que
+                            // encuentre su fila sin leer las demás.
+                            TextEntry::make('warehouse.code')
+                                ->label('Bodega')
+                                ->badge()
+                                ->color(function ($record): string {
+                                    /** @var User $user */
+                                    $user = Auth::user();
+
+                                    return in_array((int) $record->warehouse_id, $user->warehouseIds(), true)
+                                        ? 'primary'
+                                        : 'gray';
+                                }),
+
+                            TextEntry::make('total_invoices')
+                                ->label('Total')
+                                ->money('HNL'),
+
+                            TextEntry::make('total_returns')
+                                ->label('(−) Devoluciones')
+                                ->money('HNL')
+                                ->color(fn ($state): string => (float) $state > 0 ? 'danger' : 'gray'),
+
+                            TextEntry::make('total_to_deposit')
+                                ->label('(=) A Depositar')
+                                ->money('HNL')
+                                ->weight('bold')
+                                ->color('warning'),
+
+                            TextEntry::make('total_deposited')
+                                ->label('(−) Depositado')
+                                ->money('HNL')
+                                ->color('success'),
+
+                            TextEntry::make('difference')
+                                ->label('(=) Diferencia')
+                                ->money('HNL')
+                                ->weight('bold')
+                                ->color(fn ($state): string => match (true) {
+                                    (float) $state == 0.0 => 'success',
+                                    (float) $state < 0.0 => 'warning',
+                                    default => 'danger',
+                                }),
+                        ]),
+
+                    // Los depósitos sin bodega no se le regalan a ninguna: se
+                    // declaran acá para que la suma de las filas de arriba no
+                    // parezca que "pierde" plata contra el total del manifiesto.
+                    TextEntry::make('depositos_sin_bodega')
+                        ->hiddenLabel()
+                        ->columnSpanFull()
+                        ->color('warning')
+                        ->icon('heroicon-o-exclamation-triangle')
+                        ->visible(fn ($record): bool => self::unassignedDeposits($record) > 0)
+                        ->state(fn ($record): string => 'Hay HNL '.number_format(self::unassignedDeposits($record), 2)
+                            .' en depósitos sin bodega asignada. Cuentan en el total del manifiesto pero no en el '
+                            .'desglose de arriba. Se corrigen editando el depósito en la pestaña Depósitos.'),
+                ]),
         ]);
+    }
+
+    /**
+     * Depósitos activos del manifiesto que no están imputados a ninguna bodega.
+     *
+     * Son los anteriores a la columna `deposits.warehouse_id` (27/08/2026) y
+     * los que el backfill no pudo atribuir sin adivinar. Se memoiza porque el
+     * infolist consulta esto dos veces por render: una para decidir si muestra
+     * el aviso y otra para escribir el monto.
+     */
+    private static function unassignedDeposits($record): float
+    {
+        static $cache = [];
+
+        return $cache[$record->id] ??= (float) $record->deposits()
+            ->active()
+            ->whereNull('warehouse_id')
+            ->sum('amount');
     }
 }
