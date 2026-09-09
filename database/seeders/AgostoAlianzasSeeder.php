@@ -37,8 +37,8 @@ use Illuminate\Support\Facades\DB;
  *
  *  Por eso el guard es una LISTA BLANCA de hosts (APP_URL): pruebas y los
  *  de desarrollo. Cualquier otro host aborta sin escribir nada, y no hay
- *  bypass. Producción, se llame como se llame, nunca está en la lista, así
- *  que el modo de falla es "no hace nada y lo dice".
+ *  bypass. app.hozana.cloud (producción) no está en la lista y no se agrega,
+ *  así que el peor caso es "no hace nada y lo dice".
  *
  * ─────────────────────────────────────────────────────────────────────
  *  QUÉ SIEMBRA
@@ -94,7 +94,7 @@ class AgostoAlianzasSeeder extends Seeder
     /**
      * Hosts donde este seeder PUEDE correr. Lista blanca a propósito: lo que
      * no está acá, no corre. Si pruebas cambia de dominio se agrega el host
-     * nuevo — nunca se quita el candado.
+     * nuevo — nunca se quita el candado, y app.hozana.cloud nunca entra.
      *
      * @var array<int, string>
      */
