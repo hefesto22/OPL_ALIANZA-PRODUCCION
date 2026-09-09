@@ -26,6 +26,28 @@ class ApiInvoiceValidatorService
     ];
 
     /**
+     * Largo máximo de los campos que se copian tal cual a columnas con límite
+     * en BD.
+     *
+     * No es cosmético: sin este chequeo el valor viaja hasta el INSERT,
+     * Postgres responde SQLSTATE 22001 y el controller lo convierte en un 500
+     * genérico ("Error interno al procesar las facturas"). Jaremar recibe un
+     * error sin causa y hay que ir a leer el log del servidor para saber qué
+     * campo se pasó. Ocurrió el 2026-09-08: SAP mandó el NumeroManifiesto
+     * "1234-56-78T00:00:00.000Z" — 24 caracteres — y el lote murió con un 500.
+     *
+     * Los valores siguen a las migraciones y tienen que moverse con ellas:
+     *   NumeroManifiesto → manifests.number         varchar(20)
+     *   Nfactura         → invoices.invoice_number  varchar(30)
+     *
+     * @var array<string, int>
+     */
+    protected array $maxFieldLengths = [
+        'NumeroManifiesto' => 20,
+        'Nfactura' => 30,
+    ];
+
+    /**
      * Valida un array de facturas recibido por API.
      *
      * A diferencia de JsonValidatorService, este permite múltiples
@@ -62,6 +84,29 @@ class ApiInvoiceValidatorService
 
             if ($missing) {
                 $this->errors[] = "Factura #{$position}: falta el campo obligatorio '{$field}'.";
+            }
+        }
+
+        // Largo máximo. Sólo se evalúan campos presentes y con valor: si el
+        // campo falta, el foreach de arriba ya reportó la ausencia y un
+        // segundo error sobre el mismo campo nada más agrega ruido.
+        foreach ($this->maxFieldLengths as $field => $max) {
+            $value = $invoice[$field] ?? null;
+
+            if ($value === null || $value === '' || is_array($value)) {
+                continue;
+            }
+
+            $value = (string) $value;
+            $length = mb_strlen($value);
+
+            if ($length > $max) {
+                // Se devuelve el valor recibido (acotado) porque es lo que le
+                // permite a Jaremar corregir el origen sin pedirnos el log.
+                $muestra = mb_substr($value, 0, 60).(mb_strlen($value) > 60 ? '…' : '');
+
+                $this->errors[] = "Factura #{$position}: el campo '{$field}' excede el largo permitido "
+                    ."({$length} caracteres, máximo {$max}). Recibido: '{$muestra}'.";
             }
         }
 

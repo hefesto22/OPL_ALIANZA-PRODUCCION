@@ -294,4 +294,91 @@ class ApiInvoiceValidatorServiceTest extends TestCase
 
         return false;
     }
+
+    // ── Largo máximo de campos que van a columnas con límite en BD ────────
+    //
+    // Sin estos chequeos el valor llega al INSERT y Postgres tira SQLSTATE
+    // 22001, que el controller devuelve como un 500 sin causa. El caso real
+    // (2026-09-08) fue un NumeroManifiesto de 24 caracteres.
+
+    public function test_numero_manifiesto_longer_than_twenty_chars_is_rejected(): void
+    {
+        // El valor exacto que mandó SAP: "1234-56-78" serializado como
+        // timestamp ISO. 24 caracteres contra un varchar(20).
+        $result = $this->validator->validate([
+            $this->validInvoice(['NumeroManifiesto' => '1234-56-78T00:00:00.000Z']),
+        ]);
+
+        $this->assertFalse($result);
+        $this->assertStringContainsString('NumeroManifiesto', $this->validator->getFirstError());
+        $this->assertStringContainsString('24 caracteres', $this->validator->getFirstError());
+        $this->assertStringContainsString('máximo 20', $this->validator->getFirstError());
+    }
+
+    public function test_numero_manifiesto_of_exactly_twenty_chars_is_accepted(): void
+    {
+        // El límite es inclusive: 20 entra, 21 no.
+        $this->assertTrue($this->validator->validate([
+            $this->validInvoice(['NumeroManifiesto' => str_repeat('9', 20)]),
+        ]));
+    }
+
+    public function test_numero_manifiesto_of_twenty_one_chars_is_rejected(): void
+    {
+        $this->assertFalse($this->validator->validate([
+            $this->validInvoice(['NumeroManifiesto' => str_repeat('9', 21)]),
+        ]));
+    }
+
+    public function test_nfactura_longer_than_thirty_chars_is_rejected(): void
+    {
+        $result = $this->validator->validate([
+            $this->validInvoice(['Nfactura' => str_repeat('F', 31)]),
+        ]);
+
+        $this->assertFalse($result);
+        $this->assertStringContainsString('Nfactura', $this->validator->getFirstError());
+    }
+
+    public function test_nfactura_of_exactly_thirty_chars_is_accepted(): void
+    {
+        $this->assertTrue($this->validator->validate([
+            $this->validInvoice(['Nfactura' => str_repeat('F', 30)]),
+        ]));
+    }
+
+    public function test_real_jaremar_invoice_number_still_passes(): void
+    {
+        // Guard contra un límite demasiado estrecho: el formato real que manda
+        // Jaremar tiene 18 caracteres y debe seguir entrando.
+        $this->assertTrue($this->validator->validate([
+            $this->validInvoice(['Nfactura' => '002-001-01-00000027']),
+        ]));
+    }
+
+    public function test_missing_field_does_not_also_report_a_length_error(): void
+    {
+        // Un campo ausente ya se reporta como faltante; un segundo error de
+        // largo sobre el mismo campo sólo confunde a quien lee la respuesta.
+        $this->validator->validate([$this->validInvoice(['NumeroManifiesto' => null])]);
+
+        $deLargo = array_filter(
+            $this->validator->getErrors(),
+            fn (string $error) => str_contains($error, 'excede el largo')
+        );
+
+        $this->assertSame([], $deLargo);
+    }
+
+    public function test_long_value_is_truncated_in_the_error_message(): void
+    {
+        // El mensaje devuelve el valor recibido para que Jaremar corrija el
+        // origen, pero acotado: un payload basura no debe inflar la respuesta.
+        $this->validator->validate([
+            $this->validInvoice(['Nfactura' => str_repeat('X', 200)]),
+        ]);
+
+        $this->assertStringContainsString('…', $this->validator->getFirstError());
+        $this->assertLessThan(200, mb_strlen($this->validator->getFirstError()));
+    }
 }
