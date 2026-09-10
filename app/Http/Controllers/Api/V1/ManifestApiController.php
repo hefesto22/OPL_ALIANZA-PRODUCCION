@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Services\ApiInvoiceImporterService;
 use App\Services\ApiInvoiceValidatorService;
 use App\Services\ManifestDateValidator;
+use App\Support\DatabaseErrorTranslator;
 use Filament\Notifications\Notification;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
@@ -359,11 +360,34 @@ class ManifestApiController extends Controller
                 'trace' => $e->getTraceAsString(),
             ]);
 
-            return new JsonResponse([
+            // Cuerpo con la causa concreta cuando se puede identificar, en vez
+            // del mensaje genérico de siempre. Pedido de Indra el 2026-09-10:
+            // el 500 no orientaba y había que sacar la causa de la base con el
+            // batch_uuid. El STATUS sigue siendo 500 a propósito — la
+            // integración de Jaremar discrimina por status y cambiarlo a 4xx
+            // rompería su lógica sin aviso. Lo que cambia es el cuerpo.
+            // Qué se expone y qué no: ver App\Support\DatabaseErrorTranslator.
+            $causa = DatabaseErrorTranslator::translate($e);
+
+            $response = [
                 'success' => false,
-                'message' => 'Error interno al procesar las facturas. El equipo técnico ha sido notificado.',
+                'message' => $causa['mensaje'],
                 'batch_uuid' => $importRecord->batch_uuid,
-            ], 500);
+            ];
+
+            if ($causa['motivo'] !== 'ERROR_INTERNO') {
+                $response['motivo'] = $causa['motivo'];
+
+                if ($causa['ubicacion'] !== null) {
+                    $response['ubicacion'] = $causa['ubicacion'];
+                }
+
+                if ($causa['detalle'] !== null) {
+                    $response['detalle'] = $causa['detalle'];
+                }
+            }
+
+            return new JsonResponse($response, 500);
         }
     }
 
