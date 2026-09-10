@@ -851,7 +851,7 @@ class ApiInvoiceImporterService
                 $allLines[] = [
                     'invoice_id' => $invoiceId,
                     'jaremar_line_id' => $line['Id'] ?? null,
-                    'invoice_jaremar_id' => isset($line['InvoiceId']) ? (int) $line['InvoiceId'] : null,
+                    'invoice_jaremar_id' => isset($line['InvoiceId']) ? (string) $line['InvoiceId'] : null,
                     'line_number' => (int) ($line['NumeroLinea'] ?? 0),
                     'product_id' => (string) ($line['ProductoId'] ?? ''),
                     'product_description' => (string) ($line['ProductoDesc'] ?? ''),

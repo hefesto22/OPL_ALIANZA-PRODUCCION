@@ -247,7 +247,7 @@ class ManifestImporterService
                     $lineRows[] = [
                         'invoice_id' => $invoiceId,
                         'jaremar_line_id' => $lineData['Id'] ?? null,
-                        'invoice_jaremar_id' => isset($lineData['InvoiceId']) ? (int) $lineData['InvoiceId'] : null,
+                        'invoice_jaremar_id' => isset($lineData['InvoiceId']) ? (string) $lineData['InvoiceId'] : null,
                         'line_number' => (int) ($lineData['NumeroLinea'] ?? 0),
                         'product_id' => (string) ($lineData['ProductoId'] ?? ''),
                         'product_description' => (string) ($lineData['ProductoDesc'] ?? ''),
