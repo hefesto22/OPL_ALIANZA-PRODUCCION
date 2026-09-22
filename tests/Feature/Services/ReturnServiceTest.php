@@ -836,7 +836,19 @@ class ReturnServiceTest extends TestCase
     public function test_canceling_approved_return_invalidates_cache(): void
     {
         $invoice = $this->makeInvoiceWithLines();
-        $return = $this->service->createReturn($this->returnPayload($invoice, boxesToReturn: 4));
+
+        // Mismo blindaje que test_invalidates_devoluciones_cache_for_today y que
+        // el de update: cancelReturn bombea el contador de la fecha de PROCESO y
+        // el de la de EMISIÓN, e InvoiceFactory sortea invoice_date entre -15
+        // días y hoy. Cuando el sorteo cae HOY ambos bumps golpean la MISMA
+        // clave, el contador sube a 44 en vez de 43 y el test falla por azar
+        // (~1 de cada 16 corridas; se cayó en CI el 22/09/2026 después de pasar
+        // en local). Fijar la emisión lejos del día de proceso separa las claves.
+        $invoice->update(['invoice_date' => now()->subDays(3)->toDateString()]);
+
+        $return = $this->service->createReturn(
+            $this->returnPayload($invoice->fresh('lines'), boxesToReturn: 4)
+        );
 
         $this->assertSame('approved', $return->status);
         $cacheDate = $return->processed_date instanceof \DateTimeInterface
