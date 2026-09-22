@@ -255,6 +255,7 @@ return [
         'ExportExcel:Manifest',
         // Traslado de una factura entre bodegas (solo super_admin).
         'TransferWarehouse:Invoice',
+        'RegisterAfterDeadline:InvoiceReturn',
     ],
 
     /*

@@ -26,7 +26,7 @@ class InvoiceReturn extends Model
         'jaremar_return_id', 'type', 'status', 'manifest_number',
         'client_id', 'client_name',
         'return_date', 'processed_date', 'processed_time',
-        'total', 'rejection_reason',
+        'total', 'rejection_reason', 'after_deadline',
         'created_by', 'reviewed_by', 'reviewed_at',
         'cancelled_at', 'cancelled_by', 'cancellation_reason',
     ];
@@ -39,6 +39,7 @@ class InvoiceReturn extends Model
             'reviewed_at' => 'datetime',
             'cancelled_at' => 'datetime',
             'total' => 'decimal:2',
+            'after_deadline' => 'boolean',
         ];
     }
 
@@ -49,7 +50,9 @@ class InvoiceReturn extends Model
             // bodegas arrastra la devolución (InvoiceWarehouseTransferService).
             // Fuera de ese caso nunca cambia, así que logOnlyDirty lo mantiene
             // en silencio y no ensucia la bitácora.
-            ->logOnly(['type', 'status', 'total', 'return_reason_id', 'invoice_id', 'warehouse_id'])
+            // after_deadline: excepción registrada fuera de la ventana hábil.
+            // Se audita para que quede en la bitácora quién ejerció el permiso.
+            ->logOnly(['type', 'status', 'total', 'return_reason_id', 'invoice_id', 'warehouse_id', 'after_deadline'])
             ->logOnlyDirty()
             ->dontSubmitEmptyLogs();
     }

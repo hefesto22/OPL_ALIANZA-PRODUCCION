@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\Manifests\Pages\Actions;
 
 use App\Models\Invoice;
+use App\Models\Manifest;
 use App\Models\ReturnReason;
 use App\Services\ReturnService;
 use Filament\Actions\Action;
@@ -31,6 +32,21 @@ class RegistrarDevolucionAction
             ->color('danger')
             ->visible(function (Invoice $record): bool {
                 if (! in_array($record->status, ['imported', 'partial_return'])) {
+                    return false;
+                }
+
+                // Ventana hábil cerrada: el botón solo lo ve quien tiene el
+                // permiso de excepción (finanzas / super_admin). Antes se
+                // mostraba a todos y el service respondía con un toast — el
+                // usuario llenaba el modal para nada.
+                //
+                // El memo estático evita el N+1: la tabla lista facturas de UN
+                // solo manifiesto, así que son N filas contra 1 sola query.
+                static $manifests = [];
+                $manifest = $manifests[$record->manifest_id] ??= Manifest::find($record->manifest_id);
+
+                if ($manifest?->returnsWindowClosed()
+                    && ! Auth::user()?->can(ReturnService::PERMISSION_AFTER_DEADLINE)) {
                     return false;
                 }
 
@@ -102,6 +118,31 @@ class RegistrarDevolucionAction
 
                 Section::make('')
                     ->schema([
+                        // ── Aviso de excepción fuera de ventana ─────────────
+                        // Solo lo ve quien llegó hasta acá con el manifiesto ya
+                        // cerrado (permiso RegisterAfterDeadline): debe saber
+                        // que Jaremar no la recibe salvo que re-consulte la
+                        // fecha de emisión de la factura.
+                        Placeholder::make('after_deadline_warning')
+                            ->label('')
+                            ->visible(function (Invoice $record): bool {
+                                return (bool) $record->manifest?->returnsWindowClosed();
+                            })
+                            ->content(function (Invoice $record): HtmlString {
+                                $cierre = htmlspecialchars($record->manifest->returnsDeadlineLabel());
+
+                                return new HtmlString(
+                                    '<div style="border:1px solid #f59e0b;background:rgba(245,158,11,.08);'.
+                                    'border-radius:8px;padding:10px 12px;margin-bottom:8px;">'.
+                                    '<strong style="color:#f59e0b;">Devolución fuera de plazo</strong>'.
+                                    '<div style="font-size:12px;line-height:1.5;margin-top:4px;">'.
+                                    'La ventana de este manifiesto cerró el '.$cierre.'. Se registrará como '.
+                                    '<strong>excepción</strong> y quedará marcada en la bitácora. '.
+                                    'Jaremar solo la recibirá si vuelve a consultar la fecha de emisión de esta factura.'.
+                                    '</div></div>'
+                                );
+                            }),
+
                         // ── Cabecera: nombre factura + totales ──────────────
                         Placeholder::make('invoice_header')
                             ->label('')

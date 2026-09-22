@@ -7,12 +7,19 @@ use App\Models\Invoice;
 use App\Models\InvoiceReturn;
 use App\Models\Manifest;
 use App\Models\ReturnLine;
+use App\Models\User;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class ReturnService
 {
+    /**
+     * Permiso que autoriza la excepción: registrar una devolución después
+     * del cierre de la ventana hábil del manifiesto (2026-09-22).
+     */
+    public const PERMISSION_AFTER_DEADLINE = 'RegisterAfterDeadline:InvoiceReturn';
+
     public function createReturn(array $data): InvoiceReturn
     {
         // Mantenemos la transacción corta: solo escrituras críticas.
@@ -43,13 +50,29 @@ class ReturnService
             // Regla operativa 2026-07-21: las devoluciones solo pueden
             // registrarse dentro de la ventana hábil del manifiesto (lun–sáb
             // desde su llegada). Al cierre, el paquete se publica a Jaremar
-            // y queda CONGELADO — sin excepciones, para ningún rol.
+            // y queda CONGELADO.
+            //
+            // EXCEPCIÓN (2026-09-22): un usuario con el permiso
+            // `RegisterAfterDeadline:InvoiceReturn` (finanzas y super_admin)
+            // sí puede registrar después del cierre, para los casos en que la
+            // bodega olvidó capturar la devolución. La devolución queda
+            // marcada con after_deadline=true: Jaremar solo la recibirá si
+            // vuelve a consultar la fecha de EMISIÓN de esa factura.
+            //
+            // Editar y cancelar siguen congelados sin excepción — eso alteraría
+            // un paquete que el ERP ya consumió.
+            $afterDeadline = false;
+
             if ($invoice->manifest->returnsWindowClosed()) {
-                throw ValidationException::withMessages([
-                    'invoice_id' => 'La ventana para registrar devoluciones de este manifiesto cerró el '.
-                        $invoice->manifest->returnsDeadlineLabel().
-                        '. Las devoluciones ya fueron publicadas a Jaremar y no aceptan cambios.',
-                ]);
+                if (! $this->userCanRegisterAfterDeadline($data['created_by'] ?? null)) {
+                    throw ValidationException::withMessages([
+                        'invoice_id' => 'La ventana para registrar devoluciones de este manifiesto cerró el '.
+                            $invoice->manifest->returnsDeadlineLabel().
+                            '. Las devoluciones ya fueron publicadas a Jaremar y no aceptan cambios.',
+                    ]);
+                }
+
+                $afterDeadline = true;
             }
 
             $linesData = $data['lines'] ?? [];
@@ -135,6 +158,7 @@ class ReturnService
                 'processed_date' => $now->toDateString(),
                 'processed_time' => $now->format('H:i:s'),
                 'total' => $total,
+                'after_deadline' => $afterDeadline,
                 'created_by' => $data['created_by'],
                 'manifest_number' => $invoice->manifest->number,
             ]);
@@ -910,5 +934,23 @@ class ReturnService
                 }
             });
         });
+    }
+
+    /**
+     * ¿El usuario que registra puede saltarse el cierre de la ventana?
+     *
+     * La autorización se resuelve server-side a partir del id persistido en
+     * created_by — nunca de una bandera enviada por el cliente. Así, aunque
+     * alguien manipule el request, sin el permiso no hay excepción.
+     *
+     * @param  int|string|null  $userId  Autor de la devolución (created_by)
+     */
+    private function userCanRegisterAfterDeadline($userId): bool
+    {
+        if (! $userId) {
+            return false;
+        }
+
+        return User::find($userId)?->can(self::PERMISSION_AFTER_DEADLINE) ?? false;
     }
 }

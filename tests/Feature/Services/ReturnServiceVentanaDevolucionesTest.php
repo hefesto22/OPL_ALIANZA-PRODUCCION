@@ -14,6 +14,8 @@ use App\Support\BusinessDays;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use Spatie\Permission\Models\Permission;
+use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
 /**
@@ -235,5 +237,89 @@ class ReturnServiceVentanaDevolucionesTest extends TestCase
             BusinessDays::deadline('2026-07-18', (int) config('api.devoluciones_ventana_dias_habiles', 7))->timestamp,
             $manifest->returns_deadline_at->timestamp,
         );
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  Excepción autorizada (2026-09-22): RegisterAfterDeadline
+    // ═══════════════════════════════════════════════════════════════
+
+    /**
+     * Usuario con el permiso de excepción (finanzas / super_admin).
+     */
+    private function usuarioConPermisoDeExcepcion(): User
+    {
+        $user = User::factory()->create();
+
+        $user->givePermissionTo(
+            Permission::findOrCreate(ReturnService::PERMISSION_AFTER_DEADLINE, 'web')
+        );
+
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+        return $user->fresh();
+    }
+
+    public function test_ventana_cerrada_permite_registrar_con_permiso_de_excepcion(): void
+    {
+        [, $invoice, $line] = $this->makeManifestConFactura(now()->subDays(15)->toDateString());
+
+        $data = $this->createReturnData($invoice, $line);
+        $data['created_by'] = $this->usuarioConPermisoDeExcepcion()->id;
+
+        $return = $this->service()->createReturn($data);
+
+        $this->assertSame('approved', $return->status);
+        $this->assertTrue($return->after_deadline, 'La devolución tardía debe quedar marcada como excepción.');
+        $this->assertSame(1, InvoiceReturn::count());
+    }
+
+    public function test_ventana_abierta_no_marca_la_devolucion_como_excepcion(): void
+    {
+        [, $invoice, $line] = $this->makeManifestConFactura(now()->toDateString());
+
+        $data = $this->createReturnData($invoice, $line);
+        $data['created_by'] = $this->usuarioConPermisoDeExcepcion()->id;
+
+        $return = $this->service()->createReturn($data);
+
+        $this->assertFalse($return->after_deadline);
+    }
+
+    public function test_sin_permiso_la_ventana_cerrada_sigue_bloqueando_aunque_el_payload_mienta(): void
+    {
+        // El request no puede auto-autorizarse: la excepción se resuelve con
+        // el permiso del usuario en created_by, no con banderas del cliente.
+        [, $invoice, $line] = $this->makeManifestConFactura(now()->subDays(15)->toDateString());
+
+        $data = $this->createReturnData($invoice, $line);
+        $data['after_deadline'] = true;
+        $data['override_window'] = true;
+
+        $this->expectException(ValidationException::class);
+
+        try {
+            $this->service()->createReturn($data);
+        } finally {
+            $this->assertSame(0, InvoiceReturn::count());
+        }
+    }
+
+    public function test_el_permiso_de_excepcion_no_habilita_cancelar_tras_el_cierre(): void
+    {
+        // Crear y cancelar son reglas distintas: agregar una devolución tardía
+        // es recuperable (Jaremar re-consulta emisión), pero borrar una ya
+        // publicada descuadra el paquete que su ERP consumió. Sigue congelado.
+        [$manifest, $invoice, $line] = $this->makeManifestConFactura(now()->toDateString());
+
+        $data = $this->createReturnData($invoice, $line);
+        $data['created_by'] = $this->usuarioConPermisoDeExcepcion()->id;
+        $return = $this->service()->createReturn($data);
+
+        DB::table('manifests')
+            ->where('id', $manifest->id)
+            ->update(['returns_deadline_at' => now()->subMinute()]);
+
+        $this->expectException(ValidationException::class);
+        $this->service()->cancelReturn(InvoiceReturn::findOrFail($return->id), 'intento tardío');
     }
 }

@@ -150,7 +150,11 @@ class RolePermissionSeeder extends Seeder
         'finance' => [
             'Deposit' => ['ViewAny', 'View', 'Create', 'Update', 'ExportPdf', 'ExportExcel'],
             'Invoice' => ['ViewAny', 'View'],
-            'InvoiceReturn' => ['ViewAny', 'View'],
+            // RegisterAfterDeadline: finanzas es quien detecta la devolución
+            // que la bodega no alcanzó a registrar antes del cierre hábil.
+            // Es la excepción autorizada (2026-09-22) — queda marcada en
+            // returns.after_deadline y en el activity log.
+            'InvoiceReturn' => ['ViewAny', 'View', 'RegisterAfterDeadline'],
             // Pestañas financieras del manifiesto + Reporte PDF de facturas.
             // Un usuario operador+finance las ve porque finance las aporta
             // (antes el blacklist de rol 'operador' se las ocultaba — bug).

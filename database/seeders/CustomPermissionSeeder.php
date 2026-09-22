@@ -100,6 +100,14 @@ class CustomPermissionSeeder extends Seeder
         // promoverlo. Si alguna vez hace falta dárselo a alguien más, se marca
         // a mano desde Shield → Roles → Permisos personalizados.
         'TransferWarehouse:Invoice',      // acción "Cambiar bodega"
+
+        // ── Excepción a la ventana de devoluciones (2026-09-22) ─────
+        // Registrar una devolución después del cierre hábil del manifiesto.
+        // El paquete ya se publicó a Jaremar, así que la devolución tardía
+        // solo le llega si vuelve a consultar la fecha de EMISIÓN — por eso
+        // es excepcional y queda marcada (returns.after_deadline). Se asigna
+        // a `finance` y al super_admin; NO a operador ni encargado.
+        'RegisterAfterDeadline:InvoiceReturn',
     ];
 
     public function run(): void
