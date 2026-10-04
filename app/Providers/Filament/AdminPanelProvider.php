@@ -2,6 +2,7 @@
 
 namespace App\Providers\Filament;
 
+use App\Support\Edt\EdtModule;
 use BezhanSalleh\FilamentShield\FilamentShieldPlugin;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
@@ -72,12 +73,16 @@ class AdminPanelProvider extends PanelProvider
              * de cada Resource, pero sin icono ni orden controlado. Aquí los
              * declaramos para:
              *   1. Asignar icono a cada header (mejora jerarquía visual).
-             *   2. Fijar el orden (Configuración → Administración → Permisos).
+             *   2. Fijar el orden (EDT Sistema → Configuración → Administración
+             *      → Permisos). EDT Sistema es el módulo EDT, que funciona aparte
+             *      del flujo de Jaremar; su nombre vive en EdtModule.
              *   3. Renombrar "Filament Shield" → "Permisos" sin tocar el plugin
              *      (NavigationGroup::make($name) matchea por nombre interno;
              *      ->label() controla el display).
              */
             ->navigationGroups([
+                NavigationGroup::make(EdtModule::NAVIGATION_GROUP)
+                    ->icon('heroicon-o-truck'),
                 NavigationGroup::make('Configuración')
                     ->icon('heroicon-o-cog-6-tooth'),
                 NavigationGroup::make('Administración')

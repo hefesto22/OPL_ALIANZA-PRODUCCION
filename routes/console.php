@@ -88,8 +88,10 @@ Schedule::call(function () {
 
 // ── Limpieza de activity_log (retención 90 días) ────────────────────────
 // Los registros de auditoría mayores a 90 días se eliminan para evitar
-// inflar la base de datos. El detalle técnico de importaciones API se
-// conserva en api_invoice_imports y api_invoice_import_conflicts.
+// inflar la base de datos. Excepción: la bitácora del módulo EDT
+// (log_name 'edt') es permanente — ver PruneActivityLog::PERMANENT_LOG_NAMES.
+// El detalle técnico de importaciones API se conserva en api_invoice_imports
+// y api_invoice_import_conflicts.
 Schedule::command('activitylog:prune --days=90')
     ->dailyAt('03:30')
     ->name('limpiar-activity-log')
