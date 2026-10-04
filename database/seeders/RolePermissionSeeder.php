@@ -67,6 +67,8 @@ class RolePermissionSeeder extends Seeder
     private const MODELS = [
         'Activity',
         'Deposit',
+        'EdtPriceTier',
+        'EdtProduct',
         'EdtSupplier',
         'Invoice',
         'InvoiceReturn',
@@ -100,6 +102,8 @@ class RolePermissionSeeder extends Seeder
             // lo usan super_admin y admin; los demás roles se agregan cuando
             // se definan (desde Shield o en esta matriz).
             'EdtSupplier' => ['ViewAny', 'View', 'Create', 'Update', 'Delete'],
+            'EdtProduct' => ['ViewAny', 'View', 'Create', 'Update', 'ChangePrice'],
+            'EdtPriceTier' => ['ViewAny', 'View', 'Create', 'Update', 'Delete'],
             'Invoice' => ['ViewAny', 'View', 'Update', 'Delete', 'Restore'],
             'InvoiceReturn' => ['ViewAny', 'View', 'Create', 'Update', 'Delete', 'Restore', 'ExportPdf', 'ExportExcel'],
             'Manifest' => [

@@ -3,12 +3,16 @@
 namespace App\Models\Edt;
 
 use App\Casts\Uppercase;
+use App\Models\Edt\Concerns\SavesAtomically;
+use App\Observers\Edt\EdtSupplierObserver;
 use App\Support\Edt\EdtModule;
 use App\Traits\HasAuditFields;
 use Database\Factories\Edt\EdtSupplierFactory;
+use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Spatie\Activitylog\Contracts\Activity;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
@@ -26,6 +30,10 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * Excepción: el correo va en minúsculas — la parte antes de la @ distingue
  * mayúsculas en algunos servidores y en mayúsculas podría no llegar.
  *
+ * Cambiar operation_discount_pct cambia el costo de todos sus productos:
+ * EdtSupplierObserver escribe una fila de historial por producto, en la
+ * misma transacción (SavesAtomically).
+ *
  * @property int $id
  * @property string $code
  * @property string $name
@@ -33,10 +41,11 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * @property string $operation_discount_pct
  * @property bool $is_active
  */
+#[ObservedBy([EdtSupplierObserver::class])]
 class EdtSupplier extends Model
 {
     /** @use HasFactory<EdtSupplierFactory> */
-    use HasAuditFields, HasFactory, LogsActivity;
+    use HasAuditFields, HasFactory, LogsActivity, SavesAtomically;
 
     protected $table = 'edt_suppliers';
 
@@ -93,6 +102,11 @@ class EdtSupplier extends Model
                 return $digits === '' ? null : $digits;
             },
         );
+    }
+
+    public function products(): HasMany
+    {
+        return $this->hasMany(EdtProduct::class, 'supplier_id');
     }
 
     public function getActivitylogOptions(): LogOptions

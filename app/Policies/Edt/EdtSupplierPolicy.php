@@ -39,8 +39,14 @@ class EdtSupplierPolicy
         return $authUser->can('Update:EdtSupplier');
     }
 
+    /**
+     * Un proveedor con productos no se borra (la FK edt_products.supplier_id
+     * es restrict): se desactiva. Se valida aquí para que el botón ni
+     * aparezca, en lugar de dejar que la BD rechace el borrado.
+     */
     public function delete(AuthUser $authUser, EdtSupplier $edtSupplier): bool
     {
-        return $authUser->can('Delete:EdtSupplier');
+        return $authUser->can('Delete:EdtSupplier')
+            && ! $edtSupplier->products()->exists();
     }
 }

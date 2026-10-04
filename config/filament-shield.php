@@ -256,6 +256,8 @@ return [
         // Traslado de una factura entre bodegas (solo super_admin).
         'TransferWarehouse:Invoice',
         'RegisterAfterDeadline:InvoiceReturn',
+        // EDT: cambiar el precio de un producto (acción «Cambiar precio»).
+        'ChangePrice:EdtProduct',
     ],
 
     /*

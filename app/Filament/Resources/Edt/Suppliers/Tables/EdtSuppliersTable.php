@@ -40,6 +40,12 @@ class EdtSuppliersTable
                     ->placeholder('—')
                     ->toggleable(),
 
+                TextColumn::make('products_count')
+                    ->label('Productos')
+                    ->counts('products')
+                    ->alignCenter()
+                    ->sortable(),
+
                 TextColumn::make('operation_discount_pct')
                     ->label('Desc. operación')
                     ->numeric(decimalPlaces: 2)

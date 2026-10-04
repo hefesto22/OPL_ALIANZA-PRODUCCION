@@ -4,6 +4,8 @@ namespace Tests\Feature\Edt;
 
 use App\Models\Edt\EdtSupplier;
 use App\Models\User;
+use App\Policies\Edt\EdtPriceTierPolicy;
+use App\Policies\Edt\EdtProductPolicy;
 use App\Policies\Edt\EdtSupplierPolicy;
 use Database\Seeders\EdtPermissionSeeder;
 use Database\Seeders\RolePermissionSeeder;
@@ -121,6 +123,8 @@ class EdtPermissionSeederTest extends TestCase
         // (Accion:Modelo en PascalCase), la misma que usa shield:generate.
         $policies = [
             'EdtSupplier' => EdtSupplierPolicy::class,
+            'EdtProduct' => EdtProductPolicy::class,
+            'EdtPriceTier' => EdtPriceTierPolicy::class,
         ];
 
         $this->assertSame(array_keys(EdtPermissionSeeder::PERMISSIONS_BY_MODEL), array_keys($policies));

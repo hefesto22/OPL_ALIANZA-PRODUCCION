@@ -45,7 +45,7 @@ class RolePermissionSeederTest extends TestCase
     private function seedShieldPermissions(): void
     {
         $models = [
-            'Activity', 'Deposit', 'EdtSupplier', 'Invoice', 'InvoiceReturn', 'Manifest',
+            'Activity', 'Deposit', 'EdtPriceTier', 'EdtProduct', 'EdtSupplier', 'Invoice', 'InvoiceReturn', 'Manifest',
             'ReturnReason', 'Role', 'User', 'Warehouse',
         ];
 
@@ -316,7 +316,7 @@ class RolePermissionSeederTest extends TestCase
      * super_admin lo recibe de shield:super-admin / EdtPermissionSeeder).
      * Los roles de bodega no ven el EDT hasta que el negocio lo defina.
      */
-    public function test_edt_suppliers_only_for_admin(): void
+    public function test_edt_only_for_admin(): void
     {
         $this->seedShieldPermissions();
         $this->seed(RolePermissionSeeder::class);
@@ -327,10 +327,18 @@ class RolePermissionSeederTest extends TestCase
         $admin = $perms('admin');
         foreach (['ViewAny', 'View', 'Create', 'Update', 'Delete'] as $action) {
             $this->assertContains("{$action}:EdtSupplier", $admin);
+            $this->assertContains("{$action}:EdtPriceTier", $admin);
         }
+        foreach (['ViewAny', 'View', 'Create', 'Update', 'ChangePrice'] as $action) {
+            $this->assertContains("{$action}:EdtProduct", $admin);
+        }
+        // Un producto con historial no se borra: nadie tiene Delete:EdtProduct.
+        $this->assertNotContains('Delete:EdtProduct', $admin);
 
         foreach (['encargado', 'operador', 'finance'] as $role) {
-            $this->assertNotContains('ViewAny:EdtSupplier', $perms($role), "{$role} no debería ver el EDT.");
+            foreach (['ViewAny:EdtSupplier', 'ViewAny:EdtProduct', 'ViewAny:EdtPriceTier', 'ChangePrice:EdtProduct'] as $permission) {
+                $this->assertNotContains($permission, $perms($role), "{$role} no debería ver el EDT.");
+            }
         }
     }
 

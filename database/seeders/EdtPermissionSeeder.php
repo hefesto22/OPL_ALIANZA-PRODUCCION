@@ -49,6 +49,10 @@ class EdtPermissionSeeder extends Seeder
      */
     public const PERMISSIONS_BY_MODEL = [
         'EdtSupplier' => ['ViewAny', 'View', 'Create', 'Update', 'Delete'],
+        // Sin Delete: un producto con historial se desactiva. ChangePrice es
+        // custom (también en CustomPermissionSeeder para los bootstraps).
+        'EdtProduct' => ['ViewAny', 'View', 'Create', 'Update', 'ChangePrice'],
+        'EdtPriceTier' => ['ViewAny', 'View', 'Create', 'Update', 'Delete'],
     ];
 
     /**
