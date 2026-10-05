@@ -6,6 +6,7 @@ namespace App\Policies\Edt;
 
 use App\Models\Edt\EdtClient;
 use App\Policies\Concerns\HandlesWarehouseScope;
+use App\Services\Edt\EdtSellerZones;
 use Illuminate\Auth\Access\HandlesAuthorization;
 use Illuminate\Foundation\Auth\User as AuthUser;
 
@@ -17,6 +18,9 @@ use Illuminate\Foundation\Auth\User as AuthUser;
  * línea de defensa: el listado ya viene filtrado por WarehouseScope en
  * EdtClientResource::getEloquentQuery(), y esto cubre el acceso por URL o
  * por acción directa. Los usuarios globales (admin, super_admin) ven todos.
+ *
+ * Un vendedor (rol vendedor_edt) además solo ve los clientes de los
+ * municipios de sus rutas vigentes (EdtSellerZones).
  *
  * Solo las 5 acciones que usa el Resource (ver EdtPermissionSeeder).
  */
@@ -33,7 +37,8 @@ class EdtClientPolicy
     public function view(AuthUser $authUser, EdtClient $edtClient): bool
     {
         return $authUser->can('View:EdtClient')
-            && $this->userOwnsRecord($authUser, $edtClient);
+            && $this->userOwnsRecord($authUser, $edtClient)
+            && EdtSellerZones::userCanSee($authUser, $edtClient);
     }
 
     public function create(AuthUser $authUser): bool
@@ -44,7 +49,8 @@ class EdtClientPolicy
     public function update(AuthUser $authUser, EdtClient $edtClient): bool
     {
         return $authUser->can('Update:EdtClient')
-            && $this->userOwnsRecord($authUser, $edtClient);
+            && $this->userOwnsRecord($authUser, $edtClient)
+            && EdtSellerZones::userCanSee($authUser, $edtClient);
     }
 
     /**
@@ -55,6 +61,7 @@ class EdtClientPolicy
     public function delete(AuthUser $authUser, EdtClient $edtClient): bool
     {
         return $authUser->can('Delete:EdtClient')
-            && $this->userOwnsRecord($authUser, $edtClient);
+            && $this->userOwnsRecord($authUser, $edtClient)
+            && EdtSellerZones::userCanSee($authUser, $edtClient);
     }
 }

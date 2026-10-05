@@ -39,7 +39,7 @@ class EdtClientResourceTest extends TestCase
     {
         parent::setUp();
 
-        foreach (['super_admin', 'admin', 'encargado'] as $role) {
+        foreach (['super_admin', 'admin', 'encargado', 'operador'] as $role) {
             Role::create(['name' => $role, 'guard_name' => 'web']);
         }
         $this->seed(EdtPermissionSeeder::class);
@@ -68,10 +68,11 @@ class EdtClientResourceTest extends TestCase
 
     public function test_un_usuario_sin_permisos_del_edt_recibe_403(): void
     {
-        $encargado = User::factory()->forWarehouse($this->oac)->create(['is_active' => true]);
-        $encargado->assignRole('encargado');
+        // operador: entra al panel pero no tiene permisos del EDT.
+        $operador = User::factory()->forWarehouse($this->oac)->create(['is_active' => true]);
+        $operador->assignRole('operador');
 
-        $this->actingAs($encargado)
+        $this->actingAs($operador)
             ->get(EdtClientResource::getUrl('index'))
             ->assertForbidden();
     }

@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Support\Edt\EdtModule;
 use BezhanSalleh\FilamentShield\Support\Utils;
 use Illuminate\Database\Seeder;
 use Spatie\Permission\Models\Role;
@@ -35,6 +36,8 @@ class RoleSeeder extends Seeder
         //    encargado    → Supervisor de bodega, corrige errores de su equipo
         //    operador     → Operador, consulta manifiestos y devoluciones (impresión)
         //    finance      → Finanzas, registra depósitos
+        //    vendedor_edt → Vendedor de ruta del EDT: solo los clientes de
+        //                   los municipios de sus rutas (EdtSellerZones)
         //
         $roles = [
             Utils::getSuperAdminName(), // super_admin
@@ -42,6 +45,7 @@ class RoleSeeder extends Seeder
             'encargado',
             'operador',
             'finance',
+            EdtModule::SELLER_ROLE,
         ];
 
         foreach ($roles as $role) {

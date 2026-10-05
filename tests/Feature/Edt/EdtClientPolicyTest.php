@@ -25,7 +25,7 @@ class EdtClientPolicyTest extends TestCase
     {
         parent::setUp();
 
-        foreach (['super_admin', 'admin', 'encargado'] as $role) {
+        foreach (['super_admin', 'admin', 'encargado', 'operador'] as $role) {
             Role::create(['name' => $role, 'guard_name' => 'web']);
         }
         $this->seed(EdtPermissionSeeder::class);
@@ -70,7 +70,8 @@ class EdtClientPolicyTest extends TestCase
     public function test_sin_permiso_no_puede_nada_aunque_sea_de_su_bodega(): void
     {
         $user = User::factory()->forWarehouse($this->oac)->create();
-        $user->assignRole('encargado');
+        // operador: rol de bodega sin permisos del EDT.
+        $user->assignRole('operador');
         $client = EdtClient::factory()->create(['warehouse_id' => $this->oac->id]);
 
         $this->assertFalse($user->can('viewAny', EdtClient::class));

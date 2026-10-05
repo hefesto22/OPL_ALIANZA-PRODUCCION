@@ -20,7 +20,7 @@ use Tests\TestCase;
  *  1. Guard de entorno: APP_ENV=production sin flag → aborta.
  *  2. Guard de confirmación: respuesta != BORRAR → aborta sin tocar BD.
  *  3. Validación de credenciales del super_admin (email/password) — flags.
- *  4. Ejecución completa: deja BD con 11 usuarios + 5 roles + permisos.
+ *  4. Ejecución completa: deja BD con 11 usuarios + 6 roles + permisos.
  *  5. super_admin queda con rol asignado y password hasheado.
  *
  * Los tests E2E (test_full_run_*) NO usan RefreshDatabase porque el
@@ -157,9 +157,9 @@ class SystemFreshBootstrapTest extends TestCase
 
         // ── Roles ────────────────────────────────────────────────
         $this->assertSame(
-            5,
+            6,
             Role::query()->count(),
-            'Deben existir los 5 roles: super_admin, admin, encargado, operador, finance.'
+            'Deben existir los 6 roles: super_admin, admin, encargado, operador, finance, vendedor_edt.'
         );
 
         // ── Permisos Shield generados y asignados ────────────────
@@ -303,7 +303,7 @@ class SystemFreshBootstrapTest extends TestCase
 
         // Aun en "producción" simulada, deja el sistema listo
         $this->assertSame(13, User::query()->count());
-        $this->assertSame(5, Role::query()->count());
+        $this->assertSame(6, Role::query()->count());
     }
 
     /**

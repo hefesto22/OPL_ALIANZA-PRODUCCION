@@ -8,12 +8,15 @@ use App\Models\Edt\EdtPriceTier;
 use App\Models\Edt\EdtProduct;
 use App\Services\Edt\EdtPricingService;
 use Filament\Actions\EditAction;
+use Filament\Support\Enums\FontWeight;
+use Filament\Tables\Columns\ColumnGroup;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Auth;
 
 /**
  * Listado del catálogo con los precios YA calculados (EdtPricingService).
@@ -22,24 +25,31 @@ use Illuminate\Database\Eloquent\Builder;
  * memorizan en el modelo (EdtProduct::priceQuote), así que 25 filas son 25
  * cálculos en memoria + 1 consulta de escalas. Por eso esas columnas no se
  * pueden ordenar; se ordena por precio de lista, que mueve a todas igual.
+ *
+ * Diseño: cada celda lleva el dato principal arriba y el secundario
+ * debajo en gris (producto → código; costo → lista; detalle caja → precio
+ * por unidad), así la columna Producto conserva el ancho aun en una
+ * laptop de 1280 px. Cifras de ancho fijo para que los montos se lean
+ * en columna.
  */
 class EdtProductsTable
 {
+    /** Cifras de ancho fijo: los montos quedan alineados por dígito. */
+    private const NUMERIC_STYLE = ['style' => 'font-variant-numeric: tabular-nums'];
+
     public static function configure(Table $table): Table
     {
         return $table
+            ->description('Precios con ISV incluido. El precio mayorista se aplica por cajas del mismo código.')
             ->columns([
-                TextColumn::make('code')
-                    ->label('Código')
-                    ->searchable()
-                    ->sortable()
-                    ->weight('bold'),
-
                 TextColumn::make('description')
-                    ->label('Descripción')
-                    ->searchable()
+                    ->label('Producto')
+                    ->searchable(['code', 'description'])
                     ->sortable()
-                    ->wrap(),
+                    ->weight(FontWeight::Medium)
+                    ->wrap()
+                    ->grow()
+                    ->description(fn (EdtProduct $record): string => self::productDetails($record)),
 
                 TextColumn::make('supplier.code')
                     ->label('Proveedor')
@@ -57,46 +67,59 @@ class EdtProductsTable
 
                 TextColumn::make('units_per_box')
                     ->label('U×C')
-                    ->alignCenter(),
+                    ->headerTooltip('Unidades por caja')
+                    ->alignCenter()
+                    ->visibleFrom('md')
+                    ->extraAttributes(self::NUMERIC_STYLE),
 
                 TextColumn::make('isv_pct')
                     ->label('ISV')
                     ->badge()
-                    ->color(fn ($state): string => (float) $state > 0 ? 'info' : 'gray')
+                    ->alignCenter()
+                    ->color(fn ($state): string => match ((int) $state) {
+                        0 => 'gray',
+                        18 => 'warning',
+                        default => 'info',
+                    })
                     ->formatStateUsing(fn ($state): string => EdtPriceDisplay::isv($state)),
 
-                TextColumn::make('list_price')
-                    ->label('Lista sin ISV')
-                    ->formatStateUsing(fn ($state): string => EdtPriceDisplay::listPrice($state))
-                    ->alignEnd()
-                    ->sortable(),
-
+                // Costo por unidad arriba y, debajo, la lista del proveedor de la
+                // que sale. Ordenar por lista mueve igual a todos los precios.
                 TextColumn::make('unit_cost')
                     ->label('Costo unidad')
+                    ->headerTooltip('Lista del proveedor menos el descuento de operación, más ISV')
                     ->state(fn (EdtProduct $record): string => $record->priceQuote()->unitCost)
                     ->formatStateUsing(fn ($state): string => EdtPriceDisplay::money($state))
+                    ->description(fn (EdtProduct $record): string => 'Lista '.EdtPriceDisplay::listPrice($record->list_price))
+                    ->color('gray')
                     ->alignEnd()
-                    ->toggleable(),
-
-                TextColumn::make('retail_unit_price')
-                    ->label('Detalle unidad')
-                    ->state(fn (EdtProduct $record): string => $record->priceQuote()->retailUnitPrice)
-                    ->formatStateUsing(fn ($state): string => EdtPriceDisplay::money($state))
-                    ->alignEnd(),
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => $query->orderBy('list_price', $direction))
+                    ->visibleFrom('lg')
+                    // El costo (y el margen) del EDT no es para el vendedor de ruta.
+                    ->visible(fn (): bool => ! self::isSeller())
+                    ->extraAttributes(self::NUMERIC_STYLE),
 
                 TextColumn::make('retail_box_price')
                     ->label('Detalle caja')
                     ->state(fn (EdtProduct $record): string => $record->priceQuote()->retailBoxPrice)
                     ->formatStateUsing(fn ($state): string => EdtPriceDisplay::money($state))
-                    ->alignEnd(),
+                    ->description(fn (EdtProduct $record): string => EdtPriceDisplay::money($record->priceQuote()->retailUnitPrice).' c/u')
+                    ->tooltip(fn (EdtProduct $record): ?string => self::isSeller() ? null : 'Margen '.$record->priceQuote()->retailMarginPct.'%')
+                    ->weight(FontWeight::SemiBold)
+                    ->alignEnd()
+                    ->extraAttributes(self::NUMERIC_STYLE),
 
-                ...self::wholesaleColumns(),
+                ColumnGroup::make('Mayorista por caja', self::wholesaleColumns())
+                    ->alignCenter(),
 
                 IconColumn::make('is_active')
                     ->label('Activo')
-                    ->boolean(),
+                    ->boolean()
+                    ->alignCenter()
+                    ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->defaultSort('description')
+            ->striped()
             ->filters([
                 SelectFilter::make('supplier_id')
                     ->label('Proveedor')
@@ -124,8 +147,12 @@ class EdtProductsTable
                     ->falseLabel('Inactivos'),
             ])
             ->recordActions([
-                ChangePriceAction::make(),
-                EditAction::make(),
+                ChangePriceAction::make()
+                    ->iconButton()
+                    ->tooltip('Cambiar precio'),
+                EditAction::make()
+                    ->iconButton()
+                    ->tooltip('Editar'),
             ])
             ->modifyQueryUsing(fn (Builder $query): Builder => $query->with('supplier:id,code,name,operation_discount_pct'))
             ->paginated([10, 25, 50, 100])
@@ -133,7 +160,30 @@ class EdtProductsTable
     }
 
     /**
-     * Una columna por escala mayorista activa ("MAYORISTA 1 (25+ CJ)"), precio por caja.
+     * Vendedor de ruta del EDT: ve precios de venta, no costo ni margen.
+     */
+    private static function isSeller(): bool
+    {
+        return Auth::user()?->edtSeller !== null;
+    }
+
+    /**
+     * Segunda línea de la columna Producto: "28000052 · BEBIDAS · LATA".
+     * Un producto inactivo lo dice ahí mismo, sin ocupar otra columna.
+     */
+    private static function productDetails(EdtProduct $record): string
+    {
+        return collect([
+            $record->code,
+            $record->category,
+            $record->presentation,
+            $record->is_active ? null : 'INACTIVO',
+        ])->filter(fn (?string $part): bool => filled($part))->implode(' · ');
+    }
+
+    /**
+     * Una columna por escala mayorista activa ("25+ cajas"), precio por caja.
+     * El nombre de la escala y su descuento van en el tooltip del encabezado.
      *
      * @return list<TextColumn>
      */
@@ -142,10 +192,17 @@ class EdtProductsTable
         return app(EdtPricingService::class)
             ->activeTiers()
             ->map(fn (EdtPriceTier $tier): TextColumn => TextColumn::make("wholesale_{$tier->id}")
-                ->label("{$tier->name} ({$tier->min_boxes}+ CJ)")
+                ->label("{$tier->min_boxes}+ cajas")
+                ->headerTooltip("{$tier->name}: ".(float) $tier->discount_pct."% de descuento desde {$tier->min_boxes} cajas del mismo código")
                 ->state(fn (EdtProduct $record): ?string => $record->priceQuote()->wholesaleForTier($tier->id)['box_price'] ?? null)
                 ->formatStateUsing(fn ($state): string => EdtPriceDisplay::money($state))
-                ->alignEnd())
+                ->tooltip(fn (EdtProduct $record): ?string => match (true) {
+                    self::isSeller() => $tier->name,
+                    ($margin = $record->priceQuote()->wholesaleForTier($tier->id)['margin_pct'] ?? null) !== null => "{$tier->name} · margen {$margin}%",
+                    default => null,
+                })
+                ->alignEnd()
+                ->extraAttributes(self::NUMERIC_STYLE))
             ->values()
             ->all();
     }

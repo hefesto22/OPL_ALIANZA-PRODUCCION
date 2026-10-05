@@ -114,6 +114,12 @@ class CustomPermissionSeeder extends Seeder
         // Update:EdtProduct: editar la descripción no es mover precios.
         // En entornos existentes lo provee EdtPermissionSeeder.
         'ChangePrice:EdtProduct',
+
+        // ── Módulo EDT: vendedor de una ruta (2026-10-04) ───────────
+        // Asignar, quitar o cancelar el vendedor de una ruta. Aparte de
+        // Update:EdtRoute porque cambia qué clientes ve cada vendedor.
+        // En entornos existentes lo provee EdtPermissionSeeder.
+        'AssignSeller:EdtRoute',
     ];
 
     public function run(): void

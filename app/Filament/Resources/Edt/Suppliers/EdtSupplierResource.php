@@ -37,7 +37,7 @@ class EdtSupplierResource extends Resource
 
     protected static ?string $pluralModelLabel = 'Proveedores';
 
-    protected static ?int $navigationSort = 1;
+    protected static ?int $navigationSort = 4;
 
     public static function getNavigationGroup(): ?string
     {

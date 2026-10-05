@@ -3,25 +3,30 @@
 namespace App\Filament\Resources\Edt\Clients\Tables;
 
 use App\Models\Edt\EdtClient;
+use App\Models\Edt\EdtRoute;
 use App\Models\Geo\Department;
 use App\Models\Geo\Municipality;
 use App\Models\Warehouse;
+use App\Services\Edt\EdtSellerZones;
 use App\Support\WarehouseScope;
 use Filament\Actions\EditAction;
 use Filament\Support\Enums\FontWeight;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Auth;
 
 /**
  * Listado de clientes del EDT, con el mismo estilo que el de productos:
  * dato principal arriba y el secundario debajo en gris.
  *
- * Ya llega filtrado por bodega (EdtClientResource::getEloquentQuery); el
- * filtro de Bodega solo ofrece las bodegas del usuario.
+ * Ya llega filtrado por bodega y, para un vendedor, por sus zonas
+ * (EdtClientResource::getEloquentQuery). El vendedor tiene además el
+ * filtro "Solo ruta de hoy"; los demás, el filtro por ruta.
  */
 class EdtClientsTable
 {
@@ -43,7 +48,9 @@ class EdtClientsTable
                     ->badge()
                     ->color('gray')
                     ->tooltip(fn (EdtClient $record): ?string => $record->warehouse?->name)
-                    ->alignCenter(),
+                    ->alignCenter()
+                    // El vendedor solo tiene su bodega: la columna no le dice nada.
+                    ->visible(fn (): bool => Auth::user()?->edtSeller === null),
 
                 TextColumn::make('municipality.name')
                     ->label('Zona')
@@ -86,6 +93,41 @@ class EdtClientsTable
             ->defaultSort('name')
             ->striped()
             ->filters([
+                // Vendedor: los clientes de las rutas que se visitan hoy.
+                Filter::make('today_route')
+                    ->label('Solo ruta de hoy')
+                    ->toggle()
+                    ->visible(fn (): bool => Auth::user()?->edtSeller !== null)
+                    ->query(fn (Builder $query): Builder => EdtSellerZones::applyToClients(
+                        $query,
+                        Auth::user()->edtSeller,
+                        onlyVisitDay: true,
+                    )),
+
+                // Admin / encargado: los clientes que cubre una ruta.
+                SelectFilter::make('route')
+                    ->label('Ruta')
+                    ->visible(fn (): bool => Auth::user()?->edtSeller === null)
+                    ->options(fn (): array => WarehouseScope::apply(EdtRoute::query())
+                        ->with('warehouse:id,code')
+                        ->orderBy('name')
+                        ->get(['id', 'name', 'warehouse_id'])
+                        ->mapWithKeys(fn (EdtRoute $route): array => [$route->id => "{$route->name} · {$route->warehouse->code}"])
+                        ->all())
+                    ->query(function (Builder $query, array $data): Builder {
+                        $route = filled($data['value'] ?? null)
+                            ? WarehouseScope::apply(EdtRoute::query())->find($data['value'])
+                            : null;
+
+                        if ($route === null) {
+                            return $query;
+                        }
+
+                        return $query
+                            ->where('edt_clients.warehouse_id', $route->warehouse_id)
+                            ->whereIn('edt_clients.municipality_id', $route->municipalities()->select('hn_municipalities.id'));
+                    }),
+
                 SelectFilter::make('warehouse_id')
                     ->label('Bodega')
                     ->options(fn (): array => WarehouseScope::apply(Warehouse::query(), 'id')

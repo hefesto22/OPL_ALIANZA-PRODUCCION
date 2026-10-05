@@ -35,7 +35,7 @@ class EdtProductResourceTest extends TestCase
     {
         parent::setUp();
 
-        foreach (['super_admin', 'admin', 'encargado'] as $role) {
+        foreach (['super_admin', 'admin', 'encargado', 'operador'] as $role) {
             Role::create(['name' => $role, 'guard_name' => 'web']);
         }
         $this->seed(EdtPermissionSeeder::class);
@@ -58,21 +58,69 @@ class EdtProductResourceTest extends TestCase
             ->get(EdtProductResource::getUrl('index'))
             ->assertOk()
             ->assertSee('CR GALLO LATA 350ML CT')
+            ->assertSee('28000052')            // código, debajo de la descripción
             ->assertSee('L 422.40')            // detalle por caja
+            ->assertSee('L 17.60 c/u')         // detalle por unidad, debajo de la caja
+            ->assertSee('Lista L 17.60')       // lista sin ISV, debajo del costo
             ->assertSee('L 410.00')            // MAYORISTA 1
-            ->assertSee('MAYORISTA 2 (50+ CJ)');
+            ->assertSee('Mayorista por caja')
+            ->assertSee('50+ cajas');
 
         $this->assertSame('/edt/productos', parse_url(EdtProductResource::getUrl('index'), PHP_URL_PATH));
     }
 
     public function test_un_usuario_sin_permisos_del_edt_recibe_403(): void
     {
-        $encargado = User::factory()->create(['is_active' => true]);
-        $encargado->assignRole('encargado');
+        // operador: entra al panel pero no tiene permisos del EDT.
+        $operador = User::factory()->create(['is_active' => true]);
+        $operador->assignRole('operador');
 
-        $this->actingAs($encargado)
+        $this->actingAs($operador)
             ->get(EdtProductResource::getUrl('index'))
             ->assertForbidden();
+    }
+
+    public function test_el_buscador_encuentra_por_codigo_y_por_descripcion(): void
+    {
+        $gallo = $this->gallo();
+        $otro = EdtProduct::factory()->for($this->supplier, 'supplier')->create([
+            'code' => '27000266',
+            'description' => 'INCAPARINA ATOL',
+        ]);
+
+        $this->actingAs($this->admin);
+
+        Livewire::test(ListEdtProducts::class)
+            ->searchTable('28000052')
+            ->assertCanSeeTableRecords([$gallo])
+            ->assertCanNotSeeTableRecords([$otro])
+            ->searchTable('incaparina')
+            ->assertCanSeeTableRecords([$otro])
+            ->assertCanNotSeeTableRecords([$gallo]);
+    }
+
+    public function test_un_producto_inactivo_lo_dice_en_la_fila(): void
+    {
+        $this->gallo()->update(['is_active' => false, 'category' => 'BEBIDAS', 'presentation' => null]);
+
+        $this->actingAs($this->admin)
+            ->get(EdtProductResource::getUrl('index'))
+            ->assertOk()
+            ->assertSee('28000052 · BEBIDAS · INACTIVO');
+    }
+
+    public function test_ordenar_por_costo_ordena_por_precio_de_lista(): void
+    {
+        $caro = EdtProduct::factory()->for($this->supplier, 'supplier')->create(['list_price' => '50.00']);
+        $barato = EdtProduct::factory()->for($this->supplier, 'supplier')->create(['list_price' => '10.00']);
+
+        $this->actingAs($this->admin);
+
+        Livewire::test(ListEdtProducts::class)
+            ->sortTable('unit_cost')
+            ->assertCanSeeTableRecords([$barato, $caro], inOrder: true)
+            ->sortTable('unit_cost', 'desc')
+            ->assertCanSeeTableRecords([$caro, $barato], inOrder: true);
     }
 
     public function test_el_listado_filtra_por_isv(): void

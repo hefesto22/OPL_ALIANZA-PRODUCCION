@@ -28,5 +28,12 @@ final class EdtModule
      */
     public const LOG_NAME = 'edt';
 
+    /**
+     * Rol de los vendedores de ruta del EDT. Cada vendedor tiene su propio
+     * usuario con este rol, amarrado a su bodega; solo ve los clientes de
+     * los municipios de sus rutas vigentes (EdtSellerZones).
+     */
+    public const SELLER_ROLE = 'vendedor_edt';
+
     private function __construct() {}
 }

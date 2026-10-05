@@ -7,7 +7,10 @@ use App\Models\User;
 use App\Policies\Edt\EdtClientPolicy;
 use App\Policies\Edt\EdtPriceTierPolicy;
 use App\Policies\Edt\EdtProductPolicy;
+use App\Policies\Edt\EdtRoutePolicy;
+use App\Policies\Edt\EdtSellerPolicy;
 use App\Policies\Edt\EdtSupplierPolicy;
+use App\Support\Edt\EdtModule;
 use Database\Seeders\EdtPermissionSeeder;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -55,12 +58,49 @@ class EdtPermissionSeederTest extends TestCase
         }
     }
 
-    public function test_no_le_da_permisos_del_edt_a_los_roles_de_bodega(): void
+    public function test_operador_y_finance_no_reciben_nada_del_edt(): void
     {
         $this->seed(EdtPermissionSeeder::class);
 
-        foreach (['encargado', 'operador', 'finance'] as $roleName) {
+        foreach (['operador', 'finance'] as $roleName) {
             $this->assertSame(0, Role::findByName($roleName)->permissions()->count());
+        }
+    }
+
+    public function test_el_encargado_recibe_solo_su_bloque_del_edt(): void
+    {
+        $this->seed(EdtPermissionSeeder::class);
+
+        $permissions = Role::findByName('encargado')->permissions->pluck('name')->all();
+
+        $this->assertEqualsCanonicalizing(
+            EdtPermissionSeeder::namesFor(EdtPermissionSeeder::ROLE_PERMISSIONS['encargado']),
+            $permissions,
+        );
+        // Lo que queda para el admin: borrar y mover precios.
+        foreach (['Delete:EdtClient', 'Delete:EdtRoute', 'ChangePrice:EdtProduct', 'ViewAny:EdtSupplier'] as $permission) {
+            $this->assertNotContains($permission, $permissions);
+        }
+    }
+
+    public function test_crea_el_rol_vendedor_con_su_bloque(): void
+    {
+        $this->assertNull(Role::query()->where('name', EdtModule::SELLER_ROLE)->first());
+
+        $this->seed(EdtPermissionSeeder::class);
+
+        $this->assertEqualsCanonicalizing(
+            ['ViewAny:EdtClient', 'View:EdtClient', 'ViewAny:EdtProduct', 'View:EdtProduct'],
+            Role::findByName(EdtModule::SELLER_ROLE)->permissions->pluck('name')->all(),
+        );
+    }
+
+    public function test_los_bloques_por_rol_son_subconjunto_de_los_permisos_del_edt(): void
+    {
+        foreach (EdtPermissionSeeder::ROLE_PERMISSIONS as $role => $permissionsByModel) {
+            foreach (EdtPermissionSeeder::namesFor($permissionsByModel) as $permission) {
+                $this->assertContains($permission, EdtPermissionSeeder::permissionNames(), "{$role}: {$permission}");
+            }
         }
     }
 
@@ -127,6 +167,8 @@ class EdtPermissionSeederTest extends TestCase
             'EdtProduct' => EdtProductPolicy::class,
             'EdtPriceTier' => EdtPriceTierPolicy::class,
             'EdtClient' => EdtClientPolicy::class,
+            'EdtSeller' => EdtSellerPolicy::class,
+            'EdtRoute' => EdtRoutePolicy::class,
         ];
 
         $this->assertSame(array_keys(EdtPermissionSeeder::PERMISSIONS_BY_MODEL), array_keys($policies));
@@ -158,6 +200,17 @@ class EdtPermissionSeederTest extends TestCase
 
         foreach (EdtPermissionSeeder::PERMISSIONS_BY_MODEL as $model => $actions) {
             $this->assertSame($actions, $matrix['admin'][$model] ?? null, "Matriz del admin para {$model}.");
+        }
+
+        // Encargado y vendedor: su bloque del EDT en la matriz es el mismo.
+        foreach (EdtPermissionSeeder::ROLE_PERMISSIONS as $role => $permissionsByModel) {
+            $edtInMatrix = array_filter(
+                $matrix[$role] ?? [],
+                fn (string $model): bool => str_starts_with($model, 'Edt'),
+                ARRAY_FILTER_USE_KEY,
+            );
+
+            $this->assertEqualsCanonicalizing($permissionsByModel, $edtInMatrix, "Matriz de {$role}.");
         }
     }
 }

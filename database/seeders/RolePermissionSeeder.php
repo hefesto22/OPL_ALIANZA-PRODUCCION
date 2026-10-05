@@ -70,6 +70,8 @@ class RolePermissionSeeder extends Seeder
         'EdtClient',
         'EdtPriceTier',
         'EdtProduct',
+        'EdtRoute',
+        'EdtSeller',
         'EdtSupplier',
         'Invoice',
         'InvoiceReturn',
@@ -108,6 +110,8 @@ class RolePermissionSeeder extends Seeder
             // Clientes del EDT: cada uno es de una bodega (la Policy filtra
             // por bodega para los usuarios de bodega; el admin es global).
             'EdtClient' => ['ViewAny', 'View', 'Create', 'Update', 'Delete'],
+            'EdtSeller' => ['ViewAny', 'View', 'Create', 'Update'],
+            'EdtRoute' => ['ViewAny', 'View', 'Create', 'Update', 'Delete', 'AssignSeller'],
             'Invoice' => ['ViewAny', 'View', 'Update', 'Delete', 'Restore'],
             'InvoiceReturn' => ['ViewAny', 'View', 'Create', 'Update', 'Delete', 'Restore', 'ExportPdf', 'ExportExcel'],
             'Manifest' => [
@@ -141,6 +145,14 @@ class RolePermissionSeeder extends Seeder
             ],
             'ReturnReason' => ['ViewAny', 'View'],
             'Warehouse' => ['ViewAny', 'View'],
+            // Módulo EDT (fase 4): el encargado maneja clientes, vendedores y
+            // rutas de SU bodega (las Policies filtran) y consulta el
+            // catálogo. Borrar y cambiar precios queda para el admin.
+            // Mismo bloque que EdtPermissionSeeder::ROLE_PERMISSIONS.
+            'EdtClient' => ['ViewAny', 'View', 'Create', 'Update'],
+            'EdtSeller' => ['ViewAny', 'View', 'Create', 'Update'],
+            'EdtRoute' => ['ViewAny', 'View', 'Create', 'Update', 'AssignSeller'],
+            'EdtProduct' => ['ViewAny', 'View'],
         ],
 
         // ── operador: trabajo diario de bodega ─────────────────────
@@ -184,6 +196,14 @@ class RolePermissionSeeder extends Seeder
                 'ReportPdf', 'ReportPdfSinIsv', 'ExportExcel',
             ],
             'Warehouse' => ['ViewAny', 'View'],
+        ],
+
+        // ── vendedor_edt: vendedor de ruta del EDT ─────────────────
+        // Desde el celular: consulta sus clientes (EdtSellerZones los limita
+        // a los municipios de sus rutas) y el catálogo con precios.
+        'vendedor_edt' => [
+            'EdtClient' => ['ViewAny', 'View'],
+            'EdtProduct' => ['ViewAny', 'View'],
         ],
     ];
 

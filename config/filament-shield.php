@@ -258,6 +258,7 @@ return [
         'RegisterAfterDeadline:InvoiceReturn',
         // EDT: cambiar el precio de un producto (acción «Cambiar precio»).
         'ChangePrice:EdtProduct',
+        'AssignSeller:EdtRoute',
     ],
 
     /*

@@ -8,6 +8,7 @@ use App\Filament\Resources\Edt\Clients\Pages\ListEdtClients;
 use App\Filament\Resources\Edt\Clients\Schemas\EdtClientForm;
 use App\Filament\Resources\Edt\Clients\Tables\EdtClientsTable;
 use App\Models\Edt\EdtClient;
+use App\Services\Edt\EdtSellerZones;
 use App\Support\Edt\EdtModule;
 use App\Support\WarehouseScope;
 use BackedEnum;
@@ -16,14 +17,17 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Auth;
 
 /**
  * Clientes del módulo EDT (grupo "EDT Sistema").
  *
  * Cada cliente es de una bodega: el listado, la búsqueda global y la
  * apertura por URL pasan por getEloquentQuery(), que aplica WarehouseScope
- * (un usuario de OAC no ve clientes de OAS). EdtClientPolicy repite el
- * chequeo por registro como segunda línea de defensa.
+ * (un usuario de OAC no ve clientes de OAS) y, si el usuario es vendedor,
+ * EdtSellerZones (solo los municipios de sus rutas vigentes).
+ * EdtClientPolicy repite ambos chequeos por registro como segunda línea
+ * de defensa.
  */
 class EdtClientResource extends Resource
 {
@@ -49,7 +53,10 @@ class EdtClientResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        return WarehouseScope::apply(parent::getEloquentQuery());
+        return EdtSellerZones::applyForUser(
+            WarehouseScope::apply(parent::getEloquentQuery()),
+            Auth::user(),
+        );
     }
 
     public static function form(Schema $schema): Schema
