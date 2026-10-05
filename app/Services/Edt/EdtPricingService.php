@@ -83,6 +83,36 @@ class EdtPricingService
     }
 
     /**
+     * Precio de lista SIN ISV a partir del precio por unidad CON ISV (lo que
+     * escriben para agilizar): precio ÷ (1 + ISV), a 4 decimales.
+     *
+     * Con 4 decimales, el detalle por unidad que sale de esa lista es
+     * exactamente el precio escrito: el error del redondeo (≤ 0.00005 × 1.18)
+     * no alcanza a mover el segundo decimal.
+     *
+     * $currentListPrice: si la lista actual ya da ese mismo precio con ISV,
+     * se devuelve la lista actual tal cual. Ir y volver por el precio con
+     * ISV no siempre da el mismo número (17.86 → 20.54 → 17.8609), y abrir
+     * «Cambiar precio» y guardar sin tocar nada no debe mover la lista ni
+     * escribir historial.
+     */
+    public function listPriceFromRetail(string $retailUnitPrice, string $isvPct, ?string $currentListPrice = null): string
+    {
+        $retail = BigDecimal::of($retailUnitPrice);
+        $isvFactor = $this->factorFromPct($isvPct, add: true);
+
+        if ($currentListPrice !== null) {
+            $current = BigDecimal::of($currentListPrice);
+
+            if ($current->multipliedBy($isvFactor)->toScale(2, RoundingMode::HalfUp)->isEqualTo($retail)) {
+                return (string) $current->toScale(4, RoundingMode::HalfUp);
+            }
+        }
+
+        return (string) $retail->dividedBy($isvFactor, 4, RoundingMode::HalfUp);
+    }
+
+    /**
      * Precios de un producto con su proveedor y las escalas activas.
      */
     public function quoteForProduct(EdtProduct $product): EdtPriceQuote

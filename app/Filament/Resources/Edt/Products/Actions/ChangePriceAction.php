@@ -4,6 +4,7 @@ namespace App\Filament\Resources\Edt\Products\Actions;
 
 use App\Enums\Edt\PriceChangeReason;
 use App\Filament\Resources\Edt\Products\Support\EdtPriceDisplay;
+use App\Filament\Resources\Edt\Products\Support\PriceInputFields;
 use App\Models\Edt\EdtProduct;
 use App\Services\Edt\EdtProductPriceService;
 use Filament\Actions\Action;
@@ -36,24 +37,17 @@ class ChangePriceAction
             ->modalDescription(fn (EdtProduct $record): string => $record->description)
             ->modalSubmitActionLabel('Guardar precio')
             ->fillForm(fn (EdtProduct $record): array => [
-                'list_price' => (string) $record->list_price,
+                // Arranca con el precio con ISV vigente (el detalle por unidad).
+                PriceInputFields::INCLUDES_ISV => true,
+                PriceInputFields::PRICE => $record->priceQuote()->retailUnitPrice,
                 'units_per_box' => $record->units_per_box,
                 'isv_pct' => (string) (int) $record->isv_pct,
                 'reason' => PriceChangeReason::ListaProveedor->value,
             ])
             ->schema([
-                TextInput::make('list_price')
-                    ->label('Precio de lista sin ISV')
-                    ->required()
-                    ->numeric()
-                    ->minValue(0.0001)
-                    ->step(0.0001)
-                    ->maxValue(99999999)
-                    // Máximo 4 decimales: es lo que guarda la BD. Sin esta regla la vista
-                    // previa calcularía con más decimales que lo que se guarda.
-                    ->rule('decimal:0,4')
-                    ->prefix('L')
-                    ->live(onBlur: true),
+                PriceInputFields::includesIsvToggle(),
+
+                PriceInputFields::priceInput(),
 
                 TextInput::make('units_per_box')
                     ->label('Unidades por caja')
@@ -85,7 +79,12 @@ class ChangePriceAction
                     ->state(fn (Get $get, EdtProduct $record): HtmlString|string => EdtPriceDisplay::previewTable(
                         EdtPriceDisplay::quoteFromInput(
                             $record->supplier_id,
-                            $get('list_price'),
+                            PriceInputFields::listPriceFromInput(
+                                $get(PriceInputFields::PRICE),
+                                $get(PriceInputFields::INCLUDES_ISV),
+                                $get('isv_pct'),
+                                (string) $record->list_price,
+                            ),
                             $get('units_per_box'),
                             $get('isv_pct'),
                         ),
@@ -95,7 +94,8 @@ class ChangePriceAction
             ->action(function (EdtProduct $record, array $data): void {
                 $changed = app(EdtProductPriceService::class)->changePrice(
                     product: $record,
-                    listPrice: (string) $data['list_price'],
+                    // Si el precio con ISV no cambió, la lista vigente queda igual.
+                    listPrice: (string) PriceInputFields::listPriceFromState($data, (string) $record->list_price),
                     unitsPerBox: (int) $data['units_per_box'],
                     isvPct: (string) $data['isv_pct'],
                     reason: PriceChangeReason::from($data['reason']),

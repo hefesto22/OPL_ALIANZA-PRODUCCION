@@ -4,6 +4,7 @@ namespace App\Filament\Resources\Edt\Products\Schemas;
 
 use App\Casts\Uppercase;
 use App\Filament\Resources\Edt\Products\Support\EdtPriceDisplay;
+use App\Filament\Resources\Edt\Products\Support\PriceInputFields;
 use App\Models\Edt\EdtProduct;
 use App\Models\Edt\EdtSupplier;
 use Filament\Forms\Components\Select;
@@ -19,7 +20,9 @@ use Illuminate\Support\HtmlString;
  * Formulario de productos del EDT.
  *
  * Al CREAR se capturan también los datos que mueven el precio (proveedor,
- * precio de lista, unidades por caja, ISV). Al EDITAR esos campos quedan
+ * precio, unidades por caja, ISV). El precio se escribe con ISV por defecto
+ * (PriceInputFields) y CreateEdtProduct lo convierte a la lista sin ISV que
+ * se guarda. Al EDITAR esos campos quedan
  * bloqueados: se cambian con la acción "Cambiar precio", que pide motivo y
  * deja la fila en el historial. Un campo disabled no se envía, así que no se
  * pueden colar por el formulario de edición.
@@ -84,20 +87,20 @@ class EdtProductForm
                     : null)
                 ->columns(3)
                 ->schema([
+                    PriceInputFields::includesIsvToggle()
+                        ->visibleOn('create')
+                        ->columnSpanFull(),
+
+                    PriceInputFields::priceInput()
+                        ->visibleOn('create'),
+
+                    // En edición solo se muestra (bloqueado) lo que está guardado.
                     TextInput::make('list_price')
                         ->label('Precio de lista sin ISV')
-                        ->helperText('El del proveedor (columna "PVD - ISV" del Excel). Es también el precio al detalle sin ISV.')
-                        ->required()
-                        ->numeric()
-                        ->minValue(0.0001)
-                        ->step(0.0001)
-                        ->maxValue(99999999)
-                        // Máximo 4 decimales: es lo que guarda la BD. Sin esta regla la vista
-                        // previa calcularía con más decimales que lo que se guarda.
-                        ->rule('decimal:0,4')
+                        ->helperText('Lo que se guarda; de aquí salen todos los precios.')
                         ->prefix('L')
-                        ->live(onBlur: true)
-                        ->disabled(fn (string $operation): bool => $operation === 'edit'),
+                        ->visibleOn('edit')
+                        ->disabled(),
 
                     TextInput::make('units_per_box')
                         ->label('Unidades por caja')
@@ -123,7 +126,11 @@ class EdtProductForm
                             ? EdtPriceDisplay::previewTable($record->priceQuote())
                             : EdtPriceDisplay::previewTable(EdtPriceDisplay::quoteFromInput(
                                 $get('supplier_id'),
-                                $get('list_price'),
+                                PriceInputFields::listPriceFromInput(
+                                    $get(PriceInputFields::PRICE),
+                                    $get(PriceInputFields::INCLUDES_ISV),
+                                    $get('isv_pct'),
+                                ),
                                 $get('units_per_box'),
                                 $get('isv_pct'),
                             )))

@@ -156,7 +156,8 @@ class EdtProductResourceTest extends TestCase
                 'code' => '27000266',
                 'description' => 'Incaparina atol c/amino orgnl 450g',
                 'category' => 'alimentos',
-                'list_price' => '29.20',
+                'price_includes_isv' => false,
+                'price' => '29.20',
                 'units_per_box' => 50,
                 'isv_pct' => '15',
             ])
@@ -164,6 +165,7 @@ class EdtProductResourceTest extends TestCase
             ->assertHasNoFormErrors();
 
         $product = EdtProduct::query()->where('code', '27000266')->sole();
+        $this->assertSame('29.2000', $product->list_price);
         $this->assertSame('INCAPARINA ATOL C/AMINO ORGNL 450G', $product->description);
         $this->assertSame('15.00', $product->isv_pct);
 
@@ -173,6 +175,31 @@ class EdtProductResourceTest extends TestCase
         $this->assertSame('33.58', $history->retail_unit_price);
         $this->assertSame('1679.00', $history->retail_box_price);
         $this->assertSame($this->admin->id, $history->created_by);
+    }
+
+    public function test_el_alta_con_precio_con_isv_calcula_la_lista_sin_isv(): void
+    {
+        $this->actingAs($this->admin);
+
+        Livewire::test(CreateEdtProduct::class)
+            ->assertFormSet(['price_includes_isv' => true])
+            ->fillForm([
+                'supplier_id' => $this->supplier->id,
+                'code' => '27000300',
+                'description' => 'Producto de prueba',
+                'price' => '30',
+                'units_per_box' => 24,
+                'isv_pct' => '15',
+            ])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $product = EdtProduct::query()->where('code', '27000300')->sole();
+        // 30 ÷ 1.15 = 26.0869565… → 26.0870; el detalle vuelve a ser 30.00 exacto.
+        $this->assertSame('26.0870', $product->list_price);
+        $this->assertSame('30.00', $product->priceQuote()->retailUnitPrice);
+        $this->assertSame('720.00', $product->priceQuote()->retailBoxPrice);
+        $this->assertSame('30.00', $product->priceHistory()->sole()->retail_unit_price);
     }
 
     public function test_valida_los_datos_del_producto(): void
@@ -185,14 +212,14 @@ class EdtProductResourceTest extends TestCase
                 'supplier_id' => $this->supplier->id,
                 'code' => ' 28000052 ',     // repetido, con espacios
                 'description' => 'X',
-                'list_price' => '0',
+                'price' => '0',
                 'units_per_box' => 0,
                 'isv_pct' => '12',
             ])
             ->call('create')
             ->assertHasFormErrors([
                 'code' => 'unique',
-                'list_price',
+                'price',
                 'units_per_box',
                 'isv_pct',
             ]);
@@ -200,31 +227,35 @@ class EdtProductResourceTest extends TestCase
         $this->assertSame(1, EdtProduct::query()->count());
     }
 
-    public function test_el_precio_de_lista_acepta_maximo_4_decimales(): void
+    public function test_sin_isv_acepta_4_decimales_y_con_isv_solo_centavos(): void
     {
         $gallo = $this->gallo();
         $this->actingAs($this->admin);
 
-        Livewire::test(CreateEdtProduct::class)
+        $create = fn (array $price) => Livewire::test(CreateEdtProduct::class)
             ->fillForm([
                 'supplier_id' => $this->supplier->id,
                 'code' => '99999999',
                 'description' => 'X',
-                'list_price' => '8.69565',
                 'units_per_box' => 25,
                 'isv_pct' => '15',
+                ...$price,
             ])
-            ->call('create')
-            ->assertHasFormErrors(['list_price' => 'decimal']);
+            ->call('create');
+
+        $create(['price_includes_isv' => false, 'price' => '8.69565'])->assertHasFormErrors(['price' => 'decimal']);
+        $create(['price_includes_isv' => true, 'price' => '10.005'])->assertHasFormErrors(['price' => 'decimal']);
+        $create(['price_includes_isv' => false, 'price' => '8.6957'])->assertHasNoFormErrors();
 
         Livewire::test(ListEdtProducts::class)
             ->callTableAction('changePrice', $gallo, data: [
-                'list_price' => '8.69565',
+                'price_includes_isv' => false,
+                'price' => '8.69565',
                 'units_per_box' => 24,
                 'isv_pct' => '0',
                 'reason' => PriceChangeReason::Correccion->value,
             ])
-            ->assertHasTableActionErrors(['list_price' => 'decimal']);
+            ->assertHasTableActionErrors(['price' => 'decimal']);
     }
 
     // ── Edición ─────────────────────────────────────────────────────
@@ -275,7 +306,7 @@ class EdtProductResourceTest extends TestCase
 
         Livewire::test(ListEdtProducts::class)
             ->callTableAction('changePrice', $gallo, data: [
-                'list_price' => '21.28',
+                'price' => '21.28',
                 'units_per_box' => 24,
                 'isv_pct' => '0',
                 'reason' => PriceChangeReason::ListaProveedor->value,
@@ -298,7 +329,7 @@ class EdtProductResourceTest extends TestCase
 
         Livewire::test(EditEdtProduct::class, ['record' => $gallo->getRouteKey()])
             ->callAction('changePrice', data: [
-                'list_price' => '21.28',
+                'price' => '21.28',
                 'units_per_box' => 24,
                 'isv_pct' => '0',
                 'reason' => PriceChangeReason::FacturaCompra->value,
@@ -309,6 +340,49 @@ class EdtProductResourceTest extends TestCase
         $this->assertSame(2, $gallo->priceHistory()->count());
     }
 
+    public function test_cambiar_precio_arranca_con_el_precio_con_isv_vigente(): void
+    {
+        $product = EdtProduct::factory()->for($this->supplier, 'supplier')->create([
+            'list_price' => '20.00',
+            'units_per_box' => 12,
+            'isv_pct' => 15,
+        ]);
+        $this->actingAs($this->admin);
+
+        Livewire::test(ListEdtProducts::class)
+            ->mountTableAction('changePrice', $product)
+            ->assertTableActionDataSet([
+                'price_includes_isv' => true,
+                'price' => '23.00',
+            ])
+            ->setTableActionData(['price' => '30', 'reason' => PriceChangeReason::ListaProveedor->value])
+            ->callMountedTableAction()
+            ->assertHasNoTableActionErrors();
+
+        $this->assertSame('26.0870', $product->fresh()->list_price);
+        $this->assertSame('30.00', $product->fresh()->priceQuote()->retailUnitPrice);
+    }
+
+    public function test_guardar_sin_cambiar_el_precio_con_isv_no_mueve_la_lista(): void
+    {
+        // 17.86 × 1.15 = 20.539 → 20.54; 20.54 ÷ 1.15 = 17.8609. Ir y volver
+        // cambiaría la lista: abrir y guardar sin tocar no debe registrar nada.
+        $product = EdtProduct::factory()->for($this->supplier, 'supplier')->create([
+            'list_price' => '17.86',
+            'units_per_box' => 12,
+            'isv_pct' => 15,
+        ]);
+        $this->actingAs($this->admin);
+
+        Livewire::test(ListEdtProducts::class)
+            ->callTableAction('changePrice', $product, data: ['reason' => PriceChangeReason::ListaProveedor->value])
+            ->assertHasNoTableActionErrors()
+            ->assertNotified('Sin cambios');
+
+        $this->assertSame('17.8600', $product->fresh()->list_price);
+        $this->assertSame(1, $product->priceHistory()->count());
+    }
+
     public function test_el_motivo_es_obligatorio(): void
     {
         $gallo = $this->gallo();
@@ -316,7 +390,7 @@ class EdtProductResourceTest extends TestCase
 
         Livewire::test(ListEdtProducts::class)
             ->callTableAction('changePrice', $gallo, data: [
-                'list_price' => '21.28',
+                'price' => '21.28',
                 'units_per_box' => 24,
                 'isv_pct' => '0',
                 'reason' => null,

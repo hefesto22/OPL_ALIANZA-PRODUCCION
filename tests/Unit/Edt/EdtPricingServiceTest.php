@@ -130,6 +130,48 @@ class EdtPricingServiceTest extends TestCase
         $this->assertSame('100.3000', $quote->unitCost);
     }
 
+    public function test_lista_desde_el_precio_con_isv(): void
+    {
+        $pricing = new EdtPricingService;
+
+        $this->assertSame('26.0870', $pricing->listPriceFromRetail('30', '15'));
+        $this->assertSame('25.4237', $pricing->listPriceFromRetail('30', '18'));
+        $this->assertSame('30.0000', $pricing->listPriceFromRetail('30', '0'));
+    }
+
+    public function test_el_precio_con_isv_escrito_vuelve_exacto_como_detalle(): void
+    {
+        // Para cualquier precio en centavos, la lista calculada da de vuelta
+        // exactamente ese detalle por unidad (0.01 a 300.00, con 0, 15 y 18%).
+        $pricing = new EdtPricingService;
+
+        foreach (['0', '15', '18'] as $isv) {
+            for ($cents = 1; $cents <= 30000; $cents++) {
+                $price = number_format($cents / 100, 2, '.', '');
+                $list = $pricing->listPriceFromRetail($price, $isv);
+
+                $this->assertSame(
+                    $price,
+                    $pricing->quote($list, 1, $isv, '15', [])->retailUnitPrice,
+                    "ISV {$isv}%: {$price} → lista {$list}",
+                );
+            }
+        }
+    }
+
+    public function test_si_el_precio_con_isv_no_cambia_se_conserva_la_lista_vigente(): void
+    {
+        $pricing = new EdtPricingService;
+
+        // 17.86 × 1.15 = 20.539 → 20.54, pero 20.54 ÷ 1.15 = 17.8609.
+        $this->assertSame('17.8609', $pricing->listPriceFromRetail('20.54', '15'));
+        $this->assertSame('17.8600', $pricing->listPriceFromRetail('20.54', '15', currentListPrice: '17.86'));
+        // Si el precio sí cambió, la lista vigente no importa.
+        $this->assertSame('26.0870', $pricing->listPriceFromRetail('30.00', '15', currentListPrice: '17.86'));
+        // Con otro ISV, la lista vigente solo se conserva si da el mismo precio.
+        $this->assertSame('17.8600', $pricing->listPriceFromRetail('21.07', '18', currentListPrice: '17.86'));
+    }
+
     public function test_sin_escalas_no_hay_precios_mayoristas(): void
     {
         $quote = (new EdtPricingService)->quote('17.60', 24, '0', '15', []);
