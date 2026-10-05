@@ -45,7 +45,7 @@ class RolePermissionSeederTest extends TestCase
     private function seedShieldPermissions(): void
     {
         $models = [
-            'Activity', 'Deposit', 'EdtPriceTier', 'EdtProduct', 'EdtSupplier', 'Invoice', 'InvoiceReturn', 'Manifest',
+            'Activity', 'Deposit', 'EdtClient', 'EdtPriceTier', 'EdtProduct', 'EdtSupplier', 'Invoice', 'InvoiceReturn', 'Manifest',
             'ReturnReason', 'Role', 'User', 'Warehouse',
         ];
 
@@ -328,6 +328,7 @@ class RolePermissionSeederTest extends TestCase
         foreach (['ViewAny', 'View', 'Create', 'Update', 'Delete'] as $action) {
             $this->assertContains("{$action}:EdtSupplier", $admin);
             $this->assertContains("{$action}:EdtPriceTier", $admin);
+            $this->assertContains("{$action}:EdtClient", $admin);
         }
         foreach (['ViewAny', 'View', 'Create', 'Update', 'ChangePrice'] as $action) {
             $this->assertContains("{$action}:EdtProduct", $admin);
@@ -336,7 +337,7 @@ class RolePermissionSeederTest extends TestCase
         $this->assertNotContains('Delete:EdtProduct', $admin);
 
         foreach (['encargado', 'operador', 'finance'] as $role) {
-            foreach (['ViewAny:EdtSupplier', 'ViewAny:EdtProduct', 'ViewAny:EdtPriceTier', 'ChangePrice:EdtProduct'] as $permission) {
+            foreach (['ViewAny:EdtSupplier', 'ViewAny:EdtProduct', 'ViewAny:EdtPriceTier', 'ChangePrice:EdtProduct', 'ViewAny:EdtClient'] as $permission) {
                 $this->assertNotContains($permission, $perms($role), "{$role} no debería ver el EDT.");
             }
         }

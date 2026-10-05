@@ -53,6 +53,9 @@ class EdtPermissionSeeder extends Seeder
         // custom (también en CustomPermissionSeeder para los bootstraps).
         'EdtProduct' => ['ViewAny', 'View', 'Create', 'Update', 'ChangePrice'],
         'EdtPriceTier' => ['ViewAny', 'View', 'Create', 'Update', 'Delete'],
+        // Clientes: la Policy además limita a los usuarios de bodega a sus
+        // propias bodegas (HandlesWarehouseScope).
+        'EdtClient' => ['ViewAny', 'View', 'Create', 'Update', 'Delete'],
     ];
 
     /**

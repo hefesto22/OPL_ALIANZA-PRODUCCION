@@ -67,6 +67,7 @@ class RolePermissionSeeder extends Seeder
     private const MODELS = [
         'Activity',
         'Deposit',
+        'EdtClient',
         'EdtPriceTier',
         'EdtProduct',
         'EdtSupplier',
@@ -104,6 +105,9 @@ class RolePermissionSeeder extends Seeder
             'EdtSupplier' => ['ViewAny', 'View', 'Create', 'Update', 'Delete'],
             'EdtProduct' => ['ViewAny', 'View', 'Create', 'Update', 'ChangePrice'],
             'EdtPriceTier' => ['ViewAny', 'View', 'Create', 'Update', 'Delete'],
+            // Clientes del EDT: cada uno es de una bodega (la Policy filtra
+            // por bodega para los usuarios de bodega; el admin es global).
+            'EdtClient' => ['ViewAny', 'View', 'Create', 'Update', 'Delete'],
             'Invoice' => ['ViewAny', 'View', 'Update', 'Delete', 'Restore'],
             'InvoiceReturn' => ['ViewAny', 'View', 'Create', 'Update', 'Delete', 'Restore', 'ExportPdf', 'ExportExcel'],
             'Manifest' => [

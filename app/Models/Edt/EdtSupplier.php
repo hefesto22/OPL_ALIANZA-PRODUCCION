@@ -3,6 +3,7 @@
 namespace App\Models\Edt;
 
 use App\Casts\Uppercase;
+use App\Models\Edt\Concerns\HasRtn;
 use App\Models\Edt\Concerns\SavesAtomically;
 use App\Observers\Edt\EdtSupplierObserver;
 use App\Support\Edt\EdtModule;
@@ -13,7 +14,6 @@ use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Spatie\Activitylog\Contracts\Activity;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 
@@ -27,6 +27,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * ViewAny:EdtSupplier, distinguible en la pantalla de Roles.
  *
  * Todo el texto se guarda en MAYÚSCULAS (cast Uppercase), regla del EDT.
+ * El RTN (solo dígitos, enmascarado en la bitácora) lo maneja HasRtn.
  * Excepción: el correo va en minúsculas — la parte antes de la @ distingue
  * mayúsculas en algunos servidores y en mayúsculas podría no llegar.
  *
@@ -45,7 +46,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
 class EdtSupplier extends Model
 {
     /** @use HasFactory<EdtSupplierFactory> */
-    use HasAuditFields, HasFactory, LogsActivity, SavesAtomically;
+    use HasAuditFields, HasFactory, HasRtn, LogsActivity, SavesAtomically;
 
     protected $table = 'edt_suppliers';
 
@@ -89,21 +90,6 @@ class EdtSupplier extends Model
         );
     }
 
-    /**
-     * El RTN se guarda solo con dígitos: acepta "0501-1990-123456" desde el
-     * formulario y guarda "05011990123456". El CHECK de la tabla exige 14.
-     */
-    protected function rtn(): Attribute
-    {
-        return Attribute::make(
-            set: function (?string $value): ?string {
-                $digits = preg_replace('/\D/', '', (string) $value);
-
-                return $digits === '' ? null : $digits;
-            },
-        );
-    }
-
     public function products(): HasMany
     {
         return $this->hasMany(EdtProduct::class, 'supplier_id');
@@ -126,32 +112,5 @@ class EdtSupplier extends Model
             ])
             ->logOnlyDirty()
             ->dontSubmitEmptyLogs();
-    }
-
-    /**
-     * Enmascara el RTN antes de guardar la bitácora.
-     *
-     * Regla del proyecto: nunca guardar un RTN completo en logs. Se conserva
-     * que el RTN cambió y sus últimos 4 dígitos, suficiente para auditar.
-     */
-    public function tapActivity(Activity $activity, string $eventName): void
-    {
-        $activity->properties = $activity->properties->map(
-            function (mixed $values): mixed {
-                if (is_array($values) && ! empty($values['rtn'])) {
-                    $values['rtn'] = self::maskRtn((string) $values['rtn']);
-                }
-
-                return $values;
-            }
-        );
-    }
-
-    /**
-     * "05011990123456" → "**********3456".
-     */
-    public static function maskRtn(string $rtn): string
-    {
-        return str_repeat('*', max(strlen($rtn) - 4, 0)).substr($rtn, -4);
     }
 }

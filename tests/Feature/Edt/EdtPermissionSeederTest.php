@@ -4,6 +4,7 @@ namespace Tests\Feature\Edt;
 
 use App\Models\Edt\EdtSupplier;
 use App\Models\User;
+use App\Policies\Edt\EdtClientPolicy;
 use App\Policies\Edt\EdtPriceTierPolicy;
 use App\Policies\Edt\EdtProductPolicy;
 use App\Policies\Edt\EdtSupplierPolicy;
@@ -125,6 +126,7 @@ class EdtPermissionSeederTest extends TestCase
             'EdtSupplier' => EdtSupplierPolicy::class,
             'EdtProduct' => EdtProductPolicy::class,
             'EdtPriceTier' => EdtPriceTierPolicy::class,
+            'EdtClient' => EdtClientPolicy::class,
         ];
 
         $this->assertSame(array_keys(EdtPermissionSeeder::PERMISSIONS_BY_MODEL), array_keys($policies));
