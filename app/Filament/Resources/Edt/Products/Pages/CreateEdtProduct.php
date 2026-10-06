@@ -14,8 +14,8 @@ class CreateEdtProduct extends CreateRecord
     protected static string $resource = EdtProductResource::class;
 
     /**
-     * El formulario trae el precio como se escribió (con o sin ISV); se
-     * guarda la lista sin ISV.
+     * El formulario trae el precio y el costo como se escribieron (con o sin
+     * ISV); se guarda la lista sin ISV y el costo por caja con ISV.
      *
      * @param  array<string, mixed>  $data
      * @return array<string, mixed>
@@ -23,8 +23,9 @@ class CreateEdtProduct extends CreateRecord
     protected function mutateFormDataBeforeCreate(array $data): array
     {
         $data['list_price'] = PriceInputFields::listPriceFromState($data);
+        $data['box_cost'] = PriceInputFields::boxCostFromState($data);
 
-        unset($data[PriceInputFields::PRICE], $data[PriceInputFields::INCLUDES_ISV]);
+        unset($data[PriceInputFields::PRICE], $data[PriceInputFields::COST], $data[PriceInputFields::INCLUDES_ISV]);
 
         return $data;
     }

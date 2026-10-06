@@ -56,6 +56,7 @@ class EdtPriceHistoryTest extends TestCase
         $this->assertSame(PriceChangeReason::Creacion, $history->reason);
         $this->assertSame('17.6000', $history->list_price);
         $this->assertSame('15.00', $history->operation_discount_pct);
+        $this->assertSame('359.0400', $history->box_cost);
         $this->assertSame('14.9600', $history->unit_cost);
         $this->assertSame('17.60', $history->retail_unit_price);
         $this->assertSame('422.40', $history->retail_box_price);
@@ -94,7 +95,7 @@ class EdtPriceHistoryTest extends TestCase
         $gallo = $this->gallo();
 
         $changed = app(EdtProductPriceService::class)->changePrice(
-            $gallo, '21.28', 24, '0', PriceChangeReason::FacturaCompra, 'factura 001-001-01-00012345',
+            $gallo, '21.28', '420.00', 24, '0', PriceChangeReason::FacturaCompra, 'factura 001-001-01-00012345',
         );
 
         $this->assertTrue($changed);
@@ -104,6 +105,8 @@ class EdtPriceHistoryTest extends TestCase
         $this->assertSame(PriceChangeReason::FacturaCompra, $last->reason);
         $this->assertSame('FACTURA 001-001-01-00012345', $last->note);
         $this->assertSame('21.28', $last->retail_unit_price);
+        $this->assertSame('420.0000', $last->box_cost);
+        $this->assertSame('17.5000', $last->unit_cost); // 420 ÷ 24
         $this->assertSame(
             ['MAYORISTA 1' => '496.00', 'MAYORISTA 2' => '481.00'],
             array_column($last->wholesale_prices, 'box_price', 'name'),
@@ -115,7 +118,7 @@ class EdtPriceHistoryTest extends TestCase
         $gallo = $this->gallo();
 
         $changed = app(EdtProductPriceService::class)->changePrice(
-            $gallo, '17.60', 24, '0.00', PriceChangeReason::ListaProveedor,
+            $gallo, '17.60', '359.04', 24, '0.00', PriceChangeReason::ListaProveedor,
         );
 
         $this->assertFalse($changed);
@@ -130,7 +133,7 @@ class EdtPriceHistoryTest extends TestCase
             $queries[] = strtolower($query->sql);
         });
 
-        app(EdtProductPriceService::class)->changePrice($gallo, '21.28', 24, '0', PriceChangeReason::ListaProveedor);
+        app(EdtProductPriceService::class)->changePrice($gallo, '21.28', '359.04', 24, '0', PriceChangeReason::ListaProveedor);
 
         $this->assertNotEmpty(
             array_filter($queries, fn (string $sql): bool => str_contains($sql, 'from "edt_products"') && str_contains($sql, 'for update')),
@@ -147,7 +150,7 @@ class EdtPriceHistoryTest extends TestCase
         });
 
         $gallo->update(['list_price' => '21.28']);
-        $this->supplier->update(['operation_discount_pct' => 12]);
+        EdtPriceTier::query()->where('name', 'MAYORISTA 1')->sole()->update(['discount_pct' => 2]);
 
         $this->assertGreaterThanOrEqual(
             2,
@@ -156,43 +159,38 @@ class EdtPriceHistoryTest extends TestCase
         );
     }
 
-    public function test_el_historial_usa_el_descuento_confirmado_aunque_el_producto_traiga_el_viejo(): void
+    public function test_el_historial_anota_el_descuento_confirmado_aunque_el_producto_traiga_el_viejo(): void
     {
         $gallo = $this->gallo()->load('supplier');
         $this->assertSame('15.00', $gallo->supplier->operation_discount_pct);
 
-        // Otro usuario cambió el descuento y ya confirmó (simulado sin observer).
+        // Otro usuario cambió el descuento y ya confirmó.
         DB::table('edt_suppliers')->where('id', $this->supplier->id)->update(['operation_discount_pct' => 10]);
 
         $gallo->update(['list_price' => '20.00']);
 
         $last = $this->lastHistory($gallo);
         $this->assertSame('10.00', $last->operation_discount_pct);
-        $this->assertSame('18.0000', $last->unit_cost); // 20 × 0.90
+        // El costo es el del producto: el descuento del proveedor ya no lo mueve.
+        $this->assertSame('359.0400', $last->box_cost);
+        $this->assertSame('14.9600', $last->unit_cost);
     }
 
     // ── Cambios del proveedor ───────────────────────────────────────
 
-    public function test_cambiar_el_descuento_del_proveedor_escribe_una_fila_por_cada_producto_suyo(): void
+    public function test_cambiar_el_descuento_del_proveedor_no_mueve_los_costos_guardados(): void
     {
         $gallo = $this->gallo();
         $incaparina = EdtProduct::factory()->for($this->supplier, 'supplier')->create(['list_price' => '29.20', 'units_per_box' => 50]);
-        $otro = EdtProduct::factory()->create(); // de OTRO proveedor
 
         $this->supplier->update(['operation_discount_pct' => 12.5]);
 
-        foreach ([$gallo, $incaparina] as $product) {
-            $last = $this->lastHistory($product);
-            $this->assertSame(PriceChangeReason::DescuentoProveedor, $last->reason);
-            $this->assertSame('12.50', $last->operation_discount_pct);
-            $this->assertSame('DESCUENTO DE 15.00% A 12.50%', $last->note);
-        }
-
-        // Costo nuevo del Gallo: 17.60 × 0.875 = 15.40. El detalle no cambia.
-        $this->assertSame('15.4000', $this->lastHistory($gallo)->unit_cost);
-        $this->assertSame('17.60', $this->lastHistory($gallo)->retail_unit_price);
-
-        $this->assertSame(1, $otro->priceHistory()->count(), 'Los productos de otro proveedor no se tocan.');
+        // Cada producto guarda su costo: el 15% solo era la sugerencia.
+        $this->assertSame('359.0400', $gallo->fresh()->box_cost);
+        $this->assertSame('14.9600', $gallo->fresh()->priceQuote()->unitCost);
+        $this->assertSame('1427.1500', $incaparina->fresh()->box_cost);
+        $this->assertSame(1, $gallo->priceHistory()->count());
+        $this->assertSame(1, $incaparina->priceHistory()->count());
     }
 
     public function test_cambiar_otros_datos_del_proveedor_no_escribe_historial(): void
@@ -347,14 +345,16 @@ class EdtPriceHistoryTest extends TestCase
 
         $this->assertSame('17.6000', EdtProduct::query()->whereKey($gallo->id)->value('list_price'));
 
+        $tier = EdtPriceTier::query()->where('name', 'MAYORISTA 1')->sole();
+
         try {
-            $this->supplier->update(['operation_discount_pct' => 10]);
+            $tier->update(['discount_pct' => 2]);
             $this->fail('Se esperaba la excepción del historial.');
         } catch (RuntimeException) {
             // esperado
         }
 
-        $this->assertSame('15.00', EdtSupplier::query()->whereKey($this->supplier->id)->value('operation_discount_pct'));
+        $this->assertSame('3.00', EdtPriceTier::query()->whereKey($tier->id)->value('discount_pct'));
     }
 
     // ── Datos ───────────────────────────────────────────────────────
@@ -388,7 +388,7 @@ class EdtPriceHistoryTest extends TestCase
         $this->expectException(QueryException::class);
         $this->expectExceptionMessage('edt_products_units_per_box_positive');
 
-        EdtProduct::factory()->for($this->supplier, 'supplier')->create(['units_per_box' => 0]);
+        EdtProduct::factory()->for($this->supplier, 'supplier')->create(['units_per_box' => 0, 'box_cost' => '100']);
     }
 
     public function test_la_bd_rechaza_precio_de_lista_en_cero(): void
@@ -396,7 +396,15 @@ class EdtPriceHistoryTest extends TestCase
         $this->expectException(QueryException::class);
         $this->expectExceptionMessage('edt_products_list_price_positive');
 
-        EdtProduct::factory()->for($this->supplier, 'supplier')->create(['list_price' => 0]);
+        EdtProduct::factory()->for($this->supplier, 'supplier')->create(['list_price' => 0, 'box_cost' => '100']);
+    }
+
+    public function test_la_bd_rechaza_costo_por_caja_en_cero(): void
+    {
+        $this->expectException(QueryException::class);
+        $this->expectExceptionMessage('edt_products_box_cost_positive');
+
+        EdtProduct::factory()->for($this->supplier, 'supplier')->create(['box_cost' => 0]);
     }
 
     private function gallo(): EdtProduct

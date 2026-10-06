@@ -24,6 +24,7 @@ use LogicException;
  * @property string $isv_pct
  * @property string $operation_discount_pct
  * @property string $unit_cost
+ * @property string $box_cost
  * @property string $retail_unit_price
  * @property string $retail_box_price
  * @property list<array{tier_id: int|null, name: string, min_boxes: int, discount_pct: string, box_price: string, margin_pct?: string}> $wholesale_prices
@@ -41,6 +42,7 @@ class EdtProductPriceHistory extends Model
         'isv_pct',
         'operation_discount_pct',
         'unit_cost',
+        'box_cost',
         'retail_unit_price',
         'retail_box_price',
         'wholesale_prices',
@@ -56,6 +58,7 @@ class EdtProductPriceHistory extends Model
             'isv_pct' => 'decimal:2',
             'operation_discount_pct' => 'decimal:2',
             'unit_cost' => 'decimal:4',
+            'box_cost' => 'decimal:4',
             'retail_unit_price' => 'decimal:2',
             'retail_box_price' => 'decimal:2',
             'wholesale_prices' => 'array',

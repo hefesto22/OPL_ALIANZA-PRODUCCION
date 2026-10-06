@@ -88,9 +88,9 @@ class EdtSupplierForm
                         ->default(15)
                         ->suffix('%')
                         ->helperText(
-                            'Descuento que da el proveedor sobre su precio de lista: es la ganancia del EDT '.
-                            '(costo = lista × (1 − descuento)). No es el ISV; el ISV se configura en cada producto. '.
-                            'Si lo cambias, el costo de todos sus productos se recalcula y queda en su historial de precios.'
+                            'Descuento habitual del proveedor sobre su precio de lista. Se usa para SUGERIR el costo '.
+                            'por caja al escribir un precio y para calcularlo al importar el Excel. Cada producto '.
+                            'guarda su propio costo: cambiar este porcentaje no mueve los costos ya guardados.'
                         ),
 
                     Toggle::make('is_active')

@@ -8,6 +8,8 @@ use App\Filament\Resources\Edt\Products\Pages\CreateEdtProduct;
 use App\Filament\Resources\Edt\Products\Pages\EditEdtProduct;
 use App\Filament\Resources\Edt\Products\Pages\ListEdtProducts;
 use App\Filament\Resources\Edt\Products\RelationManagers\PriceHistoryRelationManager;
+use App\Filament\Resources\Edt\Products\Support\EdtPricePreview;
+use App\Filament\Resources\Edt\Products\Support\PriceSnapshot;
 use App\Models\Edt\EdtProduct;
 use App\Models\Edt\EdtSupplier;
 use App\Models\User;
@@ -61,7 +63,8 @@ class EdtProductResourceTest extends TestCase
             ->assertSee('28000052')            // código, debajo de la descripción
             ->assertSee('L 422.40')            // detalle por caja
             ->assertSee('L 17.60 c/u')         // detalle por unidad, debajo de la caja
-            ->assertSee('Lista L 17.60')       // lista sin ISV, debajo del costo
+            ->assertSee('L 359.04')            // costo por caja: 17.60 − 15%, × 24
+            ->assertSee('L 14.96 c/u')         // costo por unidad, debajo
             ->assertSee('L 410.00')            // MAYORISTA 1
             ->assertSee('Mayorista por caja')
             ->assertSee('50+ cajas');
@@ -109,17 +112,17 @@ class EdtProductResourceTest extends TestCase
             ->assertSee('28000052 · BEBIDAS · INACTIVO');
     }
 
-    public function test_ordenar_por_costo_ordena_por_precio_de_lista(): void
+    public function test_ordenar_por_costo_por_caja(): void
     {
-        $caro = EdtProduct::factory()->for($this->supplier, 'supplier')->create(['list_price' => '50.00']);
-        $barato = EdtProduct::factory()->for($this->supplier, 'supplier')->create(['list_price' => '10.00']);
+        $caro = EdtProduct::factory()->for($this->supplier, 'supplier')->create(['list_price' => '10.00', 'box_cost' => '900']);
+        $barato = EdtProduct::factory()->for($this->supplier, 'supplier')->create(['list_price' => '50.00', 'box_cost' => '100']);
 
         $this->actingAs($this->admin);
 
         Livewire::test(ListEdtProducts::class)
-            ->sortTable('unit_cost')
+            ->sortTable('box_cost')
             ->assertCanSeeTableRecords([$barato, $caro], inOrder: true)
-            ->sortTable('unit_cost', 'desc')
+            ->sortTable('box_cost', 'desc')
             ->assertCanSeeTableRecords([$caro, $barato], inOrder: true);
     }
 
@@ -156,7 +159,7 @@ class EdtProductResourceTest extends TestCase
                 'code' => '27000266',
                 'description' => 'Incaparina atol c/amino orgnl 450g',
                 'category' => 'alimentos',
-                'price_includes_isv' => false,
+                'price_includes_isv' => 0,
                 'price' => '29.20',
                 'units_per_box' => 50,
                 'isv_pct' => '15',
@@ -182,7 +185,7 @@ class EdtProductResourceTest extends TestCase
         $this->actingAs($this->admin);
 
         Livewire::test(CreateEdtProduct::class)
-            ->assertFormSet(['price_includes_isv' => true])
+            ->assertFormSet(['price_includes_isv' => 1])
             ->fillForm([
                 'supplier_id' => $this->supplier->id,
                 'code' => '27000300',
@@ -243,13 +246,13 @@ class EdtProductResourceTest extends TestCase
             ])
             ->call('create');
 
-        $create(['price_includes_isv' => false, 'price' => '8.69565'])->assertHasFormErrors(['price' => 'decimal']);
-        $create(['price_includes_isv' => true, 'price' => '10.005'])->assertHasFormErrors(['price' => 'decimal']);
-        $create(['price_includes_isv' => false, 'price' => '8.6957'])->assertHasNoFormErrors();
+        $create(['price_includes_isv' => 0, 'price' => '8.69565'])->assertHasFormErrors(['price' => 'decimal']);
+        $create(['price_includes_isv' => 1, 'price' => '10.005'])->assertHasFormErrors(['price' => 'decimal']);
+        $create(['price_includes_isv' => 0, 'price' => '8.6957'])->assertHasNoFormErrors();
 
         Livewire::test(ListEdtProducts::class)
             ->callTableAction('changePrice', $gallo, data: [
-                'price_includes_isv' => false,
+                'price_includes_isv' => 0,
                 'price' => '8.69565',
                 'units_per_box' => 24,
                 'isv_pct' => '0',
@@ -335,7 +338,7 @@ class EdtProductResourceTest extends TestCase
                 'reason' => PriceChangeReason::FacturaCompra->value,
             ])
             ->assertHasNoActionErrors()
-            ->assertFormSet(['list_price' => '21.2800']);
+            ->assertFormSet(['list_price' => '21.28']);
 
         $this->assertSame(2, $gallo->priceHistory()->count());
     }
@@ -352,7 +355,7 @@ class EdtProductResourceTest extends TestCase
         Livewire::test(ListEdtProducts::class)
             ->mountTableAction('changePrice', $product)
             ->assertTableActionDataSet([
-                'price_includes_isv' => true,
+                'price_includes_isv' => 1,
                 'price' => '23.00',
             ])
             ->setTableActionData(['price' => '30', 'reason' => PriceChangeReason::ListaProveedor->value])
@@ -381,6 +384,157 @@ class EdtProductResourceTest extends TestCase
 
         $this->assertSame('17.8600', $product->fresh()->list_price);
         $this->assertSame(1, $product->priceHistory()->count());
+    }
+
+    public function test_cambiar_precio_muestra_antes_despues_y_diferencia(): void
+    {
+        $product = EdtProduct::factory()->for($this->supplier, 'supplier')->create([
+            'list_price' => '20.00',
+            'units_per_box' => 12,
+            'isv_pct' => 15,
+        ]);
+        $this->actingAs($this->admin);
+
+        $before = PriceSnapshot::fromProduct($product);
+        $new = fn (string $list, string $isv = '15', ?string $cost = null): ?PriceSnapshot => PriceSnapshot::fromInput($list, 12, $isv, $cost ?? (string) $product->box_cost);
+
+        $this->assertStringContainsString('Sin cambios', (string) EdtPricePreview::render($new('20.00'), $before));
+
+        $html = (string) EdtPricePreview::render($new('26.0870'), $before);
+        $this->assertStringContainsString('L 30.00', $html);
+        $this->assertStringContainsString('+L 7.00 · +30.43%', $html);   // 23.00 → 30.00
+        $this->assertStringContainsString('L 26.0870', $html);           // la lista sin ISV que se guarda
+        $this->assertStringContainsString('(antes L 20.00)', $html);
+        $this->assertStringContainsString('Desde 25 cajas · 3% de descuento', $html);
+        $this->assertStringContainsString('Diferencia', $html);
+        $this->assertStringNotContainsString('Sin cambios', $html);
+
+        $this->assertStringContainsString('ISV 15% → 18%', (string) EdtPricePreview::render($new('20.00', '18'), $before));
+
+        // Costo por caja: 20 − 15% + ISV = 19.55 × 12 = 234.60; si sube a 250, se ve la diferencia.
+        $html = (string) EdtPricePreview::render($new('20.00', '15', '250'), $before);
+        $this->assertStringContainsString('Costo por caja', $html);
+        $this->assertStringContainsString('L 234.60', $html);
+        $this->assertStringContainsString('+L 15.40', $html);
+        $this->assertStringContainsString('aquí ves cómo quedan todos los precios', (string) EdtPricePreview::render(null));
+
+        // Y el modal abre con ella.
+        Livewire::test(EditEdtProduct::class, ['record' => $product->getRouteKey()])
+            ->mountAction('changePrice')
+            ->assertActionMounted('changePrice');
+    }
+
+    public function test_pasar_a_sin_isv_convierte_lo_escrito_sin_cambiar_el_precio(): void
+    {
+        $this->actingAs($this->admin);
+
+        Livewire::test(CreateEdtProduct::class)
+            ->assertSee('aquí ves cómo quedan todos los precios')
+            ->fillForm(['isv_pct' => '15', 'units_per_box' => 24, 'price' => '30'])
+            ->fillForm(['price_includes_isv' => 0])
+            ->assertFormSet(['price' => '26.087'])
+            ->assertSee('L 30.00')
+            ->fillForm(['price_includes_isv' => 1])
+            ->assertFormSet(['price' => '30.00']);
+    }
+
+    public function test_la_edicion_muestra_los_precios_vigentes(): void
+    {
+        $gallo = $this->gallo();
+        $this->actingAs($this->admin);
+
+        Livewire::test(EditEdtProduct::class, ['record' => $gallo->getRouteKey()])
+            ->assertSee('Precios vigentes')
+            ->assertSee('L 422.40')
+            ->assertSee('Se guarda la lista sin ISV')
+            ->assertDontSee('Diferencia');
+    }
+
+    public function test_el_historial_de_precios_se_abre_desde_el_listado(): void
+    {
+        $gallo = $this->gallo();
+        $this->actingAs($this->admin);
+
+        Livewire::test(ListEdtProducts::class)
+            ->callTableAction('changePrice', $gallo, data: [
+                'price' => '21.28',
+                'units_per_box' => 24,
+                'isv_pct' => '0',
+                'reason' => PriceChangeReason::ListaProveedor->value,
+            ])
+            ->assertTableActionVisible('priceHistory', $gallo)
+            ->mountTableAction('priceHistory', $gallo)
+            ->assertOk();
+
+        // El contenido del modal: la tabla del historial, la más nueva arriba.
+        $html = view('filament.edt.price-history-modal', ['record' => $gallo])->render();
+        $this->assertStringContainsString('Detalle unidad', $html);
+        $this->assertStringContainsString('L 21.28', $html);
+        $this->assertStringContainsString('L 17.60', $html);
+        $this->assertStringContainsString('Costo unidad', $html);
+    }
+
+    public function test_cambiar_precio_arranca_con_el_costo_vigente_y_lo_guarda(): void
+    {
+        $gallo = $this->gallo();
+        $this->actingAs($this->admin);
+
+        Livewire::test(ListEdtProducts::class)
+            ->mountTableAction('changePrice', $gallo)
+            ->assertTableActionDataSet(['price' => '17.60', 'cost' => '359.04'])
+            ->setTableActionData(['cost' => '336', 'reason' => PriceChangeReason::FacturaCompra->value])
+            ->callMountedTableAction()
+            ->assertHasNoTableActionErrors();
+
+        $gallo->refresh();
+        $this->assertSame('336.0000', $gallo->box_cost);
+        $this->assertSame('17.6000', $gallo->list_price, 'Solo cambió el costo; el precio de venta queda igual.');
+        $this->assertSame('14.0000', $gallo->priceQuote()->unitCost);
+        $this->assertSame('336.0000', $gallo->priceHistory()->latest('id')->first()->box_cost);
+    }
+
+    public function test_el_costo_sin_isv_se_guarda_con_isv(): void
+    {
+        $product = EdtProduct::factory()->for($this->supplier, 'supplier')->create([
+            'list_price' => '20.00', 'units_per_box' => 12, 'isv_pct' => 15,
+        ]);
+        $this->actingAs($this->admin);
+
+        Livewire::test(ListEdtProducts::class)
+            ->mountTableAction('changePrice', $product)
+            ->setTableActionData(['price_includes_isv' => 0])
+            ->assertTableActionDataSet(['price' => '20.00', 'cost' => '204.00']) // 234.60 ÷ 1.15
+            ->setTableActionData(['cost' => '200', 'reason' => PriceChangeReason::FacturaCompra->value])
+            ->callMountedTableAction()
+            ->assertHasNoTableActionErrors();
+
+        $this->assertSame('230.0000', $product->fresh()->box_cost); // 200 × 1.15
+        $this->assertSame('20.0000', $product->fresh()->list_price);
+    }
+
+    public function test_al_crear_el_costo_se_sugiere_con_el_descuento_del_proveedor(): void
+    {
+        $this->actingAs($this->admin);
+
+        Livewire::test(CreateEdtProduct::class)
+            ->fillForm([
+                'supplier_id' => $this->supplier->id,
+                'code' => '27000301',
+                'description' => 'Producto con costo sugerido',
+                'units_per_box' => 24,
+                'isv_pct' => '15',
+                'price' => '30',
+            ])
+            // 30 ÷ 1.15 = 26.087 − 15% + 15% ISV = 25.50 × 24.
+            ->assertFormSet(['cost' => '612.00'])
+            ->fillForm(['cost' => '600'])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $product = EdtProduct::query()->where('code', '27000301')->sole();
+        $this->assertSame('600.0000', $product->box_cost);
+        $this->assertSame('25.0000', $product->priceQuote()->unitCost);
+        $this->assertSame('30.00', $product->priceQuote()->retailUnitPrice);
     }
 
     public function test_el_motivo_es_obligatorio(): void

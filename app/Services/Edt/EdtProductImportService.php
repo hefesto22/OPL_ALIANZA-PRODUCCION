@@ -35,6 +35,12 @@ use Throwable;
  *      archivo dos veces no cambia nada la segunda vez.
  *   3. apply(): ejecuta el plan en UNA transacción. Si algo falla no queda
  *      nada a medias.
+ *
+ * Costo por caja: el Excel no lo trae; lo calcula como su columna PC + ISV
+ * (lista − descuento del proveedor + ISV) × UxC. Solo se pone al crear el
+ * producto o cuando cambia su precio de lista, ISV o UxC: si el precio no
+ * cambió, se respeta el costo que tenga el producto (pudo corregirse a mano
+ * con «Cambiar precio»).
  */
 class EdtProductImportService
 {
@@ -154,6 +160,7 @@ class EdtProductImportService
                 'isv_pct' => (string) $product->isv_pct,
                 'units_per_box' => $product->units_per_box,
                 'list_price' => (string) $product->list_price,
+                'box_cost' => (string) $product->box_cost,
             ]])
             ->all();
 
@@ -186,6 +193,7 @@ class EdtProductImportService
                 }
 
                 $attributes = ['supplier_id' => $supplier->id] + $this->rowAttributes($row, []);
+                $attributes['box_cost'] = $this->suggestedBoxCost($attributes, $supplier);
                 $plan[] = $this->entry('create', $row, $attributes);
                 $state[$row['code']] = $attributes;
 
@@ -200,6 +208,9 @@ class EdtProductImportService
 
             $attributes = $this->rowAttributes($row, $current);
             $priceChanged = $this->priceChanged($current, $attributes);
+            $attributes['box_cost'] = $priceChanged
+                ? $this->suggestedBoxCost($attributes, $supplier)
+                : (string) $current['box_cost'];
             $otherChanged = $this->descriptiveChanged($current, $attributes);
 
             $plan[] = ($priceChanged || $otherChanged)
@@ -339,7 +350,24 @@ class EdtProductImportService
             'list_price' => (string) $product->list_price,
         ];
 
-        return $this->priceChanged($before, $current) || $this->descriptiveChanged($before, $current);
+        return $this->priceChanged($before, $current)
+            || ! BigDecimal::of((string) $before['box_cost'])->isEqualTo((string) $product->box_cost)
+            || $this->descriptiveChanged($before, $current);
+    }
+
+    /**
+     * Costo por caja como lo calcula el Excel (columna PC + ISV × UxC).
+     *
+     * @param  array<string, mixed>  $attributes
+     */
+    private function suggestedBoxCost(array $attributes, EdtSupplier $supplier): string
+    {
+        return app(EdtPricingService::class)->boxCostFromList(
+            (string) $attributes['list_price'],
+            (int) $attributes['units_per_box'],
+            (string) $attributes['isv_pct'],
+            (string) $supplier->operation_discount_pct,
+        );
     }
 
     /**

@@ -5,6 +5,8 @@ namespace Tests\Feature\Edt;
 use App\Filament\Resources\Edt\Clients\EdtClientResource;
 use App\Filament\Resources\Edt\Clients\Pages\ListEdtClients;
 use App\Filament\Resources\Edt\Products\EdtProductResource;
+use App\Filament\Resources\Edt\Products\Pages\EditEdtProduct;
+use App\Filament\Resources\Edt\Products\RelationManagers\PriceHistoryRelationManager;
 use App\Models\Edt\EdtClient;
 use App\Models\Edt\EdtProduct;
 use App\Models\Edt\EdtRoute;
@@ -188,6 +190,20 @@ class EdtSellerZonesTest extends TestCase
             ->assertDontSee('Margen ');
 
         $this->assertFalse($this->juan->user->can('changePrice', EdtProduct::query()->first()));
+    }
+
+    public function test_el_vendedor_ve_el_historial_sin_costo_ni_lista(): void
+    {
+        $product = EdtProduct::factory()->create(['list_price' => '17.60', 'isv_pct' => 0, 'units_per_box' => 24]);
+
+        $this->actingAs($this->juan->user);
+
+        Livewire::test(PriceHistoryRelationManager::class, ['ownerRecord' => $product, 'pageClass' => EditEdtProduct::class])
+            ->assertOk()
+            ->assertTableColumnVisible('retail_unit_price')
+            ->assertTableColumnHidden('unit_cost')
+            ->assertTableColumnHidden('list_price')
+            ->assertTableColumnHidden('operation_discount_pct');
     }
 
     public function test_el_vendedor_entra_al_panel_y_si_lo_desactivan_ya_no(): void

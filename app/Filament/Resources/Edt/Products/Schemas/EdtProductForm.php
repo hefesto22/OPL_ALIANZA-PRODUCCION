@@ -4,13 +4,17 @@ namespace App\Filament\Resources\Edt\Products\Schemas;
 
 use App\Casts\Uppercase;
 use App\Filament\Resources\Edt\Products\Support\EdtPriceDisplay;
+use App\Filament\Resources\Edt\Products\Support\EdtPricePreview;
 use App\Filament\Resources\Edt\Products\Support\PriceInputFields;
+use App\Filament\Resources\Edt\Products\Support\PriceSnapshot;
 use App\Models\Edt\EdtProduct;
 use App\Models\Edt\EdtSupplier;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Infolists\Components\TextEntry;
+use Filament\Schemas\Components\Grid;
+use Filament\Schemas\Components\Group;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
@@ -20,9 +24,9 @@ use Illuminate\Support\HtmlString;
  * Formulario de productos del EDT.
  *
  * Al CREAR se capturan también los datos que mueven el precio (proveedor,
- * precio, unidades por caja, ISV). El precio se escribe con ISV por defecto
- * (PriceInputFields) y CreateEdtProduct lo convierte a la lista sin ISV que
- * se guarda. Al EDITAR esos campos quedan
+ * precio de venta, costo por caja, unidades por caja, ISV). Se escriben con
+ * ISV por defecto (PriceInputFields) y CreateEdtProduct los convierte a lo
+ * que se guarda (lista sin ISV y costo por caja con ISV). Al EDITAR esos campos quedan
  * bloqueados: se cambian con la acción "Cambiar precio", que pide motivo y
  * deja la fila en el historial. Un campo disabled no se envía, así que no se
  * pueden colar por el formulario de edición.
@@ -83,58 +87,69 @@ class EdtProductForm
             Section::make('Precio')
                 ->columnSpanFull()
                 ->description(fn (string $operation): ?string => $operation === 'edit'
-                    ? 'Para cambiar el precio, las unidades por caja o el ISV usa «Cambiar precio»: queda en el historial con su motivo.'
+                    ? 'Para cambiar el precio, el costo, las unidades por caja o el ISV usa «Cambiar precio»: queda en el historial con su motivo.'
                     : null)
-                ->columns(3)
                 ->schema([
-                    PriceInputFields::includesIsvToggle()
-                        ->visibleOn('create')
-                        ->columnSpanFull(),
+                    Grid::make(['default' => 1, 'lg' => 5])->schema([
+                        // Izquierda: lo que se escribe. Derecha: cómo queda.
+                        Group::make([
+                            PriceInputFields::includesIsvToggle()
+                                ->visibleOn('create'),
 
-                    PriceInputFields::priceInput()
-                        ->visibleOn('create'),
+                            PriceInputFields::priceInput()
+                                ->visibleOn('create'),
 
-                    // En edición solo se muestra (bloqueado) lo que está guardado.
-                    TextInput::make('list_price')
-                        ->label('Precio de lista sin ISV')
-                        ->helperText('Lo que se guarda; de aquí salen todos los precios.')
-                        ->prefix('L')
-                        ->visibleOn('edit')
-                        ->disabled(),
+                            PriceInputFields::costInput()
+                                ->visibleOn('create'),
 
-                    TextInput::make('units_per_box')
-                        ->label('Unidades por caja')
-                        ->required()
-                        ->integer()
-                        ->minValue(1)
-                        ->maxValue(100000)
-                        ->live(onBlur: true)
-                        ->disabled(fn (string $operation): bool => $operation === 'edit'),
+                            // En edición solo se muestra (bloqueado) lo que está guardado.
+                            Grid::make(2)
+                                ->visibleOn('edit')
+                                ->schema([
+                                    TextInput::make('list_price')
+                                        ->label('Lista por unidad, sin ISV')
+                                        ->prefix('L')
+                                        ->formatStateUsing(fn (mixed $state): ?string => $state === null ? null : EdtPriceDisplay::plainAmount((string) $state))
+                                        ->disabled(),
 
-                    Select::make('isv_pct')
-                        ->label('ISV')
-                        ->options(EdtProduct::ISV_RATES)
-                        ->required()
-                        ->live()
-                        // En BD es "15.00"; la opción es "15".
-                        ->formatStateUsing(fn (mixed $state): ?string => $state === null ? null : (string) (int) $state)
-                        ->disabled(fn (string $operation): bool => $operation === 'edit'),
+                                    TextInput::make('box_cost')
+                                        ->label('Costo por caja, con ISV')
+                                        ->prefix('L')
+                                        ->formatStateUsing(fn (mixed $state): ?string => $state === null ? null : EdtPriceDisplay::plainAmount((string) $state))
+                                        ->disabled(),
+                                ]),
 
-                    TextEntry::make('price_preview')
-                        ->label('Precios calculados')
-                        ->state(fn (Get $get, ?EdtProduct $record, string $operation): HtmlString|string => $operation === 'edit' && $record
-                            ? EdtPriceDisplay::previewTable($record->priceQuote())
-                            : EdtPriceDisplay::previewTable(EdtPriceDisplay::quoteFromInput(
-                                $get('supplier_id'),
-                                PriceInputFields::listPriceFromInput(
-                                    $get(PriceInputFields::PRICE),
-                                    $get(PriceInputFields::INCLUDES_ISV),
-                                    $get('isv_pct'),
-                                ),
-                                $get('units_per_box'),
-                                $get('isv_pct'),
-                            )))
-                        ->columnSpanFull(),
+                            PriceInputFields::isvButtons()
+                                // En BD es "15.00"; la opción es "15".
+                                ->formatStateUsing(fn (mixed $state): ?string => $state === null ? null : (string) (int) $state)
+                                ->disabled(fn (string $operation): bool => $operation === 'edit'),
+
+                            PriceInputFields::unitsPerBoxInput()
+                                ->disabled(fn (string $operation): bool => $operation === 'edit'),
+                        ])->columnSpan(['lg' => 2]),
+
+                        TextEntry::make('price_preview')
+                            ->label(fn (string $operation): string => $operation === 'edit' ? 'Precios vigentes' : 'Así quedan los precios')
+                            ->state(fn (Get $get, ?EdtProduct $record, string $operation): HtmlString => EdtPricePreview::render(
+                                $operation === 'edit' && $record
+                                    ? PriceSnapshot::fromProduct($record)
+                                    : PriceSnapshot::fromInput(
+                                        PriceInputFields::listPriceFromInput(
+                                            $get(PriceInputFields::PRICE),
+                                            $get(PriceInputFields::INCLUDES_ISV),
+                                            $get('isv_pct'),
+                                        ),
+                                        $get('units_per_box'),
+                                        $get('isv_pct'),
+                                        PriceInputFields::boxCostFromInput(
+                                            $get(PriceInputFields::COST),
+                                            $get(PriceInputFields::INCLUDES_ISV),
+                                            $get('isv_pct'),
+                                        ),
+                                    ),
+                            ))
+                            ->columnSpan(['lg' => 3]),
+                    ]),
                 ]),
         ]);
     }

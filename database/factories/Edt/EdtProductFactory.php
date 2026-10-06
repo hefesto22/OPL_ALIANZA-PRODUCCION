@@ -4,6 +4,7 @@ namespace Database\Factories\Edt;
 
 use App\Models\Edt\EdtProduct;
 use App\Models\Edt\EdtSupplier;
+use App\Services\Edt\EdtPricingService;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -25,6 +26,14 @@ class EdtProductFactory extends Factory
             'units_per_box' => 24,
             'isv_pct' => '15.00',
             'list_price' => '25.3600',
+            // Como el Excel: lista − 15% + ISV, por caja. Se calcula con la
+            // lista, el ISV y las unidades que lleve el producto al final.
+            'box_cost' => fn (array $attributes): string => app(EdtPricingService::class)->boxCostFromList(
+                (string) $attributes['list_price'],
+                (int) $attributes['units_per_box'],
+                (string) $attributes['isv_pct'],
+                '15',
+            ),
             'is_active' => true,
         ];
     }

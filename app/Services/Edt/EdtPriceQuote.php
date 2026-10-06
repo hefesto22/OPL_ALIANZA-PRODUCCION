@@ -5,8 +5,8 @@ namespace App\Services\Edt;
 /**
  * Precios calculados de un producto del EDT (todos con ISV incluido).
  *
- * Montos como string decimal (nunca float): unitCost con 4 decimales y el
- * resto con 2. Lo produce EdtPricingService; no se construye a mano.
+ * Montos como string decimal (nunca float): unitCost y boxCost con 4
+ * decimales y el resto con 2. Los costos son CON ISV. Lo produce EdtPricingService; no se construye a mano.
  */
 final class EdtPriceQuote
 {
@@ -17,6 +17,7 @@ final class EdtPriceQuote
      */
     public function __construct(
         public readonly string $unitCost,
+        public readonly string $boxCost,
         public readonly string $retailUnitPrice,
         public readonly string $retailBoxPrice,
         public readonly string $retailMarginPct,

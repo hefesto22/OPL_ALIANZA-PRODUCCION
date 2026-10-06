@@ -61,7 +61,8 @@ class PriceHistoryRelationManager extends RelationManager
                 TextColumn::make('list_price')
                     ->label('Lista sin ISV')
                     ->formatStateUsing(fn ($state): string => EdtPriceDisplay::listPrice($state))
-                    ->alignEnd(),
+                    ->alignEnd()
+                    ->visible(fn (): bool => ! self::isSeller()),
 
                 TextColumn::make('isv_pct')
                     ->label('ISV')
@@ -76,12 +77,20 @@ class PriceHistoryRelationManager extends RelationManager
                     ->label('Desc. operación')
                     ->suffix('%')
                     ->alignEnd()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->visible(fn (): bool => ! self::isSeller()),
+
+                TextColumn::make('box_cost')
+                    ->label('Costo caja')
+                    ->formatStateUsing(fn ($state): string => EdtPriceDisplay::money($state))
+                    ->alignEnd()
+                    ->visible(fn (): bool => ! self::isSeller()),
 
                 TextColumn::make('unit_cost')
                     ->label('Costo unidad')
                     ->formatStateUsing(fn ($state): string => EdtPriceDisplay::money($state))
-                    ->alignEnd(),
+                    ->alignEnd()
+                    ->visible(fn (): bool => ! self::isSeller()),
 
                 TextColumn::make('retail_unit_price')
                     ->label('Detalle unidad')
@@ -113,5 +122,14 @@ class PriceHistoryRelationManager extends RelationManager
             ->modifyQueryUsing(fn (Builder $query): Builder => $query->with('createdBy:id,name'))
             ->paginated([10, 25, 50])
             ->defaultPaginationPageOption(10);
+    }
+
+    /**
+     * Vendedor de ruta del EDT: ve precios de venta, no costo ni lista del
+     * proveedor (igual que en el listado de productos).
+     */
+    private static function isSeller(): bool
+    {
+        return Auth::user()?->edtSeller !== null;
     }
 }

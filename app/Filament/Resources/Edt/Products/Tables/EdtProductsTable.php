@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\Edt\Products\Tables;
 
 use App\Filament\Resources\Edt\Products\Actions\ChangePriceAction;
+use App\Filament\Resources\Edt\Products\Actions\PriceHistoryAction;
 use App\Filament\Resources\Edt\Products\Support\EdtPriceDisplay;
 use App\Models\Edt\EdtPriceTier;
 use App\Models\Edt\EdtProduct;
@@ -83,17 +84,15 @@ class EdtProductsTable
                     })
                     ->formatStateUsing(fn ($state): string => EdtPriceDisplay::isv($state)),
 
-                // Costo por unidad arriba y, debajo, la lista del proveedor de la
-                // que sale. Ordenar por lista mueve igual a todos los precios.
-                TextColumn::make('unit_cost')
-                    ->label('Costo unidad')
-                    ->headerTooltip('Lista del proveedor menos el descuento de operación, más ISV')
-                    ->state(fn (EdtProduct $record): string => $record->priceQuote()->unitCost)
+                // Costo por caja (dato propio del producto) y, debajo, por unidad.
+                TextColumn::make('box_cost')
+                    ->label('Costo caja')
+                    ->headerTooltip('Lo que le cuesta la caja al EDT, con ISV')
                     ->formatStateUsing(fn ($state): string => EdtPriceDisplay::money($state))
-                    ->description(fn (EdtProduct $record): string => 'Lista '.EdtPriceDisplay::listPrice($record->list_price))
+                    ->description(fn (EdtProduct $record): string => EdtPriceDisplay::money($record->priceQuote()->unitCost).' c/u')
                     ->color('gray')
                     ->alignEnd()
-                    ->sortable(query: fn (Builder $query, string $direction): Builder => $query->orderBy('list_price', $direction))
+                    ->sortable()
                     ->visibleFrom('lg')
                     // El costo (y el margen) del EDT no es para el vendedor de ruta.
                     ->visible(fn (): bool => ! self::isSeller())
@@ -150,11 +149,14 @@ class EdtProductsTable
                 ChangePriceAction::make()
                     ->iconButton()
                     ->tooltip('Cambiar precio'),
+                PriceHistoryAction::make()
+                    ->iconButton()
+                    ->tooltip('Historial de precios'),
                 EditAction::make()
                     ->iconButton()
                     ->tooltip('Editar'),
             ])
-            ->modifyQueryUsing(fn (Builder $query): Builder => $query->with('supplier:id,code,name,operation_discount_pct'))
+            ->modifyQueryUsing(fn (Builder $query): Builder => $query->with('supplier:id,code,name'))
             ->paginated([10, 25, 50, 100])
             ->defaultPaginationPageOption(25);
     }

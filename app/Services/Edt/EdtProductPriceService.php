@@ -22,17 +22,19 @@ class EdtProductPriceService
     public function changePrice(
         EdtProduct $product,
         string $listPrice,
+        string $boxCost,
         int $unitsPerBox,
         string $isvPct,
         PriceChangeReason $reason,
         ?string $note = null,
     ): bool {
-        return DB::transaction(function () use ($product, $listPrice, $unitsPerBox, $isvPct, $reason, $note): bool {
+        return DB::transaction(function () use ($product, $listPrice, $boxCost, $unitsPerBox, $isvPct, $reason, $note): bool {
             /** @var EdtProduct $locked */
             $locked = EdtProduct::query()->lockForUpdate()->findOrFail($product->id);
 
             $locked->fill([
                 'list_price' => $listPrice,
+                'box_cost' => $boxCost,
                 'units_per_box' => $unitsPerBox,
                 'isv_pct' => $isvPct,
             ]);

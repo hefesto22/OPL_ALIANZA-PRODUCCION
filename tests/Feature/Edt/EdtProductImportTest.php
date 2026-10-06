@@ -261,6 +261,29 @@ class EdtProductImportTest extends TestCase
      *
      * @return list<array<int, mixed>>
      */
+    public function test_la_carga_calcula_el_costo_por_caja_como_el_excel_y_respeta_el_corregido(): void
+    {
+        $service = app(EdtProductImportService::class);
+        $service->apply($service->plan($service->parse($this->sheet())['rows'], $this->supplier), 'precios.xlsx');
+
+        // Como la columna PC + ISV del Excel, por caja: 21.28 − 15% = 18.088 × 24.
+        $gallo = EdtProduct::query()->where('code', '28000052')->sole();
+        $this->assertSame('434.1120', $gallo->box_cost);
+
+        // Alguien corrige el costo (descuento por contrato distinto).
+        $gallo->update(['box_cost' => '400']);
+
+        // Volver a cargar el mismo Excel no pisa el costo corregido…
+        $plan = $service->plan($service->parse($this->sheet())['rows'], $this->supplier);
+        $this->assertSame(['unchanged'], array_values(array_unique(array_column($plan, 'action'))));
+
+        // …pero si EDT cambia el precio, el costo vuelve a calcularse con el 15%.
+        $nueva = $this->sheet();
+        $nueva[5][8] = 22.00;
+        $service->apply($service->plan($service->parse($nueva)['rows'], $this->supplier), 'precios.xlsx');
+        $this->assertSame('448.8000', $gallo->fresh()->box_cost); // 22 × 0.85 × 24
+    }
+
     private function sheet(): array
     {
         return [

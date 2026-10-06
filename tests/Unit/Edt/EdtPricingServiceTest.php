@@ -3,6 +3,7 @@
 namespace Tests\Unit\Edt;
 
 use App\Models\Edt\EdtPriceTier;
+use App\Services\Edt\EdtPriceQuote;
 use App\Services\Edt\EdtPricingService;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
@@ -53,13 +54,7 @@ class EdtPricingServiceTest extends TestCase
     #[DataProvider('filasDelExcel')]
     public function test_da_los_mismos_precios_que_el_excel(array $fila): void
     {
-        $quote = (new EdtPricingService)->quote(
-            listPrice: $fila['precio_lista'],
-            unitsPerBox: (int) $fila['unidades_por_caja'],
-            isvPct: $fila['isv_pct'],
-            operationDiscountPct: '15',
-            tiers: $this->tiersDelExcel(),
-        );
+        $quote = $this->excelQuote($fila['precio_lista'], (int) $fila['unidades_por_caja'], $fila['isv_pct'], $this->tiersDelExcel());
 
         $this->assertSame($fila['costo_unidad'], $quote->unitCost, 'Costo por unidad (PC + ISV)');
         $this->assertSame($fila['detalle_unidad'], $quote->retailUnitPrice, 'Detalle por unidad (PVD + ISV)');
@@ -71,7 +66,7 @@ class EdtPricingServiceTest extends TestCase
     public function test_gallo_lata_ejemplo_completo_con_margenes(): void
     {
         // CR GALLO LATA 350ML: exento, 24 por caja, lista L 17.60.
-        $quote = (new EdtPricingService)->quote('17.60', 24, '0', '15', $this->tiersDelExcel());
+        $quote = $this->excelQuote('17.60', 24, '0', $this->tiersDelExcel());
 
         $this->assertSame('14.9600', $quote->unitCost);
         $this->assertSame('17.60', $quote->retailUnitPrice);
@@ -87,7 +82,7 @@ class EdtPricingServiceTest extends TestCase
 
     public function test_la_escala_se_elige_por_cajas_del_mismo_codigo(): void
     {
-        $quote = (new EdtPricingService)->quote('17.60', 24, '0', '15', $this->tiersDelExcel());
+        $quote = $this->excelQuote('17.60', 24, '0', $this->tiersDelExcel());
 
         $this->assertNull($quote->wholesaleForBoxes(24), '24 cajas todavía es precio de detalle');
         $this->assertSame('MAYORISTA 1', $quote->wholesaleForBoxes(25)['name']);
@@ -98,7 +93,7 @@ class EdtPricingServiceTest extends TestCase
 
     public function test_las_escalas_salen_ordenadas_aunque_lleguen_desordenadas(): void
     {
-        $quote = (new EdtPricingService)->quote('17.60', 24, '0', '15', array_reverse($this->tiersDelExcel()));
+        $quote = $this->excelQuote('17.60', 24, '0', array_reverse($this->tiersDelExcel()));
 
         $this->assertSame([25, 50], array_column($quote->wholesale, 'min_boxes'));
     }
@@ -107,7 +102,7 @@ class EdtPricingServiceTest extends TestCase
     {
         // 10.00 × 1 × 0.97 = 9.70 → 10 (no 9.70 ni 9).
         $tier = new EdtPriceTier(['name' => 'X', 'min_boxes' => 1, 'discount_pct' => '3']);
-        $quote = (new EdtPricingService)->quote('10.00', 1, '0', '15', [$tier]);
+        $quote = $this->excelQuote('10.00', 1, '0', [$tier]);
 
         $this->assertSame('10.00', $quote->wholesale[0]['box_price']);
     }
@@ -115,15 +110,15 @@ class EdtPricingServiceTest extends TestCase
     public function test_el_detalle_redondea_a_centavos_con_mitad_hacia_arriba(): void
     {
         // 0.0435 × 1.15 = 0.050025 → 0.05; 10.0043 × 1.15 = 11.504945 → 11.50.
-        $this->assertSame('0.05', (new EdtPricingService)->quote('0.0435', 1, '15', '15', [])->retailUnitPrice);
-        $this->assertSame('11.50', (new EdtPricingService)->quote('10.0043', 1, '15', '15', [])->retailUnitPrice);
+        $this->assertSame('0.05', $this->excelQuote('0.0435', 1, '15', [])->retailUnitPrice);
+        $this->assertSame('11.50', $this->excelQuote('10.0043', 1, '15', [])->retailUnitPrice);
         // Exactamente a la mitad: 1.10 × 1.15 = 1.265 → 1.27 (como ROUND de Excel, no 1.26).
-        $this->assertSame('1.27', (new EdtPricingService)->quote('1.10', 1, '15', '15', [])->retailUnitPrice);
+        $this->assertSame('1.27', $this->excelQuote('1.10', 1, '15', [])->retailUnitPrice);
     }
 
     public function test_isv_18_por_ciento(): void
     {
-        $quote = (new EdtPricingService)->quote('100', 12, '18', '15', []);
+        $quote = $this->excelQuote('100', 12, '18', []);
 
         $this->assertSame('118.00', $quote->retailUnitPrice);
         $this->assertSame('1416.00', $quote->retailBoxPrice);
@@ -152,7 +147,7 @@ class EdtPricingServiceTest extends TestCase
 
                 $this->assertSame(
                     $price,
-                    $pricing->quote($list, 1, $isv, '15', [])->retailUnitPrice,
+                    $pricing->retailUnitPrice($list, $isv),
                     "ISV {$isv}%: {$price} → lista {$list}",
                 );
             }
@@ -172,12 +167,67 @@ class EdtPricingServiceTest extends TestCase
         $this->assertSame('17.8600', $pricing->listPriceFromRetail('21.07', '18', currentListPrice: '17.86'));
     }
 
+    public function test_detalle_por_unidad_desde_la_lista(): void
+    {
+        $pricing = new EdtPricingService;
+
+        $this->assertSame('30.00', $pricing->retailUnitPrice('26.0870', '15'));
+        $this->assertSame('1.27', $pricing->retailUnitPrice('1.10', '15'));
+        $this->assertSame('17.60', $pricing->retailUnitPrice('17.60', '0'));
+    }
+
+    public function test_el_costo_por_caja_sugerido_es_el_del_excel(): void
+    {
+        $pricing = new EdtPricingService;
+
+        // Fila 3: 29.20 − 15% + 15% ISV = 28.543 por unidad × 50.
+        $this->assertSame('1427.1500', $pricing->boxCostFromList('29.20', 50, '15', '15'));
+        // Exento: 17.60 − 15% = 14.96 × 24.
+        $this->assertSame('359.0400', $pricing->boxCostFromList('17.60', 24, '0', '15'));
+    }
+
+    public function test_el_costo_es_el_del_producto_y_no_sale_de_la_lista(): void
+    {
+        // Mismo precio que el Gallo (L 17.60, 24 por caja, exento) pero con
+        // costo por contrato de L 336.00 la caja (L 14.00 c/u) en lugar del 15%.
+        $quote = (new EdtPricingService)->quote('17.60', 24, '0', '336', $this->tiersDelExcel());
+
+        $this->assertSame('14.0000', $quote->unitCost);
+        $this->assertSame('336.0000', $quote->boxCost);
+        $this->assertSame('422.40', $quote->retailBoxPrice);
+        // Margen = (422.40 − 336) ÷ 422.40; el precio de venta no cambia.
+        $this->assertSame('20.45', $quote->retailMarginPct);
+        $this->assertSame('410.00', $quote->wholesale[0]['box_price']);
+        $this->assertSame('18.05', $quote->wholesale[0]['margin_pct']);
+    }
+
+    public function test_quitar_y_poner_el_isv(): void
+    {
+        $pricing = new EdtPricingService;
+
+        $this->assertSame('1241.0000', $pricing->withoutIsv('1427.15', '15'));
+        $this->assertSame('1427.1500', $pricing->withIsv('1241', '15'));
+        $this->assertSame('359.0400', $pricing->withIsv('359.04', '0'));
+    }
+
     public function test_sin_escalas_no_hay_precios_mayoristas(): void
     {
-        $quote = (new EdtPricingService)->quote('17.60', 24, '0', '15', []);
+        $quote = $this->excelQuote('17.60', 24, '0', []);
 
         $this->assertSame([], $quote->wholesale);
         $this->assertNull($quote->wholesaleForBoxes(100));
+    }
+
+    /**
+     * Cotiza como el Excel: el costo por caja sale de la lista − 15% + ISV.
+     *
+     * @param  iterable<EdtPriceTier>  $tiers
+     */
+    private function excelQuote(string $list, int $units, string $isv, iterable $tiers): EdtPriceQuote
+    {
+        $pricing = new EdtPricingService;
+
+        return $pricing->quote($list, $units, $isv, $pricing->boxCostFromList($list, $units, $isv, '15'), $tiers);
     }
 
     /**

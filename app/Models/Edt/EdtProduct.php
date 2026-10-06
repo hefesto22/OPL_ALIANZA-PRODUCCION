@@ -23,8 +23,9 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * Producto del catálogo del EDT. Sin inventario: solo lo necesario para
  * calcular precios (ver EdtPricingService).
  *
- * Los precios NO se guardan en esta tabla: priceQuote() los calcula al
- * momento. Cada cambio de un campo de PRICE_FIELDS escribe una fila en
+ * Se guardan los datos de entrada: precio de lista sin ISV, costo por caja
+ * con ISV, unidades por caja e ISV. Los precios NO se guardan: priceQuote()
+ * los calcula al momento. Cada cambio de un campo de PRICE_FIELDS escribe una fila en
  * edt_product_price_history (EdtProductObserver), en la misma transacción.
  *
  * Todo el texto va en MAYÚSCULAS (regla del EDT).
@@ -44,6 +45,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * @property int $units_per_box
  * @property string $isv_pct
  * @property string $list_price
+ * @property string $box_cost
  * @property bool $is_active
  * @property-read EdtSupplier $supplier
  */
@@ -56,7 +58,7 @@ class EdtProduct extends Model
     protected $table = 'edt_products';
 
     /** Campos que mueven el precio: cambiar cualquiera escribe historial. */
-    public const PRICE_FIELDS = ['supplier_id', 'list_price', 'units_per_box', 'isv_pct'];
+    public const PRICE_FIELDS = ['supplier_id', 'list_price', 'box_cost', 'units_per_box', 'isv_pct'];
 
     /** Tasas de ISV válidas (CHECK edt_products_isv_valid). */
     public const ISV_RATES = ['0' => 'EXENTO', '15' => '15%', '18' => '18%'];
@@ -71,6 +73,7 @@ class EdtProduct extends Model
         'units_per_box',
         'isv_pct',
         'list_price',
+        'box_cost',
         'is_active',
     ];
 
@@ -94,6 +97,7 @@ class EdtProduct extends Model
             'units_per_box' => 'integer',
             'isv_pct' => 'decimal:2',
             'list_price' => 'decimal:4',
+            'box_cost' => 'decimal:4',
             'is_active' => 'boolean',
         ];
     }
@@ -141,13 +145,11 @@ class EdtProduct extends Model
      */
     public function priceQuote(): EdtPriceQuote
     {
-        $this->loadMissing('supplier:id,operation_discount_pct');
-
         $key = implode('|', [
             $this->list_price,
+            $this->box_cost,
             $this->units_per_box,
             $this->isv_pct,
-            $this->supplier?->operation_discount_pct,
         ]);
 
         if ($this->quote === null || $this->quoteKey !== $key) {
@@ -172,6 +174,7 @@ class EdtProduct extends Model
                 'units_per_box',
                 'isv_pct',
                 'list_price',
+                'box_cost',
                 'is_active',
             ])
             ->logOnlyDirty()

@@ -17,15 +17,21 @@ use Illuminate\Support\Collection;
  * decimales exactos (brick/math), nunca float.
  *
  * Entradas: precio de lista SIN ISV (= precio de venta al detalle sin ISV),
- * unidades por caja, ISV del producto, descuento de operación del proveedor
- * y las escalas mayoristas activas.
+ * unidades por caja, ISV del producto, COSTO POR CAJA con ISV (lo que le
+ * cuesta la caja al EDT; cada producto tiene el suyo) y las escalas
+ * mayoristas activas.
  *
- *   costo por unidad   = lista × (1 − desc. operación) × (1 + ISV)       → 4 decimales
+ *   costo por unidad   = costo por caja ÷ unidades por caja               → 4 decimales
  *   detalle por unidad = lista × (1 + ISV)                               → 2 decimales (mitad hacia arriba)
  *   detalle por caja   = detalle por unidad × unidades por caja
  *   mayorista por caja = lista × unidades × (1 − desc. escala) × (1 + ISV) → hacia ARRIBA al lempira
  *
  * El "hacia arriba al lempira" del mayorista es el ROUNDUP(…; 0) del Excel.
+ *
+ * El Excel sacaba el costo de la lista: lista × (1 − 15%) × (1 + ISV). Eso
+ * queda en boxCostFromList() como SUGERENCIA (al escribir un precio y al
+ * importar el Excel); el costo que cuenta es el que tiene guardado el
+ * producto.
  *
  * #[Scoped]: una instancia por request/job, así las escalas activas se leen
  * de la BD una sola vez aunque una tabla calcule precios de 25 productos.
@@ -43,15 +49,14 @@ class EdtPricingService
         string $listPrice,
         int $unitsPerBox,
         string $isvPct,
-        string $operationDiscountPct,
+        string $boxCost,
         iterable $tiers,
     ): EdtPriceQuote {
         $list = BigDecimal::of($listPrice);
         $isvFactor = $this->factorFromPct($isvPct, add: true);
-        $costFactor = $this->factorFromPct($operationDiscountPct, add: false);
+        $boxCostValue = BigDecimal::of($boxCost);
 
-        $unitCost = $list->multipliedBy($costFactor)->multipliedBy($isvFactor);
-        $retailUnit = $list->multipliedBy($isvFactor)->toScale(2, RoundingMode::HalfUp);
+        $retailUnit = BigDecimal::of($this->retailUnitPrice($listPrice, $isvPct));
         $retailBox = $retailUnit->multipliedBy($unitsPerBox);
 
         $wholesale = [];
@@ -69,17 +74,61 @@ class EdtPricingService
                 'min_boxes' => (int) $tier->min_boxes,
                 'discount_pct' => (string) BigDecimal::of((string) $tier->discount_pct)->toScale(2),
                 'box_price' => (string) $boxPrice,
-                'margin_pct' => $this->marginPct($boxPrice, $unitCost->multipliedBy($unitsPerBox)),
+                'margin_pct' => $this->marginPct($boxPrice, $boxCostValue),
             ];
         }
 
         return new EdtPriceQuote(
-            unitCost: (string) $unitCost->toScale(4, RoundingMode::HalfUp),
+            unitCost: (string) $boxCostValue->dividedBy($unitsPerBox, 4, RoundingMode::HalfUp),
+            boxCost: (string) $boxCostValue->toScale(4, RoundingMode::HalfUp),
             retailUnitPrice: (string) $retailUnit,
             retailBoxPrice: (string) $retailBox,
-            retailMarginPct: $this->marginPct($retailUnit, $unitCost),
+            // Por caja: es el mismo margen que por unidad, sin dividir el costo.
+            retailMarginPct: $this->marginPct($retailBox, $boxCostValue),
             wholesale: $wholesale,
         );
+    }
+
+    /**
+     * Detalle por unidad CON ISV: lista × (1 + ISV), a centavos con mitad
+     * hacia arriba (el ROUND del Excel).
+     */
+    public function retailUnitPrice(string $listPrice, string $isvPct): string
+    {
+        return (string) BigDecimal::of($listPrice)
+            ->multipliedBy($this->factorFromPct($isvPct, add: true))
+            ->toScale(2, RoundingMode::HalfUp);
+    }
+
+    /**
+     * Costo por caja CON ISV como lo calculaba el Excel: lista × (1 −
+     * descuento del proveedor) × (1 + ISV) × unidades, a 4 decimales.
+     * Es la sugerencia al escribir un precio y el costo que trae la
+     * importación del Excel.
+     */
+    public function boxCostFromList(string $listPrice, int $unitsPerBox, string $isvPct, string $operationDiscountPct): string
+    {
+        return (string) BigDecimal::of($listPrice)
+            ->multipliedBy($this->factorFromPct($operationDiscountPct, add: false))
+            ->multipliedBy($this->factorFromPct($isvPct, add: true))
+            ->multipliedBy($unitsPerBox)
+            ->toScale(4, RoundingMode::HalfUp);
+    }
+
+    /**
+     * Quita el ISV de un monto (costo o precio con ISV), a 4 decimales.
+     */
+    public function withoutIsv(string $amount, string $isvPct): string
+    {
+        return (string) BigDecimal::of($amount)->dividedBy($this->factorFromPct($isvPct, add: true), 4, RoundingMode::HalfUp);
+    }
+
+    /**
+     * Le suma el ISV a un monto sin ISV, a 4 decimales.
+     */
+    public function withIsv(string $amount, string $isvPct): string
+    {
+        return (string) BigDecimal::of($amount)->multipliedBy($this->factorFromPct($isvPct, add: true))->toScale(4, RoundingMode::HalfUp);
     }
 
     /**
@@ -113,17 +162,15 @@ class EdtPricingService
     }
 
     /**
-     * Precios de un producto con su proveedor y las escalas activas.
+     * Precios de un producto con su costo y las escalas activas.
      */
     public function quoteForProduct(EdtProduct $product): EdtPriceQuote
     {
-        $product->loadMissing('supplier:id,operation_discount_pct');
-
         return $this->quote(
             listPrice: (string) $product->list_price,
             unitsPerBox: (int) $product->units_per_box,
             isvPct: (string) $product->isv_pct,
-            operationDiscountPct: (string) $product->supplier->operation_discount_pct,
+            boxCost: (string) $product->box_cost,
             tiers: $this->activeTiers(),
         );
     }

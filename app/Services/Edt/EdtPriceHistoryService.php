@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\DB;
  * Escribe el historial de precios del EDT: datos de entrada + foto de los
  * precios resultantes (ver migración create_edt_product_price_history).
  *
- * Lo llaman los observers (producto, proveedor, escalas) dentro de la
+ * Lo llaman los observers (producto y escalas) dentro de la
  * transacción del cambio, así que el historial y el cambio se confirman o se
  * revierten juntos. No llamar desde fuera de esa transacción.
  */
@@ -49,8 +49,8 @@ class EdtPriceHistoryService
 
     /**
      * Una fila por cada producto del query, insertadas en lotes. Para los
-     * cambios que mueven precios de muchos productos a la vez (descuento del
-     * proveedor, escalas). Con el catálogo del EDT (cientos a pocos miles de
+     * cambios que mueven precios de muchos productos a la vez (las escalas
+     * mayoristas). Con el catálogo del EDT (cientos a pocos miles de
      * productos) es un INSERT por cada 500 — menos de un segundo.
      *
      * @param  Builder<EdtProduct>|Relation<EdtProduct, *, *>  $products
@@ -118,6 +118,7 @@ class EdtPriceHistoryService
             'isv_pct' => (string) $product->isv_pct,
             'operation_discount_pct' => (string) $product->supplier->operation_discount_pct,
             'unit_cost' => $quote->unitCost,
+            'box_cost' => $quote->boxCost,
             'retail_unit_price' => $quote->retailUnitPrice,
             'retail_box_price' => $quote->retailBoxPrice,
             'wholesale_prices' => array_map(

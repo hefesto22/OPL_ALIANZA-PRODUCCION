@@ -5,11 +5,9 @@ namespace App\Models\Edt;
 use App\Casts\Uppercase;
 use App\Models\Edt\Concerns\HasRtn;
 use App\Models\Edt\Concerns\SavesAtomically;
-use App\Observers\Edt\EdtSupplierObserver;
 use App\Support\Edt\EdtModule;
 use App\Traits\HasAuditFields;
 use Database\Factories\Edt\EdtSupplierFactory;
-use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -31,9 +29,9 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * Excepción: el correo va en minúsculas — la parte antes de la @ distingue
  * mayúsculas en algunos servidores y en mayúsculas podría no llegar.
  *
- * Cambiar operation_discount_pct cambia el costo de todos sus productos:
- * EdtSupplierObserver escribe una fila de historial por producto, en la
- * misma transacción (SavesAtomically).
+ * operation_discount_pct (el 15%) ya no mueve costos: cada producto guarda
+ * su costo por caja. Solo se usa para SUGERIR el costo al escribir un precio
+ * y para calcularlo al importar el Excel (EdtPricingService::boxCostFromList).
  *
  * @property int $id
  * @property string $code
@@ -42,7 +40,6 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * @property string $operation_discount_pct
  * @property bool $is_active
  */
-#[ObservedBy([EdtSupplierObserver::class])]
 class EdtSupplier extends Model
 {
     /** @use HasFactory<EdtSupplierFactory> */
