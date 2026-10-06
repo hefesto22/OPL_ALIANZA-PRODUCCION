@@ -163,6 +163,11 @@ class EdtPricingService
 
     /**
      * Precios de un producto con su costo y las escalas activas.
+     *
+     * Sin costo guardado (la BD todavía no tiene la columna box_cost: falta
+     * correr la migración add_box_cost_to_edt_products) se usa el costo que
+     * esa migración le pondría — lista − descuento del proveedor + ISV —, así
+     * las pantallas no se caen mientras tanto.
      */
     public function quoteForProduct(EdtProduct $product): EdtPriceQuote
     {
@@ -170,8 +175,24 @@ class EdtPricingService
             listPrice: (string) $product->list_price,
             unitsPerBox: (int) $product->units_per_box,
             isvPct: (string) $product->isv_pct,
-            boxCost: (string) $product->box_cost,
+            boxCost: $this->boxCostOf($product),
             tiers: $this->activeTiers(),
+        );
+    }
+
+    private function boxCostOf(EdtProduct $product): string
+    {
+        if (filled($product->box_cost)) {
+            return (string) $product->box_cost;
+        }
+
+        $product->loadMissing('supplier:id,operation_discount_pct');
+
+        return $this->boxCostFromList(
+            (string) $product->list_price,
+            (int) $product->units_per_box,
+            (string) $product->isv_pct,
+            (string) ($product->supplier?->operation_discount_pct ?? '15'),
         );
     }
 

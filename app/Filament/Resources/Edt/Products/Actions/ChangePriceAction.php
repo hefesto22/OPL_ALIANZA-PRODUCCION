@@ -47,7 +47,7 @@ class ChangePriceAction
                 // Arranca con lo vigente: precio por unidad y costo por caja, con ISV.
                 PriceInputFields::INCLUDES_ISV => true,
                 PriceInputFields::PRICE => $record->priceQuote()->retailUnitPrice,
-                PriceInputFields::COST => EdtPriceDisplay::plainAmount((string) $record->box_cost),
+                PriceInputFields::COST => EdtPriceDisplay::plainAmount($record->priceQuote()->boxCost),
                 'units_per_box' => $record->units_per_box,
                 'isv_pct' => (string) (int) $record->isv_pct,
                 'reason' => PriceChangeReason::ListaProveedor->value,
@@ -108,7 +108,7 @@ class ChangePriceAction
                                                 $get(PriceInputFields::COST),
                                                 $get(PriceInputFields::INCLUDES_ISV),
                                                 $get('isv_pct'),
-                                                (string) $record->box_cost,
+                                                $record->priceQuote()->boxCost,
                                             ),
                                         ),
                                         before: PriceSnapshot::fromProduct($record),
@@ -122,7 +122,7 @@ class ChangePriceAction
                     product: $record,
                     // Si el precio con ISV no cambió, la lista vigente queda igual.
                     listPrice: (string) PriceInputFields::listPriceFromState($data, (string) $record->list_price),
-                    boxCost: (string) PriceInputFields::boxCostFromState($data, (string) $record->box_cost),
+                    boxCost: (string) PriceInputFields::boxCostFromState($data, $record->priceQuote()->boxCost),
                     unitsPerBox: (int) $data['units_per_box'],
                     isvPct: (string) $data['isv_pct'],
                     reason: PriceChangeReason::from($data['reason']),

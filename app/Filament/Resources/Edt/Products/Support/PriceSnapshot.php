@@ -28,7 +28,7 @@ final class PriceSnapshot
         return new self(
             quote: $product->priceQuote(),
             listPrice: (string) $product->list_price,
-            boxCost: (string) $product->box_cost,
+            boxCost: $product->priceQuote()->boxCost,
             unitsPerBox: (int) $product->units_per_box,
             isvPct: (string) (int) $product->isv_pct,
         );

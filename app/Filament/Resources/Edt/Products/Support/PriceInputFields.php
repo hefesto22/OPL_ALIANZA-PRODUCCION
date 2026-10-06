@@ -70,7 +70,7 @@ final class PriceInputFields
                     $get(self::COST),
                     toIncludesIsv: (bool) $state,
                     isvPct: $get('isv_pct'),
-                    currentBoxCost: $current ? (string) $current->box_cost : null,
+                    currentBoxCost: $current?->priceQuote()->boxCost,
                 ));
             });
     }

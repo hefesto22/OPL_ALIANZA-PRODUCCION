@@ -407,6 +407,19 @@ class EdtPriceHistoryTest extends TestCase
         EdtProduct::factory()->for($this->supplier, 'supplier')->create(['box_cost' => 0]);
     }
 
+    public function test_sin_costo_guardado_las_pantallas_usan_el_que_pondria_la_migracion(): void
+    {
+        $gallo = $this->gallo();
+
+        // Como si la BD aún no tuviera la columna box_cost.
+        $gallo->setRawAttributes(array_diff_key($gallo->getAttributes(), ['box_cost' => true]));
+
+        $quote = $gallo->priceQuote();
+        $this->assertSame('359.0400', $quote->boxCost); // 17.60 − 15%, × 24
+        $this->assertSame('14.9600', $quote->unitCost);
+        $this->assertSame('422.40', $quote->retailBoxPrice);
+    }
+
     private function gallo(): EdtProduct
     {
         return EdtProduct::factory()->for($this->supplier, 'supplier')->create([
