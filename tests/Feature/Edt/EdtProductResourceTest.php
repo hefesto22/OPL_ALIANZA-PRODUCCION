@@ -273,8 +273,7 @@ class EdtProductResourceTest extends TestCase
                 'description' => 'cr gallo lata 350ml',
                 // Bloqueados en edición: aunque lleguen, no se guardan.
                 'list_price' => '99.00',
-                'units_per_box' => 1,
-                'isv_pct' => '15',
+                'box_cost' => '1.00',
             ])
             ->call('save')
             ->assertHasNoFormErrors();
@@ -282,9 +281,72 @@ class EdtProductResourceTest extends TestCase
         $gallo->refresh();
         $this->assertSame('CR GALLO LATA 350ML', $gallo->description);
         $this->assertSame('17.6000', $gallo->list_price);
+        $this->assertSame('359.0400', $gallo->box_cost);
         $this->assertSame(24, $gallo->units_per_box);
         $this->assertSame('0.00', $gallo->isv_pct);
         $this->assertSame(1, $gallo->priceHistory()->count());
+    }
+
+    public function test_editar_el_isv_mantiene_lo_que_cuesta_y_vale_sin_isv(): void
+    {
+        $gallo = $this->gallo();
+        $this->actingAs($this->admin);
+
+        Livewire::test(EditEdtProduct::class, ['record' => $gallo->getRouteKey()])
+            ->fillForm(['isv_pct' => '15'])
+            ->assertSee('Así quedarían los precios')
+            ->assertSee('ISV EXENTO → 15%')
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $gallo->refresh();
+        $this->assertSame('15.00', $gallo->isv_pct);
+        // Sin ISV, el precio y el costo por unidad son los mismos; la caja suma el ISV.
+        $this->assertSame('17.6000', $gallo->list_price);
+        $this->assertSame('412.8960', $gallo->box_cost);
+        $this->assertSame('20.24', $gallo->priceQuote()->retailUnitPrice);
+
+        $last = $gallo->priceHistory()->latest('id')->first();
+        $this->assertSame(PriceChangeReason::Edicion, $last->reason);
+        $this->assertSame('412.8960', $last->box_cost);
+    }
+
+    public function test_editar_las_unidades_por_caja_recalcula_el_costo_por_caja(): void
+    {
+        $gallo = $this->gallo();
+        $this->actingAs($this->admin);
+
+        Livewire::test(EditEdtProduct::class, ['record' => $gallo->getRouteKey()])
+            ->fillForm(['units_per_box' => 12])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $gallo->refresh();
+        $this->assertSame(12, $gallo->units_per_box);
+        $this->assertSame('179.5200', $gallo->box_cost);
+        $this->assertSame('14.9600', $gallo->priceQuote()->unitCost);
+        $this->assertSame(2, $gallo->priceHistory()->count());
+    }
+
+    public function test_cambiar_precio_no_cambia_el_isv_ni_las_unidades(): void
+    {
+        $gallo = $this->gallo();
+        $this->actingAs($this->admin);
+
+        Livewire::test(ListEdtProducts::class)
+            ->callTableAction('changePrice', $gallo, data: [
+                'price' => '21.28',
+                // Aunque lleguen, en «Cambiar precio» no se guardan.
+                'units_per_box' => 1,
+                'isv_pct' => '18',
+                'reason' => PriceChangeReason::ListaProveedor->value,
+            ])
+            ->assertHasNoTableActionErrors();
+
+        $gallo->refresh();
+        $this->assertSame('21.2800', $gallo->list_price);
+        $this->assertSame(24, $gallo->units_per_box);
+        $this->assertSame('0.00', $gallo->isv_pct);
     }
 
     public function test_el_historial_se_ve_en_la_pantalla_de_edicion(): void

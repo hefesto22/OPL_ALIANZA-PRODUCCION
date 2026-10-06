@@ -116,6 +116,21 @@ class EdtPricingService
     }
 
     /**
+     * Costo por caja CON ISV cuando cambian el ISV o las unidades por caja
+     * de un producto: el costo por unidad SIN ISV (lo que cobra el
+     * proveedor) se mantiene, y se recalcula la caja con el ISV nuevo.
+     */
+    public function rescaleBoxCost(string $boxCost, int $oldUnits, string $oldIsvPct, int $newUnits, string $newIsvPct): string
+    {
+        return (string) BigDecimal::of($boxCost)
+            ->dividedBy($this->factorFromPct($oldIsvPct, add: true), 12, RoundingMode::HalfUp)
+            ->dividedBy($oldUnits, 12, RoundingMode::HalfUp)
+            ->multipliedBy($newUnits)
+            ->multipliedBy($this->factorFromPct($newIsvPct, add: true))
+            ->toScale(4, RoundingMode::HalfUp);
+    }
+
+    /**
      * Quita el ISV de un monto (costo o precio con ISV), a 4 decimales.
      */
     public function withoutIsv(string $amount, string $isvPct): string

@@ -10,6 +10,7 @@ use App\Filament\Resources\Edt\Products\Support\PriceSnapshot;
 use App\Models\Edt\EdtProduct;
 use App\Services\Edt\EdtProductPriceService;
 use Filament\Actions\Action;
+use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Infolists\Components\TextEntry;
@@ -24,7 +25,8 @@ use Illuminate\Support\HtmlString;
 
 /**
  * "Cambiar precio": se escribe el precio de venta y el costo por caja; el
- * resto se calcula. Muestra los precios actuales y los nuevos lado a lado,
+ * resto se calcula. El ISV y las unidades por caja no se cambian aquí: son
+ * datos del producto y se corrigen en Editar. Muestra los precios actuales y los nuevos lado a lado,
  * pide motivo y deja la fila en el historial (EdtProductPriceService →
  * observer).
  *
@@ -65,8 +67,15 @@ class ChangePriceAction
                                     PriceInputFields::includesIsvToggle(),
                                     PriceInputFields::priceInput(),
                                     PriceInputFields::costInput(),
-                                    PriceInputFields::isvButtons(),
-                                    PriceInputFields::unitsPerBoxInput(),
+                                    // El ISV y las unidades por caja son datos del producto: se
+                                    // ven aquí (los cálculos los usan) pero se cambian en Editar.
+                                    Hidden::make('isv_pct'),
+                                    Hidden::make('units_per_box'),
+                                    TextEntry::make('product_data')
+                                        ->label('Datos del producto')
+                                        ->state(fn (EdtProduct $record): string => 'ISV '.EdtPriceDisplay::isv($record->isv_pct)
+                                            .' · '.$record->units_per_box.' unidades por caja')
+                                        ->helperText('Se cambian en «Editar».'),
                                 ]),
 
                             Section::make('Motivo del cambio')
@@ -118,13 +127,19 @@ class ChangePriceAction
                     ]),
             ])
             ->action(function (EdtProduct $record, array $data): void {
+                // El ISV y las unidades son los del producto, no los del
+                // formulario (los campos ocultos se pueden manipular).
+                $data['isv_pct'] = (string) $record->isv_pct;
+                $data['units_per_box'] = (int) $record->units_per_box;
+
                 $changed = app(EdtProductPriceService::class)->changePrice(
                     product: $record,
                     // Si el precio con ISV no cambió, la lista vigente queda igual.
                     listPrice: (string) PriceInputFields::listPriceFromState($data, (string) $record->list_price),
                     boxCost: (string) PriceInputFields::boxCostFromState($data, $record->priceQuote()->boxCost),
-                    unitsPerBox: (int) $data['units_per_box'],
-                    isvPct: (string) $data['isv_pct'],
+                    // Solo cambian precio y costo: ISV y unidades se quedan como están.
+                    unitsPerBox: (int) $record->units_per_box,
+                    isvPct: (string) $record->isv_pct,
                     reason: PriceChangeReason::from($data['reason']),
                     note: $data['note'] ?? null,
                 );

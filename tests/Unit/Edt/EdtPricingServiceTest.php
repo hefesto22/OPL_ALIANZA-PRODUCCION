@@ -210,6 +210,19 @@ class EdtPricingServiceTest extends TestCase
         $this->assertSame('359.0400', $pricing->withIsv('359.04', '0'));
     }
 
+    public function test_al_cambiar_isv_o_unidades_el_costo_por_unidad_sin_isv_se_mantiene(): void
+    {
+        $pricing = new EdtPricingService;
+
+        // Gallo: 359.04 la caja de 24 sin ISV → con 15%: 359.04 × 1.15.
+        $this->assertSame('412.8960', $pricing->rescaleBoxCost('359.04', 24, '0', 24, '15'));
+        // Caja de 24 → 12: la mitad.
+        $this->assertSame('179.5200', $pricing->rescaleBoxCost('359.04', 24, '0', 12, '0'));
+        // 1427.15 con 15% (1241 sin ISV, 12 u.) → 6 u. con 18%: 620.50 × 1.18.
+        $this->assertSame('732.1900', $pricing->rescaleBoxCost('1427.15', 12, '15', 6, '18'));
+        $this->assertSame('1241.0000', $pricing->rescaleBoxCost('1427.15', 12, '15', 12, '0'));
+    }
+
     public function test_sin_escalas_no_hay_precios_mayoristas(): void
     {
         $quote = $this->excelQuote('17.60', 24, '0', []);
