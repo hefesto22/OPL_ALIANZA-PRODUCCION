@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Policies\Edt;
 
 use App\Models\Edt\EdtClient;
+use App\Models\Edt\EdtOrder;
 use App\Policies\Concerns\HandlesWarehouseScope;
 use App\Services\Edt\EdtSellerZones;
 use Illuminate\Auth\Access\HandlesAuthorization;
@@ -54,14 +55,14 @@ class EdtClientPolicy
     }
 
     /**
-     * Hoy un cliente no tiene nada colgando y se puede borrar. Cuando
-     * existan pedidos, aquí se agrega "y no tiene pedidos" (como
-     * EdtSupplierPolicy con sus productos).
+     * Un cliente con preventas no se borra (la FK lo impediría con un
+     * error): se desactiva.
      */
     public function delete(AuthUser $authUser, EdtClient $edtClient): bool
     {
         return $authUser->can('Delete:EdtClient')
             && $this->userOwnsRecord($authUser, $edtClient)
-            && EdtSellerZones::userCanSee($authUser, $edtClient);
+            && EdtSellerZones::userCanSee($authUser, $edtClient)
+            && ! EdtOrder::query()->where('client_id', $edtClient->id)->exists();
     }
 }

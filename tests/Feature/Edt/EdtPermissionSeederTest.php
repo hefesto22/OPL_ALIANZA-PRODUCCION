@@ -5,6 +5,7 @@ namespace Tests\Feature\Edt;
 use App\Models\Edt\EdtSupplier;
 use App\Models\User;
 use App\Policies\Edt\EdtClientPolicy;
+use App\Policies\Edt\EdtOrderPolicy;
 use App\Policies\Edt\EdtPriceTierPolicy;
 use App\Policies\Edt\EdtProductPolicy;
 use App\Policies\Edt\EdtRoutePolicy;
@@ -90,7 +91,10 @@ class EdtPermissionSeederTest extends TestCase
         $this->seed(EdtPermissionSeeder::class);
 
         $this->assertEqualsCanonicalizing(
-            ['ViewAny:EdtClient', 'View:EdtClient', 'ViewAny:EdtProduct', 'View:EdtProduct'],
+            [
+                'ViewAny:EdtClient', 'View:EdtClient', 'ViewAny:EdtProduct', 'View:EdtProduct',
+                'ViewAny:EdtOrder', 'View:EdtOrder', 'Create:EdtOrder', 'Update:EdtOrder', 'Cancel:EdtOrder',
+            ],
             Role::findByName(EdtModule::SELLER_ROLE)->permissions->pluck('name')->all(),
         );
     }
@@ -169,6 +173,7 @@ class EdtPermissionSeederTest extends TestCase
             'EdtClient' => EdtClientPolicy::class,
             'EdtSeller' => EdtSellerPolicy::class,
             'EdtRoute' => EdtRoutePolicy::class,
+            'EdtOrder' => EdtOrderPolicy::class,
         ];
 
         $this->assertSame(array_keys(EdtPermissionSeeder::PERMISSIONS_BY_MODEL), array_keys($policies));

@@ -11,7 +11,7 @@ use App\Models\Edt\EdtProduct;
 use App\Services\Edt\EdtProductPriceService;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Hidden;
-use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Radio;
 use Filament\Forms\Components\TextInput;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
@@ -43,7 +43,7 @@ class ChangePriceAction
             ->color('warning')
             ->authorize('changePrice')
             ->modalHeading(fn (EdtProduct $record): string => "Cambiar precio · {$record->code}")
-            ->modalDescription(fn (EdtProduct $record): string => $record->description)
+            ->modalDescription(fn (EdtProduct $record): HtmlString => self::header($record))
             ->modalSubmitActionLabel('Guardar precio')
             ->fillForm(fn (EdtProduct $record): array => [
                 // Arranca con lo vigente: precio por unidad y costo por caja, con ISV.
@@ -67,29 +67,25 @@ class ChangePriceAction
                                     PriceInputFields::includesIsvToggle(),
                                     PriceInputFields::priceInput(),
                                     PriceInputFields::costInput(),
-                                    // El ISV y las unidades por caja son datos del producto: se
-                                    // ven aquí (los cálculos los usan) pero se cambian en Editar.
+                                    // El ISV y las unidades por caja son datos del producto: los
+                                    // cálculos los usan, se ven en el encabezado y se cambian en Editar.
                                     Hidden::make('isv_pct'),
                                     Hidden::make('units_per_box'),
-                                    TextEntry::make('product_data')
-                                        ->label('Datos del producto')
-                                        ->state(fn (EdtProduct $record): string => 'ISV '.EdtPriceDisplay::isv($record->isv_pct)
-                                            .' · '.$record->units_per_box.' unidades por caja')
-                                        ->helperText('Se cambian en «Editar».'),
                                 ]),
 
-                            Section::make('Motivo del cambio')
+                            Section::make('¿Por qué cambia?')
                                 ->icon(Heroicon::OutlinedClipboardDocumentList)
                                 ->description('Queda en el historial del producto.')
                                 ->compact()
                                 ->schema([
-                                    Select::make('reason')
-                                        ->label('Motivo')
+                                    Radio::make('reason')
+                                        ->hiddenLabel()
                                         ->options(PriceChangeReason::manualOptions())
+                                        ->descriptions(PriceChangeReason::manualDescriptions())
                                         ->required(),
 
                                     TextInput::make('note')
-                                        ->label('Nota')
+                                        ->label('Nota (opcional)')
                                         ->placeholder('Ej. factura 001-001-01-00012345')
                                         ->maxLength(255)
                                         ->extraInputAttributes(['style' => 'text-transform: uppercase']),
@@ -148,5 +144,31 @@ class ChangePriceAction
                     ? Notification::make()->title('Precio actualizado')->body('Quedó en el historial del producto.')->success()->send()
                     : Notification::make()->title('Sin cambios')->body('Los datos son iguales a los vigentes; no se registró nada.')->warning()->send();
             });
+    }
+
+    /**
+     * Encabezado del modal: descripción, ISV, unidades por caja, proveedor
+     * y el último cambio de precio (una consulta, por índice product_id +
+     * created_at).
+     */
+    public static function header(EdtProduct $record): HtmlString
+    {
+        $record->loadMissing('supplier:id,name');
+
+        $last = $record->priceHistory()
+            ->latest('created_at')
+            ->latest('id')
+            ->first(['id', 'reason', 'created_at']);
+
+        return new HtmlString(view('filament.edt.change-price-header', [
+            'description' => $record->description,
+            'isv' => EdtPriceDisplay::isv($record->isv_pct),
+            'unitsPerBox' => (int) $record->units_per_box,
+            'supplier' => $record->supplier?->name,
+            'lastChange' => $last ? [
+                'date' => $last->created_at->format('d/m/Y'),
+                'reason' => $last->reason->getLabel(),
+            ] : null,
+        ])->render());
     }
 }

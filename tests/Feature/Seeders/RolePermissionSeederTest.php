@@ -45,7 +45,7 @@ class RolePermissionSeederTest extends TestCase
     private function seedShieldPermissions(): void
     {
         $models = [
-            'Activity', 'Deposit', 'EdtClient', 'EdtPriceTier', 'EdtProduct', 'EdtRoute', 'EdtSeller', 'EdtSupplier',
+            'Activity', 'Deposit', 'EdtClient', 'EdtOrder', 'EdtPriceTier', 'EdtProduct', 'EdtRoute', 'EdtSeller', 'EdtSupplier',
             'Invoice', 'InvoiceReturn', 'Manifest',
             'ReturnReason', 'Role', 'User', 'Warehouse',
         ];
@@ -349,8 +349,15 @@ class RolePermissionSeederTest extends TestCase
             $this->assertNotContains($permission, $encargado);
         }
 
+        // Preventas: el encargado revisa; el vendedor toma, corrige y anula.
+        $this->assertContains('Review:EdtOrder', $encargado);
+        $this->assertNotContains('Create:EdtOrder', $encargado);
+
         $this->assertEqualsCanonicalizing(
-            ['ViewAny:EdtClient', 'View:EdtClient', 'ViewAny:EdtProduct', 'View:EdtProduct'],
+            [
+                'ViewAny:EdtClient', 'View:EdtClient', 'ViewAny:EdtProduct', 'View:EdtProduct',
+                'ViewAny:EdtOrder', 'View:EdtOrder', 'Create:EdtOrder', 'Update:EdtOrder', 'Cancel:EdtOrder',
+            ],
             $perms('vendedor_edt'),
         );
 

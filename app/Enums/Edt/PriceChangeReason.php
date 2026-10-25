@@ -61,4 +61,18 @@ enum PriceChangeReason: string implements HasLabel
             ->mapWithKeys(fn (self $reason): array => [$reason->value => $reason->getLabel()])
             ->all();
     }
+
+    /**
+     * Qué significa cada motivo de manualOptions(), para quien lo elige.
+     *
+     * @return array<string, string>
+     */
+    public static function manualDescriptions(): array
+    {
+        return [
+            self::ListaProveedor->value => 'El proveedor mandó precios nuevos.',
+            self::FacturaCompra->value => 'La factura de compra vino con otro costo.',
+            self::Correccion->value => 'Había un dato mal escrito.',
+        ];
+    }
 }

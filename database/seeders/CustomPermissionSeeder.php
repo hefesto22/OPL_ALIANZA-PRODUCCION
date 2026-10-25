@@ -120,6 +120,13 @@ class CustomPermissionSeeder extends Seeder
         // Update:EdtRoute porque cambia qué clientes ve cada vendedor.
         // En entornos existentes lo provee EdtPermissionSeeder.
         'AssignSeller:EdtRoute',
+
+        // ── Módulo EDT: preventas (2026-10-06) ──────────────────────
+        // El vendedor anula su preventa mientras la bodega no la toque; la
+        // bodega la revisa (ajusta líneas, aprueba o rechaza).
+        // En entornos existentes lo provee EdtPermissionSeeder.
+        'Cancel:EdtOrder',
+        'Review:EdtOrder',
     ];
 
     public function run(): void

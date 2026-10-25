@@ -92,7 +92,7 @@ final class PriceInputFields
             ->live(debounce: 600)
             ->afterStateUpdated(fn (Get $get, Set $set, mixed $record) => self::fillSuggestedCostIfBlank($get, $set, $record))
             ->helperText(fn (Get $get): string => self::includesIsv($get)
-                ? 'El precio al público. El sistema calcula la lista sin ISV.'
+                ? 'Lo que paga el cliente por unidad.'
                 : 'Como viene en la lista del proveedor (columna "PVD - ISV" del Excel).');
     }
 
@@ -113,7 +113,7 @@ final class PriceInputFields
 
                 return $suggested === null
                     ? 'Lo que le cuesta la caja al EDT.'
-                    : 'Lo que le cuesta la caja al EDT. Con el descuento del proveedor sería L '.$suggested.'.';
+                    : "Lo que le cuesta la caja al EDT. Sugerido con el descuento del proveedor: L\u{00A0}{$suggested}.";
             });
     }
 

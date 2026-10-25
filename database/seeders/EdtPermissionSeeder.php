@@ -64,6 +64,10 @@ class EdtPermissionSeeder extends Seeder
         'EdtSeller' => ['ViewAny', 'View', 'Create', 'Update'],
         // AssignSeller es custom (también en CustomPermissionSeeder).
         'EdtRoute' => ['ViewAny', 'View', 'Create', 'Update', 'Delete', 'AssignSeller'],
+        // Preventas. Cancel (el vendedor anula la suya) y Review (la bodega
+        // ajusta, aprueba o rechaza) son custom (también en
+        // CustomPermissionSeeder). Sin Delete: lo enviado no se borra.
+        'EdtOrder' => ['ViewAny', 'View', 'Create', 'Update', 'Cancel', 'Review'],
     ];
 
     /**
@@ -74,7 +78,8 @@ class EdtPermissionSeeder extends Seeder
      * - encargado: clientes, vendedores y rutas de SU bodega (las Policies
      *   filtran) y consulta del catálogo. Sin borrar ni cambiar precios.
      * - vendedor_edt: consulta sus clientes (solo los de sus rutas) y el
-     *   catálogo con precios.
+     *   catálogo con precios; toma, corrige y anula sus preventas.
+     * - encargado además revisa las preventas de su bodega (Review).
      *
      * @var array<string, array<string, array<int, string>>>
      */
@@ -84,10 +89,12 @@ class EdtPermissionSeeder extends Seeder
             'EdtSeller' => ['ViewAny', 'View', 'Create', 'Update'],
             'EdtRoute' => ['ViewAny', 'View', 'Create', 'Update', 'AssignSeller'],
             'EdtProduct' => ['ViewAny', 'View'],
+            'EdtOrder' => ['ViewAny', 'View', 'Review'],
         ],
         EdtModule::SELLER_ROLE => [
             'EdtClient' => ['ViewAny', 'View'],
             'EdtProduct' => ['ViewAny', 'View'],
+            'EdtOrder' => ['ViewAny', 'View', 'Create', 'Update', 'Cancel'],
         ],
     ];
 

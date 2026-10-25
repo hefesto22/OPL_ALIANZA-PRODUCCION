@@ -3,6 +3,7 @@
 namespace Tests\Feature\Edt;
 
 use App\Enums\Edt\PriceChangeReason;
+use App\Filament\Resources\Edt\Products\Actions\ChangePriceAction;
 use App\Filament\Resources\Edt\Products\EdtProductResource;
 use App\Filament\Resources\Edt\Products\Pages\CreateEdtProduct;
 use App\Filament\Resources\Edt\Products\Pages\EditEdtProduct;
@@ -326,6 +327,20 @@ class EdtProductResourceTest extends TestCase
         $this->assertSame('179.5200', $gallo->box_cost);
         $this->assertSame('14.9600', $gallo->priceQuote()->unitCost);
         $this->assertSame(2, $gallo->priceHistory()->count());
+    }
+
+    public function test_el_encabezado_de_cambiar_precio_muestra_los_datos_del_producto(): void
+    {
+        $gallo = $this->gallo();
+
+        $html = (string) ChangePriceAction::header($gallo);
+
+        $this->assertStringContainsString('CR GALLO LATA 350ML CT', $html);
+        $this->assertStringContainsString('ISV EXENTO', $html);
+        $this->assertStringContainsString('24 unidades por caja', $html);
+        $this->assertStringContainsString('EDT HONDURAS', $html);
+        $this->assertStringContainsString('se cambian en «Editar»', $html);
+        $this->assertStringContainsString('Último cambio: <strong>'.now()->format('d/m/Y').'</strong> · CREACIÓN', $html);
     }
 
     public function test_cambiar_precio_no_cambia_el_isv_ni_las_unidades(): void

@@ -68,6 +68,7 @@ class RolePermissionSeeder extends Seeder
         'Activity',
         'Deposit',
         'EdtClient',
+        'EdtOrder',
         'EdtPriceTier',
         'EdtProduct',
         'EdtRoute',
@@ -112,6 +113,9 @@ class RolePermissionSeeder extends Seeder
             'EdtClient' => ['ViewAny', 'View', 'Create', 'Update', 'Delete'],
             'EdtSeller' => ['ViewAny', 'View', 'Create', 'Update'],
             'EdtRoute' => ['ViewAny', 'View', 'Create', 'Update', 'Delete', 'AssignSeller'],
+            // Preventas: el admin las ve y revisa; tomarlas (Create) solo lo
+            // logra quien tenga ficha de vendedor (EdtOrderPolicy).
+            'EdtOrder' => ['ViewAny', 'View', 'Create', 'Update', 'Cancel', 'Review'],
             'Invoice' => ['ViewAny', 'View', 'Update', 'Delete', 'Restore'],
             'InvoiceReturn' => ['ViewAny', 'View', 'Create', 'Update', 'Delete', 'Restore', 'ExportPdf', 'ExportExcel'],
             'Manifest' => [
@@ -153,6 +157,8 @@ class RolePermissionSeeder extends Seeder
             'EdtSeller' => ['ViewAny', 'View', 'Create', 'Update'],
             'EdtRoute' => ['ViewAny', 'View', 'Create', 'Update', 'AssignSeller'],
             'EdtProduct' => ['ViewAny', 'View'],
+            // Revisa las preventas de su bodega: baja lo que no hay, aprueba o rechaza.
+            'EdtOrder' => ['ViewAny', 'View', 'Review'],
         ],
 
         // ── operador: trabajo diario de bodega ─────────────────────
@@ -204,6 +210,8 @@ class RolePermissionSeeder extends Seeder
         'vendedor_edt' => [
             'EdtClient' => ['ViewAny', 'View'],
             'EdtProduct' => ['ViewAny', 'View'],
+            // Toma sus preventas y las corrige o anula hasta que la bodega las revise.
+            'EdtOrder' => ['ViewAny', 'View', 'Create', 'Update', 'Cancel'],
         ],
     ];
 
