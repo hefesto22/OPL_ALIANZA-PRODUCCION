@@ -1,0 +1,137 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Services\Reports;
+
+use Carbon\CarbonImmutable;
+use InvalidArgumentException;
+
+/**
+ * Filtros ya validados del reporte de ventas por producto.
+ *
+ * Es inmutable y se arma una sola vez por consulta: la pantalla, la vista
+ * de impresión y el Excel reciben el MISMO objeto, así los tres muestran
+ * exactamente los mismos números.
+ *
+ * Las bodegas llegan YA resueltas contra el usuario (ver
+ * ProductSalesReportService::resolveWarehouseIds): este objeto nunca decide
+ * qué bodegas puede ver alguien, solo transporta la lista.
+ */
+final class ProductSalesFilters
+{
+    public const DATE_FIELD_INVOICE = 'invoice_date';
+
+    public const DATE_FIELD_MANIFEST = 'manifest_date';
+
+    /**
+     * Rango máximo por consulta: 3 meses. A 10k facturas/día un mes son
+     * ~2.4M líneas de factura agregadas en vivo; un año (~30M) ya necesita
+     * una tabla de resumen diaria en vez de la consulta directa.
+     */
+    public const MAX_RANGE_DAYS = 93;
+
+    /**
+     * @param  list<int>  $warehouseIds  Nunca vacío: "todas" ya viene expandido a sus IDs.
+     */
+    private function __construct(
+        public readonly CarbonImmutable $dateFrom,
+        public readonly CarbonImmutable $dateTo,
+        public readonly string $dateField,
+        public readonly array $warehouseIds,
+    ) {}
+
+    /**
+     * @param  array<string, mixed>  $data  date_from, date_to (Y-m-d), date_field, warehouse_ids
+     *
+     * @throws InvalidArgumentException con un mensaje listo para mostrar al usuario.
+     */
+    public static function fromArray(array $data): self
+    {
+        $dateFrom = self::parseDate($data['date_from'] ?? null, 'la fecha inicial');
+        $dateTo = self::parseDate($data['date_to'] ?? null, 'la fecha final');
+
+        if ($dateFrom->greaterThan($dateTo)) {
+            throw new InvalidArgumentException('La fecha inicial no puede ser posterior a la fecha final.');
+        }
+
+        // Días INCLUSIVOS: del 1 al 31 de marzo son 31 días, no 30.
+        $days = (int) $dateFrom->diffInDays($dateTo) + 1;
+
+        if ($days > self::MAX_RANGE_DAYS) {
+            throw new InvalidArgumentException(
+                'El rango máximo es de 3 meses ('.self::MAX_RANGE_DAYS." días) y elegiste {$days} días. ".
+                'Genera el reporte por trimestre.'
+            );
+        }
+
+        $dateField = (string) ($data['date_field'] ?? self::DATE_FIELD_INVOICE);
+
+        if (! in_array($dateField, [self::DATE_FIELD_INVOICE, self::DATE_FIELD_MANIFEST], true)) {
+            throw new InvalidArgumentException('Tipo de fecha no válido.');
+        }
+
+        $warehouseIds = array_values(array_unique(array_map(
+            'intval',
+            is_array($data['warehouse_ids'] ?? null) ? $data['warehouse_ids'] : [],
+        )));
+        sort($warehouseIds);
+
+        if ($warehouseIds === []) {
+            throw new InvalidArgumentException('No hay bodegas para consultar.');
+        }
+
+        return new self($dateFrom, $dateTo, $dateField, $warehouseIds);
+    }
+
+    /**
+     * Forma serializable: viaja cifrada en el enlace de impresión y es la
+     * base de la clave de caché.
+     *
+     * @return array{date_from: string, date_to: string, date_field: string, warehouse_ids: list<int>}
+     */
+    public function toArray(): array
+    {
+        return [
+            'date_from' => $this->dateFrom->toDateString(),
+            'date_to' => $this->dateTo->toDateString(),
+            'date_field' => $this->dateField,
+            'warehouse_ids' => $this->warehouseIds,
+        ];
+    }
+
+    public function cacheKey(): string
+    {
+        return 'reports:product-sales:'.sha1((string) json_encode($this->toArray()));
+    }
+
+    public function dateFieldLabel(): string
+    {
+        return $this->dateField === self::DATE_FIELD_MANIFEST
+            ? 'Fecha del manifiesto (día de carga)'
+            : 'Fecha de factura';
+    }
+
+    private static function parseDate(mixed $value, string $label): CarbonImmutable
+    {
+        if (! is_string($value) || preg_match('/^\d{4}-\d{2}-\d{2}/', $value) !== 1) {
+            throw new InvalidArgumentException("Falta {$label}.");
+        }
+
+        $raw = substr($value, 0, 10);
+
+        try {
+            $date = CarbonImmutable::createFromFormat('Y-m-d', $raw);
+        } catch (\Throwable) {
+            $date = null;
+        }
+
+        // createFromFormat no falla con un 31 de febrero: lo corre a marzo.
+        // Si al reformatear no da lo mismo, la fecha no existe.
+        if (! $date instanceof CarbonImmutable || $date->format('Y-m-d') !== $raw) {
+            throw new InvalidArgumentException("Revisa {$label}: no es una fecha válida.");
+        }
+
+        return $date->startOfDay();
+    }
+}

@@ -116,7 +116,7 @@ class RolePermissionSeeder extends Seeder
             // Preventas: el admin las ve y revisa; tomarlas (Create) solo lo
             // logra quien tenga ficha de vendedor (EdtOrderPolicy).
             'EdtOrder' => ['ViewAny', 'View', 'Create', 'Update', 'Cancel', 'Review'],
-            'Invoice' => ['ViewAny', 'View', 'Update', 'Delete', 'Restore'],
+            'Invoice' => ['ViewAny', 'View', 'Update', 'Delete', 'Restore', 'ReportProductSales'],
             'InvoiceReturn' => ['ViewAny', 'View', 'Create', 'Update', 'Delete', 'Restore', 'ExportPdf', 'ExportExcel'],
             'Manifest' => [
                 'ViewAny', 'View', 'Update', 'Delete', 'Restore', 'Close', 'Reopen', 'Adjust',
@@ -180,7 +180,9 @@ class RolePermissionSeeder extends Seeder
         // depósitos para conciliación bancaria.
         'finance' => [
             'Deposit' => ['ViewAny', 'View', 'Create', 'Update', 'ExportPdf', 'ExportExcel'],
-            'Invoice' => ['ViewAny', 'View'],
+            // ReportProductSales: reporte de ventas por producto (2026-10-25),
+            // limitado a sus bodegas si las tiene asignadas.
+            'Invoice' => ['ViewAny', 'View', 'ReportProductSales'],
             // RegisterAfterDeadline: finanzas es quien detecta la devolución
             // que la bodega no alcanzó a registrar antes del cierre hábil.
             // Es la excepción autorizada (2026-09-22) — queda marcada en

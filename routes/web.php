@@ -4,6 +4,7 @@ use App\Http\Controllers\DepositReceiptController;
 use App\Http\Controllers\ExportDownloadController;
 use App\Http\Controllers\PrintInvoicesController;
 use App\Http\Controllers\PrintReportsController;
+use App\Http\Controllers\ProductSalesReportController;
 use Illuminate\Support\Facades\Route;
 
 // ── Descarga de exportaciones generadas en background ────────────────────
@@ -74,4 +75,9 @@ Route::prefix('imprimir/reportes')
 
         Route::get('/facturas-checklist', [PrintReportsController::class, 'invoicesChecklist'])
             ->name('reports.invoices-checklist');
+
+        // Permiso ReportProductSales:Invoice + bodegas del usuario: los
+        // valida el controller (ver ProductSalesReportController).
+        Route::get('/ventas-por-producto', ProductSalesReportController::class)
+            ->name('reports.product-sales');
     });

@@ -92,6 +92,12 @@ class CustomPermissionSeeder extends Seeder
         'ReportWarehouseSales:Manifest',  // botón "Reporte por Bodega"
         'ExportExcel:Manifest',           // botón "Exportar Excel"
 
+        // ── Reporte de ventas por producto (2026-10-25) ─────────────
+        // Menú "Reporte de ventas": por producto, lo que entró, lo bonificado,
+        // lo devuelto y el neto de un período. Admin y finanzas; un usuario de
+        // bodega solo consulta las suyas (ProductSalesReportService).
+        'ReportProductSales:Invoice',
+
         // ── Traslado de bodega ──────────────────────────────────────
         // Mover una factura de una bodega a otra cambia qué bodega la
         // reporta como venta y quién responde por su depósito. Deliberadamente

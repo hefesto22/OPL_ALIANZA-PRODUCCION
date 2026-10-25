@@ -253,6 +253,8 @@ return [
         'ReportPdfSinIsv:Manifest',
         'ReportWarehouseSales:Manifest',
         'ExportExcel:Manifest',
+        // Reporte de ventas por producto (menú "Reporte de ventas").
+        'ReportProductSales:Invoice',
         // Traslado de una factura entre bodegas (solo super_admin).
         'TransferWarehouse:Invoice',
         'RegisterAfterDeadline:InvoiceReturn',

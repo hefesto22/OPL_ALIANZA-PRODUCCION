@@ -313,6 +313,26 @@ class RolePermissionSeederTest extends TestCase
     }
 
     /**
+     * Reporte de ventas por producto (2026-10-25): admin y finanzas, nadie
+     * más. Encargado y operador no lo ven ni en el menú.
+     */
+    public function test_product_sales_report_permission_per_matrix(): void
+    {
+        $this->seedShieldPermissions();
+        $this->seed(RolePermissionSeeder::class);
+
+        $perms = fn (string $role): array => Role::query()
+            ->where('name', $role)->first()->permissions->pluck('name')->all();
+
+        $this->assertContains('ReportProductSales:Invoice', $perms('admin'));
+        $this->assertContains('ReportProductSales:Invoice', $perms('finance'));
+
+        foreach (['encargado', 'operador'] as $role) {
+            $this->assertNotContains('ReportProductSales:Invoice', $perms($role));
+        }
+    }
+
+    /**
      * Módulo EDT: el admin lo tiene completo (el super_admin lo recibe de
      * shield:super-admin / EdtPermissionSeeder). Desde la fase 4
      * (2026-10-04) el encargado maneja clientes, vendedores y rutas de su
