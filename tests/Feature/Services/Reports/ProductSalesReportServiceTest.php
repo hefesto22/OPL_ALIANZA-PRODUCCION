@@ -90,6 +90,52 @@ class ProductSalesReportServiceTest extends TestCase
         $this->assertEqualsWithDelta(9500.00, $totals['billed_total'], 0.001);
         $this->assertEqualsWithDelta(500.00, $totals['returned_total'], 0.001);
         $this->assertEqualsWithDelta(9000.00, $totals['net_total'], 0.001);
+
+        // El cuadro de arriba: en unidades la resta es exacta (1,000 − 50 = 950).
+        $this->assertSame(1000, $totals['entered']['units']);
+        $this->assertSame(50, $totals['bonus']['units']);
+        $this->assertSame(50, $totals['returned']['units']);
+        $this->assertSame(950, $totals['net']['units']);
+        $this->assertSame(5.0, $totals['returned_units_pct']);
+        $this->assertSame(95.0, $totals['net_units_pct']);
+        $this->assertSame(5.0, $totals['bonus_units_pct']);
+        // En lempiras los dos porcentajes suman 100: 5.3 % devuelto, 94.7 % neto.
+        $this->assertSame(5.3, $totals['return_pct']);
+        $this->assertSame(94.7, $totals['net_pct']);
+    }
+
+    public function test_cuadro_cuadra_en_unidades_y_cuenta_los_productos_con_caja_abierta(): void
+    {
+        // A (caja de 20): entran 50 cj y se devuelven 10 sueltas → se abre una caja: 49 cj + 10 u.
+        $a = $this->line($this->invoice($this->oac, '2026-03-10', 1000.00), [
+            'product_id' => 'CAJA-ABIERTA',
+            'quantity_fractions' => 1000,
+            'total' => 1000.00,
+        ]);
+        // B (caja de 12): entran 10 cj y se devuelven 2 cj enteras → 8 cj, ninguna se abre.
+        $b = $this->line($this->invoice($this->oac, '2026-03-11', 240.00), [
+            'product_id' => 'CAJA-ENTERA',
+            'quantity_fractions' => 120,
+            'conversion_factor' => 12,
+            'total' => 240.00,
+        ]);
+        $this->returnFrom($a, boxes: 0, units: 10);
+        $this->returnFrom($b, boxes: 2, units: 0);
+
+        $totals = $this->service->generate($this->filters('2026-03-01', '2026-03-31'))['totals'];
+
+        $this->assertSame('60 cj', $totals['entered']['label']);
+        $this->assertSame('2 cj + 10 u', $totals['returned']['label']);
+        // 60 − 2 serían 58 cajas, pero una se abrió: 57 cj + 10 u.
+        $this->assertSame('57 cj + 10 u', $totals['net']['label']);
+        $this->assertSame(1, $totals['products_with_opened_box']);
+
+        // En unidades sí cuadra exacto: 1,120 − 34 = 1,086.
+        $this->assertSame(1120, $totals['entered']['units']);
+        $this->assertSame(34, $totals['returned']['units']);
+        $this->assertSame(1086, $totals['net']['units']);
+        $this->assertSame(3.0, $totals['returned_units_pct']);
+        $this->assertSame(97.0, $totals['net_units_pct']);
     }
 
     // ── Qué entra al período ────────────────────────────────────────

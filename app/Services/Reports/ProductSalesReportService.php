@@ -379,6 +379,13 @@ final class ProductSalesReportService
      * Totales del reporte. Las cantidades suman las cajas y sueltas de cada
      * fila (como el pie de la Sublista); los montos son los fiscales.
      *
+     * Las cajas del total no restan exacto (Entró − Devuelto ≠ Se movió) cuando
+     * en un producto se devolvieron más sueltas de las que entraron sueltas: la
+     * devolución abre una caja y esas unidades pasan a sueltas. Por eso cada
+     * cantidad trae también sus unidades (ahí la resta sí es exacta) y
+     * `products_with_opened_box` cuenta en cuántos productos pasó, para
+     * explicarlo en el cuadro.
+     *
      * @param  list<array<string, mixed>>  $rows
      * @return array<string, mixed>
      */
@@ -386,6 +393,7 @@ final class ProductSalesReportService
     {
         $billed = round((float) $invoiceTotals->billed_total, 2);
         $returned = round((float) $invoiceTotals->returned_total, 2);
+        $returnPct = $billed > 0 ? round($returned * 100 / $billed, 1) : 0.0;
 
         $totals = [
             'products_count' => count($rows),
@@ -393,7 +401,9 @@ final class ProductSalesReportService
             'billed_total' => $billed,
             'returned_total' => $returned,
             'net_total' => round($billed - $returned, 2),
-            'return_pct' => $billed > 0 ? round($returned * 100 / $billed, 1) : 0.0,
+            'return_pct' => $returnPct,
+            // 100 − lo devuelto, para que los dos porcentajes sumen 100 a la vista.
+            'net_pct' => $billed > 0 ? round(100 - $returnPct, 1) : 0.0,
         ];
 
         foreach (['entered', 'bonus', 'returned', 'net'] as $key) {
@@ -403,9 +413,21 @@ final class ProductSalesReportService
             $totals[$key] = [
                 'cajas' => $cajas,
                 'sueltas' => $sueltas,
+                'units' => array_sum(array_column($rows, $key.'_units')),
                 'label' => self::boxesLabel($cajas, $sueltas),
             ];
         }
+
+        $enteredUnits = $totals['entered']['units'];
+        $returnedUnitsPct = $enteredUnits > 0 ? round($totals['returned']['units'] * 100 / $enteredUnits, 1) : 0.0;
+
+        $totals['returned_units_pct'] = $returnedUnitsPct;
+        $totals['net_units_pct'] = $enteredUnits > 0 ? round(100 - $returnedUnitsPct, 1) : 0.0;
+        $totals['bonus_units_pct'] = $enteredUnits > 0 ? round($totals['bonus']['units'] * 100 / $enteredUnits, 1) : 0.0;
+        $totals['products_with_opened_box'] = count(array_filter(
+            $rows,
+            fn (array $row): bool => $row['entered']['cajas'] - $row['returned']['cajas'] - $row['net']['cajas'] > 0,
+        ));
 
         return $totals;
     }

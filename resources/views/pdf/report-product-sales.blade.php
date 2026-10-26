@@ -55,16 +55,34 @@ body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 8pt; color: #1a1a1
 .window-banner { background: #fef3c7; border: 2px solid #f59e0b; border-radius: 6px; padding: 6px 10px; margin-bottom: 10px; font-size: 8pt; color: #92400e; }
 .window-banner strong { text-transform: uppercase; }
 
-/* ── Summary cards ────────────────────────────────────────────── */
-.summary-box { display: flex; gap: 8px; margin-bottom: 10px; }
-.summary-card { flex: 1; border: 1px solid #e2e8f0; border-top: 3px solid #1e3a5f; border-radius: 6px; padding: 7px 10px; background: #f8fafc; text-align: center; }
-.summary-card .label { font-size: 6.5pt; color: #64748b; text-transform: uppercase; letter-spacing: .5px; }
-.summary-card .value { font-size: 11pt; font-weight: bold; color: #1e3a5f; margin-top: 2px; }
-.summary-card .sub { font-size: 6.5pt; color: #64748b; margin-top: 1px; }
-.summary-card.returned { border-top-color: #dc2626; }
-.summary-card.returned .value { color: #b91c1c; }
-.summary-card.net { border-top-color: #16a34a; }
-.summary-card.net .value { color: #15803d; }
+/* ── Cuadro resumen: Entró − Devuelto = Se movió ──────────────── */
+/* Columnas = el recorrido de la mercadería; filas = en qué se mide.
+   Se lee de izquierda a derecha como una resta. */
+table.flow { width: 100%; border-collapse: separate; border-spacing: 0; border: 1px solid #cbd5e1; border-radius: 6px; font-variant-numeric: tabular-nums; page-break-inside: avoid; }
+table.flow th { padding: 5px 8px 4px; background: #f1f5f9; border-bottom: 1px solid #cbd5e1; color: #1e3a5f; font-size: 7.5pt; text-transform: uppercase; letter-spacing: .5px; text-align: center; vertical-align: bottom; }
+table.flow th .hint { display: block; margin-top: 1px; font-size: 6pt; font-weight: normal; text-transform: none; letter-spacing: 0; color: #64748b; }
+table.flow th:first-child { border-top-left-radius: 6px; }
+table.flow th:last-child { border-top-right-radius: 6px; }
+table.flow th.op { width: 12px; padding: 0; font-size: 13pt; color: #94a3b8; vertical-align: middle; }
+table.flow td { padding: 4px 8px; border-bottom: 1px solid #e5e7eb; text-align: center; white-space: nowrap; color: #1e3a5f; }
+table.flow tr:last-child td { border-bottom: none; }
+table.flow td.op { padding: 0; }
+table.flow td.rowlab { width: 1%; text-align: left; font-size: 6.5pt; text-transform: uppercase; letter-spacing: .4px; color: #64748b; }
+table.flow tr.qty td { font-size: 11.5pt; font-weight: bold; }
+table.flow tr.units td { font-size: 8pt; }
+table.flow tr.money td { font-size: 10pt; font-weight: bold; }
+table.flow tr td.rowlab { font-size: 6.5pt; font-weight: normal; }
+table.flow .pct { margin-left: 4px; font-size: 7pt; font-weight: normal; color: #64748b; }
+table.flow th.ret, table.flow td.ret { color: #b91c1c; }
+table.flow th.net, table.flow td.net { background: #f0fdf4; border-left: 2px solid #16a34a; border-right: 2px solid #16a34a; }
+table.flow th.net { background: #dcfce7; color: #166534; }
+table.flow td.net { color: #15803d; }
+table.flow tr:last-child td.net { border-bottom: 2px solid #16a34a; }
+table.flow th.bonus, table.flow td.bonus { border-left: 1px dashed #94a3b8; }
+table.flow td.bonus { color: #15803d; }
+table.flow th.bonus { color: #475569; }
+.flow-note { margin: 4px 2px 10px; font-size: 6.5pt; color: #64748b; line-height: 1.5; }
+.flow-note strong { color: #475569; }
 
 /* ── Table ────────────────────────────────────────────────────── */
 /* Anchos automáticos: cada columna toma lo que necesita su número más largo y
@@ -181,27 +199,56 @@ table.data tbody tr { page-break-inside: avoid; break-inside: avoid; }
     </div>
     @endif
 
-    <div class="summary-box">
-        <div class="summary-card">
-            <div class="label">Facturado</div>
-            <div class="value">L {{ number_format($totals['billed_total'], 2) }}</div>
-            <div class="sub">Entró {{ $totals['entered']['label'] }}</div>
-        </div>
-        <div class="summary-card">
-            <div class="label">De eso bonificación</div>
-            <div class="value">{{ $totals['bonus']['label'] }}</div>
-            <div class="sub">Mercadería con valor L 0.00</div>
-        </div>
-        <div class="summary-card returned">
-            <div class="label">Devuelto</div>
-            <div class="value">L {{ number_format($totals['returned_total'], 2) }}</div>
-            <div class="sub">{{ $totals['returned']['label'] }} · {{ number_format($totals['return_pct'], 1) }}% de lo facturado</div>
-        </div>
-        <div class="summary-card net">
-            <div class="label">Venta neta</div>
-            <div class="value">L {{ number_format($totals['net_total'], 2) }}</div>
-            <div class="sub">Se movió {{ $totals['net']['label'] }}</div>
-        </div>
+    <table class="flow">
+        <thead>
+            <tr>
+                <th class="rowlab"></th>
+                <th>Entró<span class="hint">lo facturado en el período</span></th>
+                <th class="op">−</th>
+                <th class="ret">Devuelto<span class="hint">de esas mismas facturas</span></th>
+                <th class="op">=</th>
+                <th class="net">Se movió<span class="hint">lo que se quedó vendido</span></th>
+                <th class="bonus">De eso bonificación<span class="hint">ya va dentro de Entró · no se resta</span></th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr class="qty">
+                <td class="rowlab">Cajas y sueltas</td>
+                <td>{!! $qty($totals['entered']['label']) !!}</td>
+                <td class="op"></td>
+                <td class="ret">{!! $qty($totals['returned']['label']) !!}</td>
+                <td class="op"></td>
+                <td class="net">{!! $qty($totals['net']['label']) !!}</td>
+                <td class="bonus">{!! $qty($totals['bonus']['label']) !!}</td>
+            </tr>
+            <tr class="units">
+                <td class="rowlab">En unidades</td>
+                <td>{{ number_format($totals['entered']['units']) }}</td>
+                <td class="op"></td>
+                <td class="ret">{{ number_format($totals['returned']['units']) }}<span class="pct">{{ number_format($totals['returned_units_pct'], 1) }}%</span></td>
+                <td class="op"></td>
+                <td class="net">{{ number_format($totals['net']['units']) }}<span class="pct">{{ number_format($totals['net_units_pct'], 1) }}%</span></td>
+                <td class="bonus">{{ number_format($totals['bonus']['units']) }}<span class="pct">{{ number_format($totals['bonus_units_pct'], 1) }}%</span></td>
+            </tr>
+            <tr class="money">
+                <td class="rowlab">En lempiras</td>
+                <td>L {{ number_format($totals['billed_total'], 2) }}</td>
+                <td class="op"></td>
+                <td class="ret">L {{ number_format($totals['returned_total'], 2) }}<span class="pct">{{ number_format($totals['return_pct'], 1) }}%</span></td>
+                <td class="op"></td>
+                <td class="net">L {{ number_format($totals['net_total'], 2) }}<span class="pct">{{ number_format($totals['net_pct'], 1) }}%</span></td>
+                <td class="bonus">L 0.00<span class="pct">sin valor</span></td>
+            </tr>
+        </tbody>
+    </table>
+    <div class="flow-note">
+        Los porcentajes son sobre lo que entró.
+        @if ($totals['products_with_opened_box'] > 0)
+            <strong>¿Por qué las cajas no restan exacto?</strong>
+            En {{ number_format($totals['products_with_opened_box']) }} {{ $totals['products_with_opened_box'] === 1 ? 'producto' : 'productos' }}
+            se devolvieron unidades sueltas que salen de una caja abierta (si la caja trae 20: 50 cj − 10 u = 49 cj + 10 u).
+            En unidades y en lempiras la resta es exacta.
+        @endif
     </div>
 
     @if (count($report['rows']) > 0)
