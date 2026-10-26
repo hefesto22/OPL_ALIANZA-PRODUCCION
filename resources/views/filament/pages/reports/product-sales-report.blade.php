@@ -148,7 +148,82 @@
         .dark .psr-summary { border-color: rgb(255 255 255 / .1); }
         .psr-none { padding: 1rem; color: var(--gray-500); }
         .dark .psr-none { color: var(--gray-400); }
+
+        .psr-printing { position: fixed; right: 1.5rem; bottom: 1.5rem; z-index: 50; display: flex; align-items: center; gap: .5rem; border-radius: .75rem; padding: .625rem 1rem; font-size: .875rem; font-weight: 500; background: var(--gray-900); color: #fff; box-shadow: 0 10px 25px rgb(0 0 0 / .2); }
+        .dark .psr-printing { background: var(--gray-700); }
+        .psr-printing-spin { width: 1rem; height: 1rem; border: 2px solid rgb(255 255 255 / .35); border-top-color: #fff; border-radius: 9999px; animation: psr-spin .7s linear infinite; }
+        @keyframes psr-spin { to { transform: rotate(360deg); } }
     </style>
+
+    {{--
+        Imprimir sin salir del reporte: el botón "Imprimir" manda la dirección
+        de la vista de impresión, se carga en un marco fuera de pantalla y al
+        terminar se abre el cuadro de impresión del navegador (Carta o A4,
+        o "Guardar como PDF"). Si algo falla se abre la vista aparte, como antes.
+    --}}
+    <div
+        x-data="{
+            printing: false,
+            print(url) {
+                if (! url) {
+                    return;
+                }
+
+                document.getElementById('psr-print-frame')?.remove();
+                this.printing = true;
+
+                const frame = document.createElement('iframe');
+                frame.id = 'psr-print-frame';
+                frame.title = 'Impresión del reporte';
+                frame.setAttribute('aria-hidden', 'true');
+                frame.tabIndex = -1;
+                frame.style.cssText = 'position:fixed;left:-10000px;top:0;width:1100px;height:800px;border:0;';
+
+                const fallback = () => {
+                    this.printing = false;
+                    window.open(url, '_blank');
+                };
+
+                frame.addEventListener('load', () => {
+                    const view = frame.contentWindow;
+
+                    // Chrome avisa un primer 'load' del marco vacío: se ignora.
+                    if (view && view.location.href === 'about:blank') {
+                        return;
+                    }
+
+                    // Si el servidor no devolvió el reporte (permiso, enlace vencido),
+                    // se abre aparte para que se vea el mensaje.
+                    if (! view || ! view.document.getElementById('toolbar')) {
+                        frame.remove();
+                        fallback();
+
+                        return;
+                    }
+
+                    setTimeout(() => {
+                        this.printing = false;
+
+                        try {
+                            view.focus();
+                            view.print();
+                        } catch (error) {
+                            fallback();
+                        }
+                    }, 250);
+                });
+
+                frame.src = url;
+                document.body.appendChild(frame);
+            },
+        }"
+        x-on:psr-print.window="print($event.detail.url)"
+    >
+        <div class="psr-printing" x-show="printing" x-cloak role="status">
+            <span class="psr-printing-spin"></span>
+            Preparando la impresión…
+        </div>
+    </div>
 
     <x-filament::section>
         <form wire:submit="generate">

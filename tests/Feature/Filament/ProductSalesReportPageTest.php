@@ -158,6 +158,32 @@ class ProductSalesReportPageTest extends TestCase
 
     // ── Imprimir ────────────────────────────────────────────────────
 
+    public function test_imprimir_no_abre_otra_ventana_manda_la_vista_al_marco_de_impresion(): void
+    {
+        $this->actingAs($this->admin);
+
+        $component = Livewire::test(ProductSalesReportPage::class);
+        $expected = $component->instance()->printUrl();
+
+        $this->assertNotNull($expected);
+
+        // El botón ya no es un enlace a otra pestaña: avisa a la página y ella
+        // carga la vista en un marco oculto y abre el cuadro de impresión.
+        $component
+            ->assertSee('psr-print-frame')
+            ->callAction('print')
+            ->assertDispatched('psr-print', function (string $name, array $params) use ($expected): bool {
+                // El payload va cifrado (cambia en cada llamada): se compara descifrado.
+                parse_str((string) parse_url($params['url'], PHP_URL_QUERY), $sent);
+                parse_str((string) parse_url($expected, PHP_URL_QUERY), $wanted);
+
+                return str_starts_with($params['url'], url('/imprimir/reportes/ventas-por-producto'))
+                    && Crypt::decryptString($sent['payload']) === Crypt::decryptString($wanted['payload']);
+            });
+
+        $this->assertNull($component->instance()->getAction('print')?->getUrl());
+    }
+
     public function test_imprimir_muestra_los_mismos_datos_que_la_pantalla(): void
     {
         $this->actingAs($this->admin);

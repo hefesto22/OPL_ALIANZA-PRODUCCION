@@ -252,7 +252,11 @@ class ProductSalesReportPage extends Page implements HasForms
                 ->label('Imprimir')
                 ->icon('heroicon-o-printer')
                 ->color('gray')
-                ->url(fn (): ?string => $this->printUrl(), shouldOpenInNewTab: true)
+                // Sin abrir otra pestaña o ventana (en la app de escritorio el
+                // usuario se perdía del reporte): la vista se carga en un marco
+                // oculto de esta misma página y sale directo el cuadro de
+                // impresión. Ver el listener "psr-print" en la vista.
+                ->action(fn () => $this->dispatch('psr-print', url: $this->printUrl()))
                 ->visible(fn (): bool => $this->applied !== null),
 
             Action::make('export')
