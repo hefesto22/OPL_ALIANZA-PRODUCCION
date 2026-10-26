@@ -149,80 +149,132 @@
         .psr-none { padding: 1rem; color: var(--gray-500); }
         .dark .psr-none { color: var(--gray-400); }
 
-        .psr-printing { position: fixed; right: 1.5rem; bottom: 1.5rem; z-index: 50; display: flex; align-items: center; gap: .5rem; border-radius: .75rem; padding: .625rem 1rem; font-size: .875rem; font-weight: 500; background: var(--gray-900); color: #fff; box-shadow: 0 10px 25px rgb(0 0 0 / .2); }
-        .dark .psr-printing { background: var(--gray-700); }
-        .psr-printing-spin { width: 1rem; height: 1rem; border: 2px solid rgb(255 255 255 / .35); border-top-color: #fff; border-radius: 9999px; animation: psr-spin .7s linear infinite; }
+        /* Vista previa de impresión (modal) */
+        .psr-preview { position: relative; height: min(72vh, 52rem); overflow: hidden; border-radius: .5rem; border: 1px solid var(--gray-200); background: #e5e7eb; }
+        .dark .psr-preview { border-color: rgb(255 255 255 / .1); }
+        .psr-preview-frame { display: block; width: 100%; height: 100%; border: 0; background: #e5e7eb; }
+        .psr-preview-state { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .5rem; font-size: .875rem; font-weight: 500; color: var(--gray-700); background: rgb(255 255 255 / .9); }
+        .dark .psr-preview-state { color: var(--gray-200); background: rgb(17 24 39 / .9); }
+        .psr-preview-state a { color: var(--primary-600); text-decoration: underline; }
+        .psr-preview-spin { width: 1.5rem; height: 1.5rem; border: 2px solid var(--gray-300); border-top-color: var(--primary-500); border-radius: 9999px; animation: psr-spin .7s linear infinite; }
         @keyframes psr-spin { to { transform: rotate(360deg); } }
+        .psr-preview-footer { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .75rem; }
     </style>
 
     {{--
-        Imprimir sin salir del reporte: el botón "Imprimir" manda la dirección
-        de la vista de impresión, se carga en un marco fuera de pantalla y al
-        terminar se abre el cuadro de impresión del navegador (Carta o A4,
-        o "Guardar como PDF"). Si algo falla se abre la vista aparte, como antes.
+        Imprimir sin salir del reporte: el botón "Imprimir" abre esta vista
+        previa (la misma vista de impresión, dentro de un marco) y desde aquí se
+        decide si imprimir. "Imprimir" abre el cuadro del navegador: impresora,
+        Carta o A4, o "Guardar como PDF". wire:ignore para que Livewire no
+        recargue el marco mientras está abierto.
     --}}
     <div
+        wire:ignore
         x-data="{
-            printing: false,
-            print(url) {
+            psrUrl: null,
+            psrLoading: false,
+            psrFailed: false,
+            psrOpen(url) {
                 if (! url) {
                     return;
                 }
 
-                document.getElementById('psr-print-frame')?.remove();
-                this.printing = true;
+                this.psrFailed = false;
+                this.psrLoading = true;
+                this.psrUrl = url;
+                $dispatch('open-modal', { id: 'psr-print-preview' });
+            },
+            psrLoaded(frame) {
+                const view = frame.contentWindow;
 
-                const frame = document.createElement('iframe');
-                frame.id = 'psr-print-frame';
-                frame.title = 'Impresión del reporte';
-                frame.setAttribute('aria-hidden', 'true');
-                frame.tabIndex = -1;
-                frame.style.cssText = 'position:fixed;left:-10000px;top:0;width:1100px;height:800px;border:0;';
+                // El marco vacío también avisa 'load': se ignora.
+                if (! this.psrUrl || ! view || view.location.href === 'about:blank') {
+                    return;
+                }
 
-                const fallback = () => {
-                    this.printing = false;
-                    window.open(url, '_blank');
-                };
+                const doc = view.document;
 
-                frame.addEventListener('load', () => {
-                    const view = frame.contentWindow;
+                // Si el servidor no devolvió el reporte (permiso, enlace vencido)
+                // se avisa y se ofrece abrirlo aparte para ver el mensaje.
+                if (! doc.getElementById('toolbar')) {
+                    this.psrLoading = false;
+                    this.psrFailed = true;
 
-                    // Chrome avisa un primer 'load' del marco vacío: se ignora.
-                    if (view && view.location.href === 'about:blank') {
-                        return;
-                    }
+                    return;
+                }
 
-                    // Si el servidor no devolvió el reporte (permiso, enlace vencido),
-                    // se abre aparte para que se vea el mensaje.
-                    if (! view || ! view.document.getElementById('toolbar')) {
-                        frame.remove();
-                        fallback();
+                // En la vista previa sobra la barra de arriba: el botón está abajo.
+                const style = doc.createElement('style');
+                style.textContent = '#toolbar{display:none!important}#report-container{margin-top:0!important}';
+                doc.head.appendChild(style);
 
-                        return;
-                    }
+                this.psrLoading = false;
+            },
+            psrPrint() {
+                const view = this.$refs.psrFrame?.contentWindow;
 
-                    setTimeout(() => {
-                        this.printing = false;
+                if (this.psrLoading || this.psrFailed || ! view) {
+                    return;
+                }
 
-                        try {
-                            view.focus();
-                            view.print();
-                        } catch (error) {
-                            fallback();
-                        }
-                    }, 250);
-                });
-
-                frame.src = url;
-                document.body.appendChild(frame);
+                view.focus();
+                view.print();
+            },
+            psrReset() {
+                this.psrUrl = null;
+                this.psrLoading = false;
+                this.psrFailed = false;
             },
         }"
-        x-on:psr-print.window="print($event.detail.url)"
+        x-on:psr-print.window="psrOpen($event.detail.url)"
+        x-on:close-modal.window="if ($event.detail.id === 'psr-print-preview') psrReset()"
     >
-        <div class="psr-printing" x-show="printing" x-cloak role="status">
-            <span class="psr-printing-spin"></span>
-            Preparando la impresión…
-        </div>
+        <x-filament::modal
+            id="psr-print-preview"
+            width="7xl"
+            heading="Vista previa del reporte"
+            description="Revísalo y, si está bien, dale a Imprimir: ahí eliges la impresora, Carta o A4, o «Guardar como PDF»."
+            sticky-footer
+        >
+            <div class="psr-preview">
+                <iframe
+                    x-ref="psrFrame"
+                    x-bind:src="psrUrl ?? 'about:blank'"
+                    x-on:load="psrLoaded($el)"
+                    title="Vista previa del reporte"
+                    class="psr-preview-frame"
+                ></iframe>
+
+                <div class="psr-preview-state" x-show="psrLoading" x-cloak role="status">
+                    <span class="psr-preview-spin"></span>
+                    Cargando la vista previa…
+                </div>
+
+                <div class="psr-preview-state" x-show="psrFailed" x-cloak role="alert">
+                    No se pudo cargar la vista previa.
+                    <a x-bind:href="psrUrl" target="_blank" rel="noopener">Abrir el reporte aparte</a>
+                </div>
+            </div>
+
+            <x-slot name="footer">
+                <div class="psr-preview-footer">
+                    <x-filament::button
+                        color="gray"
+                        x-on:click="$dispatch('close-modal', { id: 'psr-print-preview' })"
+                    >
+                        Cerrar
+                    </x-filament::button>
+
+                    <x-filament::button
+                        icon="heroicon-o-printer"
+                        x-on:click="psrPrint()"
+                        x-bind:disabled="psrLoading || psrFailed"
+                    >
+                        Imprimir
+                    </x-filament::button>
+                </div>
+            </x-slot>
+        </x-filament::modal>
     </div>
 
     <x-filament::section>

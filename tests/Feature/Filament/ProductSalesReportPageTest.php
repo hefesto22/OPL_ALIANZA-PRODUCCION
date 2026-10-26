@@ -158,7 +158,7 @@ class ProductSalesReportPageTest extends TestCase
 
     // ── Imprimir ────────────────────────────────────────────────────
 
-    public function test_imprimir_no_abre_otra_ventana_manda_la_vista_al_marco_de_impresion(): void
+    public function test_imprimir_no_abre_otra_ventana_abre_la_vista_previa_en_un_modal(): void
     {
         $this->actingAs($this->admin);
 
@@ -168,9 +168,10 @@ class ProductSalesReportPageTest extends TestCase
         $this->assertNotNull($expected);
 
         // El botón ya no es un enlace a otra pestaña: avisa a la página y ella
-        // carga la vista en un marco oculto y abre el cuadro de impresión.
+        // abre la vista previa en un modal; desde ahí se decide si imprimir.
         $component
-            ->assertSee('psr-print-frame')
+            ->assertSee('psr-print-preview')
+            ->assertSee('Vista previa del reporte')
             ->callAction('print')
             ->assertDispatched('psr-print', function (string $name, array $params) use ($expected): bool {
                 // El payload va cifrado (cambia en cada llamada): se compara descifrado.
