@@ -122,6 +122,10 @@
         .psr-badge-void { background: color-mix(in oklab, var(--danger-500) 14%, transparent); color: var(--danger-700); }
         .dark .psr-badge-void { color: var(--danger-300); }
         .psr-void td { opacity: .6; }
+        .psr-returns .psr-who div + div { margin-top: .25rem; }
+        .psr-returns .psr-who { min-width: 14rem; max-width: 24rem; text-align: left; white-space: normal; font-size: .75rem; }
+        .psr-summary { margin: 0 1rem 1rem; border: 1px solid var(--gray-200); border-radius: .75rem; overflow: hidden; }
+        .dark .psr-summary { border-color: rgb(255 255 255 / .1); }
         .psr-none { padding: 1rem; color: var(--gray-500); }
         .dark .psr-none { color: var(--gray-400); }
     </style>
@@ -329,6 +333,49 @@
                                     </div>
                                 @endforeach
 
+                                <div class="psr-returns-title">Productos de esta factura</div>
+                                <div class="psr-tablewrap">
+                                    <table class="psr-table psr-returns">
+                                        <thead>
+                                            <tr>
+                                                <th class="psr-left">Producto</th>
+                                                <th>Cantidad</th>
+                                                <th>Devuelto</th>
+                                                <th class="psr-left">Quién devolvió</th>
+                                                <th>Neto</th>
+                                                <th>Monto L</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach ($invoice['products'] as $product)
+                                                <tr>
+                                                    <td class="psr-left">
+                                                        {{ $product['description'] }}
+                                                        @if ($product['bonus'])
+                                                            <span class="psr-badge psr-badge-after">Bonificación</span>
+                                                        @endif
+                                                        <span class="psr-code">{{ $product['product_id'] }}</span>
+                                                    </td>
+                                                    <td class="psr-num psr-q">{!! $qty($product['quantity']) !!}</td>
+                                                    <td class="psr-num psr-q {{ $product['returned_units'] > 0 ? 'psr-ret' : 'psr-muted' }}">{!! $qty($product['returned']) !!}</td>
+                                                    <td class="psr-who">
+                                                        @forelse ($product['returned_by'] as $who)
+                                                            <div>
+                                                                <strong>{{ $who['user'] }}</strong> ({{ $who['user_warehouses'] }}) — {{ $who['quantity'] }}
+                                                                <span class="psr-muted">· en {{ $who['registered_in'] }} · {{ $who['registered_at'] }} · {{ mb_strtolower($who['timing']) }}</span>
+                                                            </div>
+                                                        @empty
+                                                            <span class="psr-muted">—</span>
+                                                        @endforelse
+                                                    </td>
+                                                    <td class="psr-num psr-q psr-net">{!! $qty($product['net']) !!}</td>
+                                                    <td class="psr-num">{{ number_format($product['amount'], 2) }}</td>
+                                                </tr>
+                                            @endforeach
+                                        </tbody>
+                                    </table>
+                                </div>
+
                                 @if (count($invoice['returns']) === 0)
                                     <div class="psr-move">Sin devoluciones.</div>
                                 @else
@@ -377,6 +424,46 @@
                         @endforeach
                     @endif
                 @endforeach
+
+                @if (count($transfers['products_summary']) > 0)
+                    <div class="psr-subtitle">Resumen de productos trasladados</div>
+                    <div class="psr-summary psr-tablewrap">
+                        <table class="psr-table psr-returns">
+                            <thead>
+                                <tr>
+                                    <th class="psr-left">Producto</th>
+                                    <th>Llegaron</th>
+                                    <th>L llegaron</th>
+                                    <th>Salieron</th>
+                                    <th>L salieron</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach ($transfers['products_summary'] as $product)
+                                    <tr>
+                                        <td class="psr-left">
+                                            {{ $product['description'] }}
+                                            <span class="psr-code">{{ $product['product_id'] }}</span>
+                                        </td>
+                                        <td class="psr-num psr-q">{!! $qty($product['received']['label']) !!}</td>
+                                        <td class="psr-num">{{ number_format($product['received_amount'], 2) }}</td>
+                                        <td class="psr-num psr-q">{!! $qty($product['sent']['label']) !!}</td>
+                                        <td class="psr-num">{{ number_format($product['sent_amount'], 2) }}</td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                            <tfoot>
+                                <tr>
+                                    <td class="psr-left">Total — {{ count($transfers['products_summary']) }} productos</td>
+                                    <td class="psr-num psr-q">{!! $qty($transfers['products_totals']['received']['label']) !!}</td>
+                                    <td class="psr-num">{{ number_format($transfers['products_totals']['received_amount'], 2) }}</td>
+                                    <td class="psr-num psr-q">{!! $qty($transfers['products_totals']['sent']['label']) !!}</td>
+                                    <td class="psr-num">{{ number_format($transfers['products_totals']['sent_amount'], 2) }}</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                @endif
             </div>
         </div>
     @endif

@@ -50,6 +50,8 @@ final class ProductSalesTransfersSection
      *     received_total: float,
      *     sent_count: int,
      *     sent_total: float,
+     *     products_summary: list<array<string, mixed>>,
+     *     products_totals: array<string, mixed>,
      * }
      */
     public function build(ProductSalesFilters $filters): array
@@ -81,7 +83,77 @@ final class ProductSalesTransfersSection
             'received_total' => round(array_sum(array_column($received, 'total')), 2),
             'sent_count' => count($sent),
             'sent_total' => round(array_sum(array_column($sent, 'total')), 2),
+            ...$this->productsSummary($received, $sent),
         ];
+    }
+
+    /**
+     * Resumen por producto de lo que llegó y salió por traslado, con totales.
+     * Es la suma de las tablas de productos de cada factura.
+     *
+     * @param  list<array<string, mixed>>  $received
+     * @param  list<array<string, mixed>>  $sent
+     * @return array{products_summary: list<array<string, mixed>>, products_totals: array<string, mixed>}
+     */
+    private function productsSummary(array $received, array $sent): array
+    {
+        $rows = [];
+
+        foreach (['received' => $received, 'sent' => $sent] as $direction => $invoices) {
+            foreach ($invoices as $invoice) {
+                foreach ($invoice['products'] as $product) {
+                    $row = $rows[$product['product_id']] ?? [
+                        'product_id' => $product['product_id'],
+                        'description' => $product['description'],
+                        'factor' => 0,
+                        'received_units' => 0,
+                        'received_amount' => 0.0,
+                        'sent_units' => 0,
+                        'sent_amount' => 0.0,
+                    ];
+
+                    $row['factor'] = max($row['factor'], $product['factor']);
+                    $row["{$direction}_units"] += $product['units'];
+                    $row["{$direction}_amount"] += $product['amount'];
+
+                    $rows[$product['product_id']] = $row;
+                }
+            }
+        }
+
+        ksort($rows, SORT_STRING);
+
+        $totals = [
+            'received' => ['cajas' => 0, 'sueltas' => 0],
+            'sent' => ['cajas' => 0, 'sueltas' => 0],
+            'received_amount' => 0.0,
+            'sent_amount' => 0.0,
+        ];
+
+        $summary = [];
+
+        foreach ($rows as $row) {
+            foreach (['received', 'sent'] as $direction) {
+                $boxes = ProductSalesReportService::boxes($row["{$direction}_units"], $row['factor']);
+                $row[$direction] = $boxes;
+                $totals[$direction]['cajas'] += $boxes['cajas'];
+                $totals[$direction]['sueltas'] += $boxes['sueltas'];
+                $row["{$direction}_amount"] = round($row["{$direction}_amount"], 2);
+                $totals["{$direction}_amount"] += $row["{$direction}_amount"];
+            }
+
+            $summary[] = $row;
+        }
+
+        foreach (['received', 'sent'] as $direction) {
+            $totals[$direction]['label'] = ProductSalesReportService::boxesLabel(
+                $totals[$direction]['cajas'],
+                $totals[$direction]['sueltas'],
+            );
+            $totals["{$direction}_amount"] = round($totals["{$direction}_amount"], 2);
+        }
+
+        return ['products_summary' => $summary, 'products_totals' => $totals];
     }
 
     /**
@@ -117,6 +189,23 @@ final class ProductSalesTransfersSection
             ->get()
             ->groupBy('invoice_id');
 
+        // Productos de cada factura, consolidados por código (CJ y UN juntos)
+        // con la misma regla de unidades que la tabla principal.
+        $products = DB::table('invoice_lines as il')
+            ->whereIn('il.invoice_id', $invoiceIds)
+            ->select([
+                'il.invoice_id',
+                'il.product_id',
+                DB::raw('MIN(il.product_description) as product_description'),
+                DB::raw('MAX(il.conversion_factor) as conversion_factor'),
+                DB::raw('SUM('.ProductSalesReportService::LINE_UNITS_SQL.') as units'),
+                DB::raw('SUM(il.total) as amount'),
+            ])
+            ->groupBy('il.invoice_id', 'il.product_id')
+            ->orderBy('il.product_id')
+            ->get()
+            ->groupBy('invoice_id');
+
         $details = [];
 
         foreach ($invoices as $invoice) {
@@ -124,6 +213,7 @@ final class ProductSalesTransfersSection
                 $invoice,
                 $moves->get($invoice->id, collect()),
                 $returns->get($invoice->id, collect()),
+                $products->get($invoice->id, collect()),
             );
         }
 
@@ -133,14 +223,20 @@ final class ProductSalesTransfersSection
     /**
      * @param  Collection<int, InvoiceWarehouseTransfer>  $moves
      * @param  Collection<int, InvoiceReturn>  $returns
+     * @param  Collection<int, object>  $products
      * @return array<string, mixed>
      */
-    private function invoiceDetail(Invoice $invoice, Collection $moves, Collection $returns): array
+    private function invoiceDetail(Invoice $invoice, Collection $moves, Collection $returns, Collection $products): array
     {
         $origin = $moves->first()?->fromWarehouse?->code ?? 'Sin bodega';
         $chain = collect([$origin])
             ->merge($moves->map(fn (InvoiceWarehouseTransfer $move): string => $move->toWarehouse?->code ?? '?'))
             ->implode(' → ');
+
+        $returnDetails = $returns
+            ->map(fn (InvoiceReturn $return): array => $this->returnDetail($return, $moves, $origin))
+            ->values()
+            ->all();
 
         return [
             'id' => (int) $invoice->id,
@@ -159,10 +255,65 @@ final class ProductSalesTransfersSection
                 'by' => $move->transferredBy?->name ?? 'Sin usuario',
                 'reason' => (string) $move->reason,
             ])->values()->all(),
-            'returns' => $returns->map(fn (InvoiceReturn $return): array => $this->returnDetail($return, $moves, $origin))
-                ->values()
-                ->all(),
+            'products' => $this->productRows($products, $returnDetails),
+            'returns' => $returnDetails,
         ];
+    }
+
+    /**
+     * Productos de la factura con lo devuelto de cada uno y quién lo devolvió
+     * (usuario, sus bodegas, en qué bodega estaba la factura y si fue antes o
+     * después del traslado). Solo cuentan las devoluciones aprobadas o
+     * pendientes; las canceladas siguen visibles en la tabla de devoluciones.
+     *
+     * @param  Collection<int, object>  $products
+     * @param  list<array<string, mixed>>  $returnDetails
+     * @return list<array<string, mixed>>
+     */
+    private function productRows(Collection $products, array $returnDetails): array
+    {
+        $returnedByProduct = [];
+
+        foreach ($returnDetails as $return) {
+            if (! $return['counts']) {
+                continue;
+            }
+
+            foreach ($return['lines'] as $line) {
+                $entry = $returnedByProduct[$line['product_id']] ?? ['units' => 0, 'by' => []];
+                $entry['units'] += $line['units'];
+                $entry['by'][] = [
+                    'user' => $return['user'],
+                    'user_warehouses' => $return['user_warehouses'],
+                    'registered_in' => $return['registered_in'],
+                    'timing' => $return['timing'],
+                    'registered_at' => $return['registered_at'],
+                    'quantity' => $line['quantity'],
+                ];
+                $returnedByProduct[$line['product_id']] = $entry;
+            }
+        }
+
+        return $products->map(function (object $product) use ($returnedByProduct): array {
+            $units = (int) round((float) $product->units);
+            $factor = (int) ($product->conversion_factor ?? 0);
+            $amount = round((float) $product->amount, 2);
+            $returned = $returnedByProduct[(string) $product->product_id] ?? ['units' => 0, 'by' => []];
+
+            return [
+                'product_id' => (string) $product->product_id,
+                'description' => (string) $product->product_description,
+                'units' => $units,
+                'factor' => $factor,
+                'quantity' => ProductSalesReportService::boxes($units, $factor)['label'],
+                'returned_units' => $returned['units'],
+                'returned' => ProductSalesReportService::boxes($returned['units'], $factor)['label'],
+                'returned_by' => $returned['by'],
+                'net' => ProductSalesReportService::boxes(max(0, $units - $returned['units']), $factor)['label'],
+                'amount' => $amount,
+                'bonus' => $amount == 0.0 && $units > 0,
+            ];
+        })->values()->all();
     }
 
     /**
@@ -198,15 +349,18 @@ final class ProductSalesTransfersSection
             'status' => self::RETURN_STATUS_LABELS[$return->status] ?? (string) $return->status,
             'counts' => in_array($return->status, self::COUNTED_RETURN_STATUSES, true),
             'total' => round((float) $return->total, 2),
-            'lines' => $return->lines->map(fn (ReturnLine $line): array => [
-                'product_id' => (string) $line->product_id,
-                'description' => (string) $line->product_description,
-                'quantity' => ProductSalesReportService::boxes(
-                    (int) round((float) $line->quantity_box * max(1, (int) ($line->invoiceLine?->conversion_factor ?? 1)) + (float) $line->quantity),
-                    (int) ($line->invoiceLine?->conversion_factor ?? 0),
-                )['label'],
-                'amount' => round((float) $line->line_total, 2),
-            ])->values()->all(),
+            'lines' => $return->lines->map(function (ReturnLine $line): array {
+                $factor = (int) ($line->invoiceLine?->conversion_factor ?? 0);
+                $units = (int) round((float) $line->quantity_box * max(1, $factor) + (float) $line->quantity);
+
+                return [
+                    'product_id' => (string) $line->product_id,
+                    'description' => (string) $line->product_description,
+                    'units' => $units,
+                    'quantity' => ProductSalesReportService::boxes($units, $factor)['label'],
+                    'amount' => round((float) $line->line_total, 2),
+                ];
+            })->values()->all(),
         ];
     }
 }

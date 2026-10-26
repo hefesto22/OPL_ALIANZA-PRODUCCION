@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Exports;
 
 use App\Exports\Sheets\ProductSalesProductsSheet;
+use App\Exports\Sheets\ProductSalesTransferredProductsSheet;
 use App\Exports\Sheets\ProductSalesTransfersSheet;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Maatwebsite\Excel\Concerns\Exportable;
@@ -12,8 +13,8 @@ use Maatwebsite\Excel\Concerns\WithChunkReading;
 use Maatwebsite\Excel\Concerns\WithMultipleSheets;
 
 /**
- * Excel del reporte de ventas por producto: hoja "Ventas por producto" y hoja
- * "Traslados".
+ * Excel del reporte de ventas por producto: hojas "Ventas por producto",
+ * "Traslados" y "Productos trasladados".
  *
  * Recibe el reporte YA armado por ProductSalesReportService (el mismo que se
  * ve en pantalla, sacado de la caché), así que no vuelve a consultar la base.
@@ -46,6 +47,7 @@ class ProductSalesExport implements ShouldQueue, WithChunkReading, WithMultipleS
         return [
             new ProductSalesProductsSheet($this->report),
             new ProductSalesTransfersSheet($this->report),
+            new ProductSalesTransferredProductsSheet($this->report),
         ];
     }
 }

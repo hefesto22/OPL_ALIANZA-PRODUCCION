@@ -206,12 +206,16 @@ class ProductSalesReportPageTest extends TestCase
             ->assertOk()
             ->assertSee('Facturas trasladadas entre bodegas')
             ->assertSee('OAI → OAS')
-            ->assertSee('Jaremar la facturó a OAI por error');
+            ->assertSee('Jaremar la facturó a OAI por error')
+            ->assertSee('Productos de esta factura')
+            ->assertSee('Resumen de productos trasladados');
 
         $this->get($this->printUrlFor([$this->oas->id]))
             ->assertOk()
             ->assertSee('OAI → OAS')
             ->assertSee($invoice->invoice_number)
+            ->assertSee('Productos de esta factura')
+            ->assertSee('Resumen de productos trasladados')
             ->assertSee('Sin devoluciones.');
     }
 
@@ -274,6 +278,7 @@ class ProductSalesReportPageTest extends TestCase
 
         $this->assertNotNull($sheet);
         $this->assertNotNull($book->getSheetByName('Traslados'));
+        $this->assertNotNull($book->getSheetByName('Productos trasladados'));
 
         $this->assertStringContainsString('Reporte de ventas por producto', (string) $sheet->getCell('A1')->getValue());
         $this->assertSame('Código', $sheet->getCell('A2')->getValue());

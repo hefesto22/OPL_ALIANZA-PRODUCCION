@@ -102,7 +102,10 @@ table.data tfoot td.l { text-align: left; }
 .chip-in { background: #e0f2fe; color: #075985; }
 .chip-out { background: #fef3c7; color: #92400e; }
 .transfers-group { margin-top: 8px; font-size: 7pt; font-weight: bold; color: #475569; text-transform: uppercase; letter-spacing: .5px; }
-.transfer { margin-top: 5px; border: 1px solid #cbd5e1; border-radius: 6px; page-break-inside: avoid; break-inside: avoid; }
+.transfer { margin-top: 5px; border: 1px solid #cbd5e1; border-radius: 6px; }
+.transfer-head, .move { page-break-after: avoid; break-after: avoid; }
+table.returns tr { page-break-inside: avoid; break-inside: avoid; }
+table.returns thead { display: table-header-group; }
 .transfer-head { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; padding: 5px 8px; background: #f1f5f9; font-size: 7.5pt; }
 .route { background: #1e3a5f; color: #fff; padding: 1px 7px; border-radius: 4px; font-weight: bold; }
 .transfer-total { margin-left: auto; font-weight: bold; }
@@ -113,6 +116,11 @@ table.returns th { background: #e2e8f0; color: #334155; text-align: left; paddin
 table.returns th.r, table.returns td.r { text-align: right; }
 table.returns td { padding: 3px 4px; border-top: 1px solid #e2e8f0; vertical-align: top; }
 table.returns tr.void td { color: #94a3b8; }
+table.returns td.who { font-size: 6pt; color: #334155; }
+table.returns .code { font-family: 'Consolas', 'Courier New', monospace; color: #64748b; }
+table.returns tfoot td { font-weight: bold; border-top: 2px solid #94a3b8; background: #f1f5f9; padding: 4px; }
+.bonus-tag { color: #15803d; font-weight: bold; }
+.subhead { page-break-after: avoid; break-after: avoid; padding: 4px 8px 2px; font-size: 6.5pt; font-weight: bold; color: #475569; text-transform: uppercase; border-top: 1px solid #e2e8f0; }
 .badge-void { color: #b91c1c; font-weight: bold; }
 
 .notes { margin-top: 10px; font-size: 7pt; color: #475569; line-height: 1.55; border: 1px solid #e2e8f0; border-radius: 6px; padding: 7px 10px; background: #f8fafc; }
@@ -126,7 +134,8 @@ table.data tbody tr { page-break-inside: avoid; break-inside: avoid; }
 
 /* ── Print ────────────────────────────────────────────────────── */
 @media print {
-    @page { size: A4 landscape; margin: 8mm; }
+    /* Sin tamaño fijo: sale en Carta o A4 según la impresora, siempre horizontal. */
+    @page { size: landscape; margin: 8mm; }
     #toolbar { display: none !important; }
     body { background: none; }
     #report-container { margin-top: 0; padding: 0; }
@@ -294,9 +303,43 @@ table.data tbody tr { page-break-inside: avoid; break-inside: avoid; }
                         por <strong>{{ $move['by'] }}</strong> — <em>“{{ $move['reason'] }}”</em>
                     </div>
                     @endforeach
+                    <div class="subhead">Productos de esta factura</div>
+                    <table class="returns">
+                        <thead>
+                            <tr>
+                                <th>Código</th>
+                                <th>Producto</th>
+                                <th class="r">Cantidad</th>
+                                <th class="r">Devuelto</th>
+                                <th>Quién devolvió</th>
+                                <th class="r">Neto</th>
+                                <th class="r">Monto L</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach ($invoice['products'] as $product)
+                            <tr>
+                                <td class="code">{{ $product['product_id'] }}</td>
+                                <td>{{ $product['description'] }}@if ($product['bonus']) <span class="bonus-tag">(bonif.)</span>@endif</td>
+                                <td class="r">{!! $qty($product['quantity']) !!}</td>
+                                <td class="r" style="{{ $product['returned_units'] > 0 ? 'color:#b91c1c;' : 'color:#cbd5e1;' }}">{!! $qty($product['returned']) !!}</td>
+                                <td class="who">
+                                    @forelse ($product['returned_by'] as $who)
+                                        <strong>{{ $who['user'] }}</strong> ({{ $who['user_warehouses'] }}) — {{ $who['quantity'] }} · en {{ $who['registered_in'] }} · {{ $who['registered_at'] }} · {{ mb_strtolower($who['timing']) }}@if (! $loop->last)<br>@endif
+                                    @empty
+                                        —
+                                    @endforelse
+                                </td>
+                                <td class="r"><strong>{!! $qty($product['net']) !!}</strong></td>
+                                <td class="r">{{ number_format($product['amount'], 2) }}</td>
+                            </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
                     @if (count($invoice['returns']) === 0)
                     <div class="move">Sin devoluciones.</div>
                     @else
+                    <div class="subhead">Devoluciones de esta factura</div>
                     <table class="returns">
                         <thead>
                             <tr>
@@ -334,6 +377,45 @@ table.data tbody tr { page-break-inside: avoid; break-inside: avoid; }
                 @endforeach
             @endif
         @endforeach
+
+        @if (count($transfers['products_summary']) > 0)
+        <div class="transfers-group">Resumen de productos trasladados</div>
+        <div class="transfer">
+            <table class="returns">
+                <thead>
+                    <tr>
+                        <th>Código</th>
+                        <th>Producto</th>
+                        <th class="r">Llegaron</th>
+                        <th class="r">L llegaron</th>
+                        <th class="r">Salieron</th>
+                        <th class="r">L salieron</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach ($transfers['products_summary'] as $product)
+                    <tr>
+                        <td class="code">{{ $product['product_id'] }}</td>
+                        <td>{{ $product['description'] }}</td>
+                        <td class="r">{!! $qty($product['received']['label']) !!}</td>
+                        <td class="r">{{ number_format($product['received_amount'], 2) }}</td>
+                        <td class="r">{!! $qty($product['sent']['label']) !!}</td>
+                        <td class="r">{{ number_format($product['sent_amount'], 2) }}</td>
+                    </tr>
+                    @endforeach
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <td colspan="2">TOTAL — {{ count($transfers['products_summary']) }} productos</td>
+                        <td class="r">{!! $qty($transfers['products_totals']['received']['label']) !!}</td>
+                        <td class="r">{{ number_format($transfers['products_totals']['received_amount'], 2) }}</td>
+                        <td class="r">{!! $qty($transfers['products_totals']['sent']['label']) !!}</td>
+                        <td class="r">{{ number_format($transfers['products_totals']['sent_amount'], 2) }}</td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+        @endif
     </div>
 
     <div class="notes">

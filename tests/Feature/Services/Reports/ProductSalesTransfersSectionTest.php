@@ -146,6 +146,47 @@ class ProductSalesTransfersSectionTest extends TestCase
         $this->assertSame('OAS', $returns[1]['registered_in']);
         $this->assertSame('Después del traslado', $returns[1]['timing']);
         $this->assertSame('12 u', $returns[1]['lines'][0]['quantity']);
+
+        // En la tabla de productos de la factura: lo devuelto de cada producto
+        // y quién lo devolvió, desde qué bodega.
+        $product = $this->service->generate($this->filters([$this->oas->id]))['transfers']['received'][0]['products'][0];
+
+        $this->assertSame('10 cj', $product['quantity']);
+        $this->assertSame('1 cj + 12 u', $product['returned']);
+        $this->assertSame('8 cj + 12 u', $product['net']);
+        $this->assertSame(['Luis OAI', 'Ana OAS'], array_column($product['returned_by'], 'user'));
+        $this->assertSame(['OAI', 'OAS'], array_column($product['returned_by'], 'registered_in'));
+        $this->assertSame(['1 cj', '12 u'], array_column($product['returned_by'], 'quantity'));
+    }
+
+    public function test_cada_factura_lista_sus_productos_y_hay_resumen_con_totales(): void
+    {
+        InvoiceLine::factory()->for($this->invoice, 'invoice')->create([
+            'product_id' => '86800016',
+            'product_description' => 'FRIJOLES 24X360G',
+            'unit_sale' => 'CJ',
+            'quantity_box' => 2,
+            'quantity_fractions' => 48,
+            'conversion_factor' => 24,
+            'subtotal' => 0,
+            'tax' => 0,
+            'total' => 0,
+        ]);
+        $this->transfer(now());
+
+        $transfers = $this->service->generate($this->filters([$this->oas->id]))['transfers'];
+        $products = $transfers['received'][0]['products'];
+
+        $this->assertSame(['50010020', '86800016'], array_column($products, 'product_id'));
+        $this->assertSame(['10 cj', '2 cj'], array_column($products, 'quantity'));
+        $this->assertSame([false, true], array_column($products, 'bonus'));
+
+        $this->assertSame(['50010020', '86800016'], array_column($transfers['products_summary'], 'product_id'));
+        $this->assertSame('10 cj', $transfers['products_summary'][0]['received']['label']);
+        $this->assertSame('—', $transfers['products_summary'][0]['sent']['label']);
+        $this->assertSame('12 cj', $transfers['products_totals']['received']['label']);
+        $this->assertEqualsWithDelta(2400.00, $transfers['products_totals']['received_amount'], 0.001);
+        $this->assertEqualsWithDelta(0.0, $transfers['products_totals']['sent_amount'], 0.001);
     }
 
     public function test_una_devolucion_cancelada_se_lista_pero_no_cuenta(): void

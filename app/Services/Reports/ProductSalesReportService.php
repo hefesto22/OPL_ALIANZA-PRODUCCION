@@ -78,7 +78,7 @@ final class ProductSalesReportService
      * cajas × factor, la línea vino cruda (cajas aparte) y se suman; si no, las
      * fracciones ya incluyen las cajas. Misma regla que la Sublista.
      */
-    private const LINE_UNITS_SQL = '(CASE
+    public const LINE_UNITS_SQL = '(CASE
             WHEN il.quantity_fractions < il.quantity_box * il.conversion_factor
             THEN il.quantity_box * il.conversion_factor + il.quantity_fractions
             ELSE il.quantity_fractions
@@ -410,7 +410,7 @@ final class ProductSalesReportService
         return $totals;
     }
 
-    private static function boxesLabel(int $cajas, int $sueltas): string
+    public static function boxesLabel(int $cajas, int $sueltas): string
     {
         $parts = [];
         if ($cajas > 0) {
