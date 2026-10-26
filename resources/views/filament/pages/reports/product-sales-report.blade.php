@@ -9,6 +9,9 @@
         .psr { display: flex; flex-direction: column; gap: 1rem; font-size: .875rem; line-height: 1.25rem; color: var(--gray-950); }
         .dark .psr { color: #fff; }
         .psr-num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+        /* Cantidades "3,816 cj + 25 u": si no caben, bajan en el "+" sin cortarse. */
+        .psr-table td.psr-q { white-space: normal; }
+        .psr-nw { white-space: nowrap; }
         .psr-muted { color: var(--gray-500); }
         .dark .psr-muted { color: var(--gray-400); }
 
@@ -81,6 +84,46 @@
         .psr-empty { display: flex; align-items: center; gap: .75rem; border: 1px dashed var(--gray-300); border-radius: .75rem; padding: 1.25rem; color: var(--gray-500); }
         .dark .psr-empty { border-color: rgb(255 255 255 / .15); color: var(--gray-400); }
         .psr-empty svg { width: 1.75rem; height: 1.75rem; flex-shrink: 0; }
+
+        /* ── Traslados entre bodegas ── */
+        .psr-section-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: .75rem; padding: 1rem; border-bottom: 1px solid var(--gray-200); }
+        .dark .psr-section-head { border-color: rgb(255 255 255 / .1); }
+        .psr-section-title { font-size: 1rem; font-weight: 700; }
+        .psr-chips { display: flex; flex-wrap: wrap; gap: .5rem; }
+        .psr-chip { display: inline-flex; align-items: center; gap: .375rem; border-radius: 9999px; padding: .25rem .75rem; font-size: .8125rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+        .psr-chip-in { background: color-mix(in oklab, var(--info-500) 12%, transparent); color: var(--info-700); }
+        .dark .psr-chip-in { color: var(--info-300); }
+        .psr-chip-out { background: color-mix(in oklab, var(--warning-500) 14%, transparent); color: var(--warning-800); }
+        .dark .psr-chip-out { color: var(--warning-300); }
+        .psr-subtitle { padding: .875rem 1rem .25rem; font-size: .6875rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--gray-500); }
+        .dark .psr-subtitle { color: var(--gray-400); }
+        .psr-transfer { margin: .5rem 1rem 1rem; border: 1px solid var(--gray-200); border-radius: .75rem; overflow: hidden; }
+        .dark .psr-transfer { border-color: rgb(255 255 255 / .1); }
+        .psr-transfer-head { display: flex; flex-wrap: wrap; align-items: center; gap: .375rem .75rem; padding: .75rem 1rem; background: var(--gray-50); }
+        .dark .psr-transfer-head { background: var(--gray-800); }
+        .psr-route { display: inline-flex; align-items: center; border-radius: .5rem; padding: .125rem .625rem; font-weight: 700; letter-spacing: .02em; background: var(--primary-500); color: #fff; }
+        .psr-transfer-total { margin-left: auto; font-weight: 700; }
+        .psr-move { padding: .5rem 1rem; font-size: .8125rem; color: var(--gray-600); border-top: 1px solid var(--gray-100); }
+        .dark .psr-move { color: var(--gray-300); border-color: rgb(255 255 255 / .06); }
+        .psr-move strong { color: var(--gray-950); }
+        .dark .psr-move strong { color: #fff; }
+        .psr-reason { font-style: italic; }
+        .psr-returns-title { padding: .625rem 1rem .25rem; font-size: .75rem; font-weight: 700; color: var(--gray-500); }
+        .psr-returns th { padding: .5rem; white-space: normal; vertical-align: bottom; }
+        .psr-returns th:last-child { white-space: nowrap; }
+        .psr-returns td { padding: .5rem; font-size: .8125rem; }
+        .psr-returns .psr-lines { min-width: 11rem; text-align: left; white-space: normal; }
+        .psr-returns .psr-lines div + div { margin-top: .125rem; }
+        .psr-badge { display: inline-block; border-radius: .375rem; padding: 0 .375rem; font-size: .6875rem; font-weight: 600; white-space: nowrap; }
+        .psr-badge-before { background: color-mix(in oklab, var(--gray-500) 14%, transparent); color: var(--gray-700); }
+        .dark .psr-badge-before { color: var(--gray-200); }
+        .psr-badge-after { background: color-mix(in oklab, var(--info-500) 14%, transparent); color: var(--info-700); }
+        .dark .psr-badge-after { color: var(--info-300); }
+        .psr-badge-void { background: color-mix(in oklab, var(--danger-500) 14%, transparent); color: var(--danger-700); }
+        .dark .psr-badge-void { color: var(--danger-300); }
+        .psr-void td { opacity: .6; }
+        .psr-none { padding: 1rem; color: var(--gray-500); }
+        .dark .psr-none { color: var(--gray-400); }
     </style>
 
     <x-filament::section>
@@ -105,6 +148,9 @@
             $from = \Illuminate\Support\Carbon::parse($report['filters']['date_from'])->format('d/m/Y');
             $to = \Illuminate\Support\Carbon::parse($report['filters']['date_to'])->format('d/m/Y');
             $warehouseCodes = collect($report['warehouses'])->pluck('code')->implode(', ');
+            $qty = fn (string $label): string => '<span class="psr-nw">'
+                .str_replace(' + ', '</span> <span class="psr-nw">+ ', e($label))
+                .'</span>';
         @endphp
 
         <div class="psr" wire:key="psr-{{ md5(json_encode($report['filters'])) }}">
@@ -196,10 +242,10 @@
                                             @endif
                                             <span class="psr-code">{{ $row['product_id'] }}</span>
                                         </td>
-                                        <td class="psr-num psr-group-start">{{ $row['entered']['label'] }}</td>
-                                        <td class="psr-num {{ $row['bonus_units'] > 0 ? 'psr-bonus' : 'psr-muted' }}">{{ $row['bonus']['label'] }}</td>
-                                        <td class="psr-num {{ $row['returned_units'] > 0 ? 'psr-ret' : 'psr-muted' }}">{{ $row['returned']['label'] }}</td>
-                                        <td class="psr-num psr-net">{{ $row['net']['label'] }}</td>
+                                        <td class="psr-num psr-q psr-group-start">{!! $qty($row['entered']['label']) !!}</td>
+                                        <td class="psr-num psr-q {{ $row['bonus_units'] > 0 ? 'psr-bonus' : 'psr-muted' }}">{!! $qty($row['bonus']['label']) !!}</td>
+                                        <td class="psr-num psr-q {{ $row['returned_units'] > 0 ? 'psr-ret' : 'psr-muted' }}">{!! $qty($row['returned']['label']) !!}</td>
+                                        <td class="psr-num psr-q psr-net">{!! $qty($row['net']['label']) !!}</td>
                                         <td class="psr-num {{ $row['return_pct'] > 0 ? 'psr-ret' : 'psr-muted' }}">{{ number_format($row['return_pct'], 1) }}%</td>
                                         <td class="psr-num psr-group-start">{{ number_format($row['billed_amount'], 2) }}</td>
                                         <td class="psr-num {{ $row['returned_amount'] > 0 ? 'psr-ret' : 'psr-muted' }}">{{ number_format($row['returned_amount'], 2) }}</td>
@@ -210,10 +256,10 @@
                             <tfoot>
                                 <tr>
                                     <td class="psr-left psr-sticky">Total — {{ number_format($totals['products_count']) }} productos</td>
-                                    <td class="psr-num psr-group-start">{{ $totals['entered']['label'] }}</td>
-                                    <td class="psr-num psr-bonus">{{ $totals['bonus']['label'] }}</td>
-                                    <td class="psr-num psr-ret">{{ $totals['returned']['label'] }}</td>
-                                    <td class="psr-num">{{ $totals['net']['label'] }}</td>
+                                    <td class="psr-num psr-q psr-group-start">{!! $qty($totals['entered']['label']) !!}</td>
+                                    <td class="psr-num psr-q psr-bonus">{!! $qty($totals['bonus']['label']) !!}</td>
+                                    <td class="psr-num psr-q psr-ret">{!! $qty($totals['returned']['label']) !!}</td>
+                                    <td class="psr-num psr-q">{!! $qty($totals['net']['label']) !!}</td>
                                     <td class="psr-num" title="Porcentaje sobre lo facturado en lempiras">{{ number_format($totals['return_pct'], 1) }}% <span class="psr-muted">en L</span></td>
                                     <td class="psr-num psr-group-start">{{ number_format($totals['billed_total'], 2) }}</td>
                                     <td class="psr-num psr-ret">{{ number_format($totals['returned_total'], 2) }}</td>
@@ -232,6 +278,106 @@
                     El buscador solo filtra la tabla: los totales son siempre del reporte completo.
                 </p>
             @endif
+
+            @php
+                $transfers = $report['transfers'];
+                $transferGroups = [
+                    ['key' => 'received', 'label' => 'Llegaron por traslado (cuentan en este reporte)'],
+                    ['key' => 'sent', 'label' => 'Salieron a otra bodega (no cuentan en este reporte)'],
+                ];
+            @endphp
+
+            <div class="psr-panel">
+                <div class="psr-section-head">
+                    <div>
+                        <div class="psr-section-title">Facturas trasladadas entre bodegas</div>
+                        <div class="psr-muted">Una factura trasladada cuenta como venta de la bodega donde quedó.</div>
+                    </div>
+                    <div class="psr-chips">
+                        <span class="psr-chip psr-chip-in">Llegaron: {{ $transfers['received_count'] }} · L {{ number_format($transfers['received_total'], 2) }}</span>
+                        <span class="psr-chip psr-chip-out">Salieron: {{ $transfers['sent_count'] }} · L {{ number_format($transfers['sent_total'], 2) }}</span>
+                    </div>
+                </div>
+
+                @if ($transfers['received_count'] === 0 && $transfers['sent_count'] === 0)
+                    <div class="psr-none">Ninguna factura de este período cambió de bodega.</div>
+                @endif
+
+                @foreach ($transferGroups as $group)
+                    @if (count($transfers[$group['key']]) > 0)
+                        <div class="psr-subtitle">{{ $group['label'] }}</div>
+
+                        @foreach ($transfers[$group['key']] as $invoice)
+                            <div class="psr-transfer" wire:key="psr-transfer-{{ $group['key'] }}-{{ $invoice['id'] }}">
+                                <div class="psr-transfer-head">
+                                    <span class="psr-route">{{ $invoice['chain'] }}</span>
+                                    <strong>{{ $invoice['invoice_number'] }}</strong>
+                                    <span class="psr-muted">{{ $invoice['client'] }} · {{ $invoice['invoice_date'] }} · Manifiesto {{ $invoice['manifest_number'] }}</span>
+                                    <span class="psr-transfer-total psr-num">
+                                        L {{ number_format($invoice['total'], 2) }}
+                                        @if ($invoice['returned_total'] > 0)
+                                            <span class="psr-ret">(devuelto L {{ number_format($invoice['returned_total'], 2) }})</span>
+                                        @endif
+                                    </span>
+                                </div>
+
+                                @foreach ($invoice['moves'] as $move)
+                                    <div class="psr-move">
+                                        Trasladada de <strong>{{ $move['from'] }}</strong> a <strong>{{ $move['to'] }}</strong>
+                                        el {{ $move['at'] }} por <strong>{{ $move['by'] }}</strong> —
+                                        <span class="psr-reason">“{{ $move['reason'] }}”</span>
+                                    </div>
+                                @endforeach
+
+                                @if (count($invoice['returns']) === 0)
+                                    <div class="psr-move">Sin devoluciones.</div>
+                                @else
+                                    <div class="psr-returns-title">Devoluciones de esta factura</div>
+                                    <div class="psr-tablewrap">
+                                        <table class="psr-table psr-returns">
+                                            <thead>
+                                                <tr>
+                                                    <th class="psr-left">Registrada</th>
+                                                    <th class="psr-left">Registró</th>
+                                                    <th class="psr-left">Bodega del usuario</th>
+                                                    <th class="psr-left">La factura estaba en</th>
+                                                    <th class="psr-left">Momento</th>
+                                                    <th class="psr-left">Tipo / estado</th>
+                                                    <th class="psr-left">Productos</th>
+                                                    <th>Monto L</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach ($invoice['returns'] as $return)
+                                                    <tr @class(['psr-void' => ! $return['counts']])>
+                                                        <td class="psr-left psr-num">{{ $return['registered_at'] }}</td>
+                                                        <td class="psr-left">{{ $return['user'] }}</td>
+                                                        <td class="psr-left">{{ $return['user_warehouses'] }}</td>
+                                                        <td class="psr-left"><strong>{{ $return['registered_in'] }}</strong></td>
+                                                        <td class="psr-left">
+                                                            <span @class(['psr-badge', 'psr-badge-before' => str_starts_with($return['timing'], 'Antes'), 'psr-badge-after' => ! str_starts_with($return['timing'], 'Antes')])>{{ $return['timing'] }}</span>
+                                                        </td>
+                                                        <td class="psr-left">
+                                                            {{ $return['type'] }} ·
+                                                            <span @class(['psr-badge psr-badge-void' => ! $return['counts']])>{{ $return['status'] }}</span>
+                                                        </td>
+                                                        <td class="psr-lines">
+                                                            @foreach ($return['lines'] as $line)
+                                                                <div>{{ $line['description'] }} — <span class="psr-num">{{ $line['quantity'] }}</span></div>
+                                                            @endforeach
+                                                        </td>
+                                                        <td class="psr-num">{{ number_format($return['total'], 2) }}</td>
+                                                    </tr>
+                                                @endforeach
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                @endif
+                            </div>
+                        @endforeach
+                    @endif
+                @endforeach
+            </div>
         </div>
     @endif
 </x-filament-panels::page>

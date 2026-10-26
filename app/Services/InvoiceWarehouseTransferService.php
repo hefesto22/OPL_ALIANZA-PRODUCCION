@@ -6,6 +6,7 @@ namespace App\Services;
 
 use App\Models\Invoice;
 use App\Models\InvoiceReturn;
+use App\Models\InvoiceWarehouseTransfer;
 use App\Models\Manifest;
 use App\Models\User;
 use App\Models\Warehouse;
@@ -251,7 +252,9 @@ class InvoiceWarehouseTransferService
         // que seguía siendo válido.
         $touchedReturns = [];
 
-        $result = DB::transaction(function () use ($plan, $target, $reason, $actor, &$touchedReturns): array {
+        $transferredAt = now();
+
+        $result = DB::transaction(function () use ($plan, $target, $reason, $actor, $transferredAt, &$touchedReturns): array {
             $movedInvoices = 0;
             $movedReturns = 0;
 
@@ -304,6 +307,17 @@ class InvoiceWarehouseTransferService
 
                     $invoice->save();
                     $movedInvoices++;
+
+                    // Historial durable (activity_log se poda a los 90 días):
+                    // es lo que lee el reporte de ventas para mostrar OAI → OAS.
+                    InvoiceWarehouseTransfer::query()->create([
+                        'invoice_id' => $invoice->id,
+                        'from_warehouse_id' => $fromId,
+                        'to_warehouse_id' => $target->id,
+                        'transferred_by' => $actor->id,
+                        'reason' => $reason,
+                        'transferred_at' => $transferredAt,
+                    ]);
 
                     // Las devoluciones viajan con su factura. Se recorren una
                     // por una a propósito (en vez de un mass update) para que

@@ -5,6 +5,11 @@
     $warehouseLabel = collect($report['warehouses'])
         ->map(fn (array $warehouse): string => $warehouse['code'].' — '.$warehouse['name'])
         ->implode(' · ');
+    // "3,816 cj + 25 u" en dos piezas que nunca se parten por dentro: si la
+    // columna no alcanza, la línea baja entera en el "+" en vez de recortarse.
+    $qty = fn (string $label): string => '<span class="nw">'
+        .str_replace(' + ', '</span> <span class="nw">+ ', e($label))
+        .'</span>';
 @endphp
 <!DOCTYPE html>
 <html lang="es">
@@ -62,21 +67,19 @@ body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 8pt; color: #1a1a1
 .summary-card.net .value { color: #15803d; }
 
 /* ── Table ────────────────────────────────────────────────────── */
-table.data { width: 100%; border-collapse: collapse; font-size: 7pt; table-layout: fixed; }
-table.data col.c-num { width: 18px; }
-table.data col.c-code { width: 52px; }
-table.data col.c-desc { }
-table.data col.c-udc { width: 34px; }
-table.data col.c-qty { width: 66px; }
-table.data col.c-pct { width: 42px; }
-table.data col.c-amt { width: 66px; }
+/* Anchos automáticos: cada columna toma lo que necesita su número más largo y
+   la descripción se acomoda en el resto. Nada se recorta con "…". */
+table.data { width: 100%; border-collapse: collapse; font-size: 7pt; table-layout: auto; }
+.nw { white-space: nowrap; }
 table.data thead tr { background: linear-gradient(135deg, #1e3a5f 0%, #2d5a8e 100%); color: #fff; }
 table.data thead th { padding: 4px 3px; text-align: right; font-size: 6pt; text-transform: uppercase; white-space: nowrap; }
 table.data thead th.l { text-align: left; }
 table.data thead th.c { text-align: center; }
 table.data tbody tr:nth-child(even) { background: #f8fafc; }
-table.data tbody td { padding: 3px; border-bottom: 1px solid #e5e7eb; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+table.data tbody td { padding: 3px; border-bottom: 1px solid #e5e7eb; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 table.data tbody td.l { text-align: left; white-space: normal; }
+table.data td.desc { min-width: 150px; }
+table.data td.q { white-space: normal; }
 table.data tbody td.c { text-align: center; }
 table.data tbody td.code { font-family: 'Consolas', 'Courier New', monospace; color: #475569; text-align: left; }
 table.data tbody td.row-num { color: #94a3b8; font-size: 6pt; text-align: center; }
@@ -87,7 +90,30 @@ table.data td.zero { color: #cbd5e1; }
 table.data .sep { border-left: 1px solid #cbd5e1; }
 table.data tfoot tr { background: linear-gradient(135deg, #1e3a5f 0%, #2d5a8e 100%); color: #fff; font-weight: bold; }
 table.data tfoot td { padding: 5px 3px; font-size: 7pt; text-align: right; white-space: nowrap; }
+table.data tfoot td.q { white-space: normal; }
 table.data tfoot td.l { text-align: left; }
+
+/* ── Traslados entre bodegas ─────────────────────────────────── */
+.transfers { margin-top: 14px; }
+.transfers-head { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 2px solid #1e3a5f; padding-bottom: 4px; margin-bottom: 6px; }
+.transfers-title { font-size: 10pt; font-weight: bold; color: #1e3a5f; }
+.transfers-sub { font-size: 7pt; color: #64748b; }
+.transfers-chips span { display: inline-block; margin-left: 6px; padding: 2px 8px; border-radius: 10px; font-size: 7.5pt; font-weight: bold; }
+.chip-in { background: #e0f2fe; color: #075985; }
+.chip-out { background: #fef3c7; color: #92400e; }
+.transfers-group { margin-top: 8px; font-size: 7pt; font-weight: bold; color: #475569; text-transform: uppercase; letter-spacing: .5px; }
+.transfer { margin-top: 5px; border: 1px solid #cbd5e1; border-radius: 6px; page-break-inside: avoid; break-inside: avoid; }
+.transfer-head { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; padding: 5px 8px; background: #f1f5f9; font-size: 7.5pt; }
+.route { background: #1e3a5f; color: #fff; padding: 1px 7px; border-radius: 4px; font-weight: bold; }
+.transfer-total { margin-left: auto; font-weight: bold; }
+.move { padding: 3px 8px; font-size: 7pt; color: #334155; border-top: 1px solid #e2e8f0; }
+.move em { color: #475569; }
+table.returns { width: 100%; border-collapse: collapse; font-size: 6.5pt; }
+table.returns th { background: #e2e8f0; color: #334155; text-align: left; padding: 3px 4px; font-size: 6pt; text-transform: uppercase; }
+table.returns th.r, table.returns td.r { text-align: right; }
+table.returns td { padding: 3px 4px; border-top: 1px solid #e2e8f0; vertical-align: top; }
+table.returns tr.void td { color: #94a3b8; }
+.badge-void { color: #b91c1c; font-weight: bold; }
 
 .notes { margin-top: 10px; font-size: 7pt; color: #475569; line-height: 1.55; border: 1px solid #e2e8f0; border-radius: 6px; padding: 7px 10px; background: #f8fafc; }
 .notes strong { color: #1e3a5f; }
@@ -171,20 +197,6 @@ table.data tbody tr { page-break-inside: avoid; break-inside: avoid; }
 
     @if (count($report['rows']) > 0)
     <table class="data">
-        <colgroup>
-            <col class="c-num">
-            <col class="c-code">
-            <col class="c-desc">
-            <col class="c-udc">
-            <col class="c-qty">
-            <col class="c-qty">
-            <col class="c-qty">
-            <col class="c-qty">
-            <col class="c-pct">
-            <col class="c-amt">
-            <col class="c-amt">
-            <col class="c-amt">
-        </colgroup>
         <thead>
             <tr>
                 <th class="c">#</th>
@@ -206,12 +218,12 @@ table.data tbody tr { page-break-inside: avoid; break-inside: avoid; }
             <tr>
                 <td class="row-num">{{ $i + 1 }}</td>
                 <td class="code">{{ $row['product_id'] }}</td>
-                <td class="l">{{ $row['description'] }}</td>
+                <td class="l desc">{{ $row['description'] }}</td>
                 <td class="c">{{ $row['unit_sale'] ?? '—' }}</td>
-                <td class="sep">{{ $row['entered']['label'] }}</td>
-                <td class="{{ $row['bonus_units'] > 0 ? 'bonus' : 'zero' }}">{{ $row['bonus']['label'] }}</td>
-                <td class="{{ $row['returned_units'] > 0 ? 'ret' : 'zero' }}">{{ $row['returned']['label'] }}</td>
-                <td class="net">{{ $row['net']['label'] }}</td>
+                <td class="q sep">{!! $qty($row['entered']['label']) !!}</td>
+                <td class="q {{ $row['bonus_units'] > 0 ? 'bonus' : 'zero' }}">{!! $qty($row['bonus']['label']) !!}</td>
+                <td class="q {{ $row['returned_units'] > 0 ? 'ret' : 'zero' }}">{!! $qty($row['returned']['label']) !!}</td>
+                <td class="q net">{!! $qty($row['net']['label']) !!}</td>
                 <td class="{{ $row['return_pct'] > 0 ? 'ret' : 'zero' }}">{{ number_format($row['return_pct'], 1) }}%</td>
                 <td class="sep">{{ number_format($row['billed_amount'], 2) }}</td>
                 <td class="{{ $row['returned_amount'] > 0 ? 'ret' : 'zero' }}">{{ number_format($row['returned_amount'], 2) }}</td>
@@ -222,10 +234,10 @@ table.data tbody tr { page-break-inside: avoid; break-inside: avoid; }
         <tfoot>
             <tr>
                 <td class="l" colspan="4">TOTAL — {{ number_format($totals['products_count']) }} productos</td>
-                <td>{{ $totals['entered']['label'] }}</td>
-                <td>{{ $totals['bonus']['label'] }}</td>
-                <td>{{ $totals['returned']['label'] }}</td>
-                <td>{{ $totals['net']['label'] }}</td>
+                <td class="q">{!! $qty($totals['entered']['label']) !!}</td>
+                <td class="q">{!! $qty($totals['bonus']['label']) !!}</td>
+                <td class="q">{!! $qty($totals['returned']['label']) !!}</td>
+                <td class="q">{!! $qty($totals['net']['label']) !!}</td>
                 <td>{{ number_format($totals['return_pct'], 1) }}%</td>
                 <td>{{ number_format($totals['billed_total'], 2) }}</td>
                 <td>{{ number_format($totals['returned_total'], 2) }}</td>
@@ -236,6 +248,93 @@ table.data tbody tr { page-break-inside: avoid; break-inside: avoid; }
     @else
     <p style="text-align:center; color:#888; padding:20px;">No hay facturas en este período para las bodegas elegidas.</p>
     @endif
+
+    @php
+        $transfers = $report['transfers'];
+        $transferGroups = [
+            ['key' => 'received', 'label' => 'Llegaron por traslado (cuentan en este reporte)'],
+            ['key' => 'sent', 'label' => 'Salieron a otra bodega (no cuentan en este reporte)'],
+        ];
+    @endphp
+    <div class="transfers">
+        <div class="transfers-head">
+            <div>
+                <span class="transfers-title">Facturas trasladadas entre bodegas</span>
+                <span class="transfers-sub">&nbsp;· Una factura trasladada cuenta como venta de la bodega donde quedó.</span>
+            </div>
+            <div class="transfers-chips">
+                <span class="chip-in">Llegaron: {{ $transfers['received_count'] }} · L {{ number_format($transfers['received_total'], 2) }}</span>
+                <span class="chip-out">Salieron: {{ $transfers['sent_count'] }} · L {{ number_format($transfers['sent_total'], 2) }}</span>
+            </div>
+        </div>
+
+        @if ($transfers['received_count'] === 0 && $transfers['sent_count'] === 0)
+            <div class="transfers-sub">Ninguna factura de este período cambió de bodega.</div>
+        @endif
+
+        @foreach ($transferGroups as $group)
+            @if (count($transfers[$group['key']]) > 0)
+                <div class="transfers-group">{{ $group['label'] }}</div>
+                @foreach ($transfers[$group['key']] as $invoice)
+                <div class="transfer">
+                    <div class="transfer-head">
+                        <span class="route">{{ $invoice['chain'] }}</span>
+                        <strong>{{ $invoice['invoice_number'] }}</strong>
+                        <span>{{ $invoice['client'] }} · {{ $invoice['invoice_date'] }} · Manifiesto {{ $invoice['manifest_number'] }}</span>
+                        <span class="transfer-total">
+                            L {{ number_format($invoice['total'], 2) }}
+                            @if ($invoice['returned_total'] > 0)
+                                <span style="color:#b91c1c;">(devuelto L {{ number_format($invoice['returned_total'], 2) }})</span>
+                            @endif
+                        </span>
+                    </div>
+                    @foreach ($invoice['moves'] as $move)
+                    <div class="move">
+                        Trasladada de <strong>{{ $move['from'] }}</strong> a <strong>{{ $move['to'] }}</strong> el {{ $move['at'] }}
+                        por <strong>{{ $move['by'] }}</strong> — <em>“{{ $move['reason'] }}”</em>
+                    </div>
+                    @endforeach
+                    @if (count($invoice['returns']) === 0)
+                    <div class="move">Sin devoluciones.</div>
+                    @else
+                    <table class="returns">
+                        <thead>
+                            <tr>
+                                <th>Registrada</th>
+                                <th>Registró</th>
+                                <th>Bodega del usuario</th>
+                                <th>Factura estaba en</th>
+                                <th>Momento</th>
+                                <th>Tipo / estado</th>
+                                <th>Productos</th>
+                                <th class="r">Monto L</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach ($invoice['returns'] as $return)
+                            <tr class="{{ $return['counts'] ? '' : 'void' }}">
+                                <td>{{ $return['registered_at'] }}</td>
+                                <td>{{ $return['user'] }}</td>
+                                <td>{{ $return['user_warehouses'] }}</td>
+                                <td><strong>{{ $return['registered_in'] }}</strong></td>
+                                <td>{{ $return['timing'] }}</td>
+                                <td>{{ $return['type'] }} · <span class="{{ $return['counts'] ? '' : 'badge-void' }}">{{ $return['status'] }}</span></td>
+                                <td>
+                                    @foreach ($return['lines'] as $line)
+                                        {{ $line['description'] }} — <span class="nw">{{ $line['quantity'] }}</span>@if (! $loop->last)<br>@endif
+                                    @endforeach
+                                </td>
+                                <td class="r">{{ number_format($return['total'], 2) }}</td>
+                            </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                    @endif
+                </div>
+                @endforeach
+            @endif
+        @endforeach
+    </div>
 
     <div class="notes">
         <strong>Cómo se lee:</strong> Neto movido = Entró − Devuelto. La bonificación ya viene incluida en "Entró" (mercadería con valor L 0.00) y no se resta.

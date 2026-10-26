@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Reports;
 
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Query\Builder;
 use InvalidArgumentException;
 
 /**
@@ -98,6 +99,37 @@ final class ProductSalesFilters
             'date_field' => $this->dateField,
             'warehouse_ids' => $this->warehouseIds,
         ];
+    }
+
+    /**
+     * Restringe una consulta sobre `invoices` (alias `i`) a las facturas del
+     * reporte: el período, sin rechazadas ni borradas y, por defecto, solo de
+     * las bodegas elegidas.
+     *
+     * La lista de bodegas va explícita (nunca "sin filtro") para que Postgres
+     * use el índice (warehouse_id, invoice_date) también con "todas".
+     *
+     * @param  bool  $onlySelectedWarehouses  false = de cualquier bodega; lo usa
+     *                                        la sección de traslados para las
+     *                                        facturas que salieron a otra.
+     */
+    public function scopeInvoices(Builder $query, bool $onlySelectedWarehouses = true): Builder
+    {
+        $query->whereNull('i.deleted_at')->where('i.status', '!=', 'rejected');
+
+        if ($onlySelectedWarehouses) {
+            $query->whereIn('i.warehouse_id', $this->warehouseIds);
+        }
+
+        $range = [$this->dateFrom->toDateString(), $this->dateTo->toDateString()];
+
+        if ($this->dateField === self::DATE_FIELD_MANIFEST) {
+            return $query->join('manifests as m', 'm.id', '=', 'i.manifest_id')
+                ->whereNull('m.deleted_at')
+                ->whereBetween('m.date', $range);
+        }
+
+        return $query->whereBetween('i.invoice_date', $range);
     }
 
     public function cacheKey(): string

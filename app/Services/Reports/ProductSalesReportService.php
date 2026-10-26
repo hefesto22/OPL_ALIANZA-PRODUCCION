@@ -44,6 +44,10 @@ use Illuminate\Support\Facades\DB;
  * Fuera del reporte: facturas rechazadas, facturas borradas y facturas sin
  * bodega asignada.
  *
+ * Traslados: una factura trasladada cuenta en la bodega donde quedó; la
+ * sección de ProductSalesTransfersSection explica de dónde vino o a dónde se
+ * fue, y quién registró sus devoluciones.
+ *
  * Costo: tres agregaciones sobre invoices ⨝ invoice_lines filtradas por
  * (warehouse_id, invoice_date) — índice idx_invoices_warehouse_date, siempre
  * con la lista explícita de bodegas — y (invoice_id, product_id). O(líneas
@@ -80,6 +84,10 @@ final class ProductSalesReportService
             ELSE il.quantity_fractions
         END)';
 
+    public function __construct(
+        private readonly ProductSalesTransfersSection $transfers = new ProductSalesTransfersSection,
+    ) {}
+
     /**
      * El mismo reporte, cacheado por filtros durante 2 minutos. La pantalla,
      * la impresión y el Excel piden la misma clave, así que muestran los mismos
@@ -103,6 +111,7 @@ final class ProductSalesReportService
      *     totals: array<string, mixed>,
      *     warehouses: list<array{id: int, code: string, name: string}>,
      *     open_return_windows: int,
+     *     transfers: array<string, mixed>,
      *     filters: array<string, mixed>,
      *     date_field_label: string,
      *     generated_at: string,
@@ -131,6 +140,7 @@ final class ProductSalesReportService
                 ])
                 ->all(),
             'open_return_windows' => $this->openReturnWindows($filters),
+            'transfers' => $this->transfers->build($filters),
             'filters' => $filters->toArray(),
             'date_field_label' => $filters->dateFieldLabel(),
             'generated_at' => now()->format('d/m/Y H:i'),
@@ -327,21 +337,7 @@ final class ProductSalesReportService
      */
     private function scopeInvoices(Builder $query, ProductSalesFilters $filters): Builder
     {
-        $range = [$filters->dateFrom->toDateString(), $filters->dateTo->toDateString()];
-
-        // Lista explícita de bodegas (nunca "sin filtro"): así Postgres usa el
-        // índice (warehouse_id, invoice_date) también para "todas las bodegas".
-        $query->whereNull('i.deleted_at')
-            ->where('i.status', '!=', 'rejected')
-            ->whereIn('i.warehouse_id', $filters->warehouseIds);
-
-        if ($filters->dateField === ProductSalesFilters::DATE_FIELD_MANIFEST) {
-            return $query->join('manifests as m', 'm.id', '=', 'i.manifest_id')
-                ->whereNull('m.deleted_at')
-                ->whereBetween('m.date', $range);
-        }
-
-        return $query->whereBetween('i.invoice_date', $range);
+        return $filters->scopeInvoices($query);
     }
 
     /**

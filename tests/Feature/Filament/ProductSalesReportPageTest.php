@@ -6,6 +6,7 @@ use App\Exports\ProductSalesExport;
 use App\Filament\Pages\Reports\ProductSalesReportPage;
 use App\Models\Invoice;
 use App\Models\InvoiceLine;
+use App\Models\InvoiceWarehouseTransfer;
 use App\Models\Manifest;
 use App\Models\User;
 use App\Models\Warehouse;
@@ -173,6 +174,47 @@ class ProductSalesReportPageTest extends TestCase
             ->assertSee('1,680.00');
     }
 
+    public function test_cantidades_grandes_se_imprimen_completas_sin_recortarse(): void
+    {
+        // 3,816 cajas + 23 sueltas (factor 24): antes la celda se cortaba en
+        // "3,816 cj + 2…". Ahora baja de línea en el "+" sin perder nada.
+        $this->sale($this->oac, 'PAS-01', 'PASTA NORMAL 8X12X87GR', 3816 * 24 + 23, 3085964.32);
+
+        $this->actingAs($this->admin)
+            ->get($this->printUrlFor([$this->oac->id]))
+            ->assertOk()
+            ->assertSee('<span class="nw">3,816 cj</span> <span class="nw">+ 23 u</span>', false)
+            ->assertSee('3,085,964.32')
+            ->assertDontSee('text-overflow', false);
+    }
+
+    public function test_pantalla_e_impresion_muestran_la_factura_trasladada(): void
+    {
+        $oai = Warehouse::factory()->oai()->create();
+        $invoice = $this->sale($this->oas, 'GAE-01', 'FRIJOL GAEL', 48, 480.00);
+        InvoiceWarehouseTransfer::factory()->create([
+            'invoice_id' => $invoice->id,
+            'from_warehouse_id' => $oai->id,
+            'to_warehouse_id' => $this->oas->id,
+            'transferred_by' => $this->admin->id,
+            'reason' => 'Jaremar la facturó a OAI por error',
+            'transferred_at' => now(),
+        ]);
+
+        $this->actingAs($this->admin)
+            ->get(ProductSalesReportPage::getUrl())
+            ->assertOk()
+            ->assertSee('Facturas trasladadas entre bodegas')
+            ->assertSee('OAI → OAS')
+            ->assertSee('Jaremar la facturó a OAI por error');
+
+        $this->get($this->printUrlFor([$this->oas->id]))
+            ->assertOk()
+            ->assertSee('OAI → OAS')
+            ->assertSee($invoice->invoice_number)
+            ->assertSee('Sin devoluciones.');
+    }
+
     public function test_imprimir_sin_permiso_da_403(): void
     {
         $this->actingAs($this->encargado)
@@ -209,7 +251,7 @@ class ProductSalesReportPageTest extends TestCase
             ->assertNotified('Exportación en proceso');
 
         Excel::assertQueued($this->expectedExportPath(), 'local', function (ProductSalesExport $export): bool {
-            $codes = $export->collection()->pluck(0)->all();
+            $codes = $export->sheets()[0]->collection()->pluck(0)->all();
 
             return $export->queue === 'reports'
                 && $codes === ['ARR-01', 'FRI-01', 'TOTAL'];
@@ -227,7 +269,11 @@ class ProductSalesReportPageTest extends TestCase
         // Cola sync en tests: el export y NotifyExportReady ya corrieron.
         Storage::disk('local')->assertExists($this->expectedExportPath());
 
-        $sheet = IOFactory::load(Storage::disk('local')->path($this->expectedExportPath()))->getActiveSheet();
+        $book = IOFactory::load(Storage::disk('local')->path($this->expectedExportPath()));
+        $sheet = $book->getSheetByName('Ventas por producto');
+
+        $this->assertNotNull($sheet);
+        $this->assertNotNull($book->getSheetByName('Traslados'));
 
         $this->assertStringContainsString('Reporte de ventas por producto', (string) $sheet->getCell('A1')->getValue());
         $this->assertSame('Código', $sheet->getCell('A2')->getValue());
@@ -248,7 +294,7 @@ class ProductSalesReportPageTest extends TestCase
             .'_al_'.now()->toDateString().'_'.now()->format('His').'.xlsx';
     }
 
-    private function sale(Warehouse $warehouse, string $productId, string $description, int $units, float $total): void
+    private function sale(Warehouse $warehouse, string $productId, string $description, int $units, float $total): Invoice
     {
         $manifest = Manifest::factory()->create(['warehouse_id' => $warehouse->id, 'date' => now()->toDateString()]);
 
@@ -270,6 +316,8 @@ class ProductSalesReportPageTest extends TestCase
             'tax' => 0,
             'total' => $total,
         ]);
+
+        return $invoice;
     }
 
     /**

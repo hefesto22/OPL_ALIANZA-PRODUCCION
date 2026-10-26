@@ -6,6 +6,7 @@ namespace Tests\Feature\Services;
 
 use App\Models\Invoice;
 use App\Models\InvoiceReturn;
+use App\Models\InvoiceWarehouseTransfer;
 use App\Models\Manifest;
 use App\Models\ManifestWarehouseTotal;
 use App\Models\User;
@@ -390,6 +391,33 @@ class InvoiceWarehouseTransferServiceTest extends TestCase
         $this->assertEquals($this->autorizado->id, $transferLog->causer_id);
     }
 
+    public function test_the_move_is_kept_in_the_durable_transfer_history(): void
+    {
+        // activity_log se poda a los 90 días; el reporte de ventas necesita
+        // saber "OAI → OAS" para cualquier período, así que queda en su tabla.
+        $invoice = $this->invoiceIn($this->oai, 1000);
+
+        $this->service->transfer(collect([$invoice]), $this->oas, self::MOTIVO, $this->autorizado);
+
+        $transfer = InvoiceWarehouseTransfer::query()->sole();
+
+        $this->assertSame($invoice->id, $transfer->invoice_id);
+        $this->assertSame($this->oai->id, $transfer->from_warehouse_id);
+        $this->assertSame($this->oas->id, $transfer->to_warehouse_id);
+        $this->assertSame($this->autorizado->id, $transfer->transferred_by);
+        $this->assertSame(self::MOTIVO, $transfer->reason);
+        $this->assertNotNull($transfer->transferred_at);
+    }
+
+    public function test_an_invoice_already_in_the_target_leaves_no_history(): void
+    {
+        $invoice = $this->invoiceIn($this->oas, 1000);
+
+        $this->service->transfer(collect([$invoice]), $this->oas, self::MOTIVO, $this->autorizado);
+
+        $this->assertSame(0, InvoiceWarehouseTransfer::query()->count());
+    }
+
     // ── Plan (dry-run) ───────────────────────────────────────────────────
 
     public function test_the_plan_writes_nothing(): void
@@ -402,5 +430,6 @@ class InvoiceWarehouseTransferServiceTest extends TestCase
         $this->assertSame('OAI', $plan['movements'][0]['from_code']);
         $this->assertEquals(1000.00, $plan['total_amount']);
         $this->assertEquals($this->oai->id, $invoice->fresh()->warehouse_id);
+        $this->assertSame(0, InvoiceWarehouseTransfer::query()->count());
     }
 }
