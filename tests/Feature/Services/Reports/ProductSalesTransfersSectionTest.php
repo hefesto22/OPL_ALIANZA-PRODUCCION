@@ -113,6 +113,52 @@ class ProductSalesTransfersSectionTest extends TestCase
         $this->assertSame([], $report['transfers']['sent']);
     }
 
+    public function test_recuadro_cuadra_lo_que_jaremar_facturo_con_lo_que_cuenta_cada_bodega(): void
+    {
+        $this->transfer(now());
+
+        // Otra factura de OAI que se quedó en OAI.
+        Invoice::factory()->create([
+            'manifest_id' => Manifest::factory()->create(['warehouse_id' => $this->oai->id, 'date' => now()->toDateString()])->id,
+            'warehouse_id' => $this->oai->id,
+            'invoice_date' => now()->toDateString(),
+            'total' => 1000.00,
+        ]);
+
+        // OAI: Jaremar le facturó 2 (L 3,400), se fue 1 a OAS (− L 2,400), le cuenta 1 (L 1,000).
+        $oai = $this->service->generate($this->filters([$this->oai->id]))['transfers']['reconciliation'];
+
+        $this->assertTrue($oai['applies']);
+        $this->assertSame(['count' => 2, 'total' => 3400.0], $oai['billed_by_jaremar']);
+        $this->assertSame(1, $oai['left']['count']);
+        $this->assertSame(0, $oai['arrived']['count']);
+        $this->assertSame([[
+            'from' => 'OAI',
+            'to' => 'OAS',
+            'count' => 1,
+            'total' => 2400.0,
+            'quantity' => '10 cj',
+            'invoices' => ['002-001-01-03949657'],
+        ]], $oai['left']['groups']);
+        $this->assertSame(['count' => 1, 'total' => 1000.0], $oai['in_report']);
+
+        // OAS: Jaremar no le facturó nada, le llegó 1 de OAI (+ L 2,400).
+        $oas = $this->service->generate($this->filters([$this->oas->id]))['transfers']['reconciliation'];
+
+        $this->assertTrue($oas['applies']);
+        $this->assertSame(['count' => 0, 'total' => 0.0], $oas['billed_by_jaremar']);
+        $this->assertSame(1, $oas['arrived']['count']);
+        $this->assertSame('OAI', $oas['arrived']['groups'][0]['from']);
+        $this->assertSame('OAS', $oas['arrived']['groups'][0]['to']);
+        $this->assertSame(['count' => 1, 'total' => 2400.0], $oas['in_report']);
+
+        // Las dos juntas: el traslado queda adentro y no cambia el total, no hay recuadro.
+        $both = $this->service->generate($this->filters([$this->oai->id, $this->oas->id]))['transfers']['reconciliation'];
+
+        $this->assertFalse($both['applies']);
+        $this->assertSame($both['in_report'], $both['billed_by_jaremar']);
+    }
+
     public function test_cada_devolucion_dice_quien_la_hizo_de_que_bodega_y_si_fue_antes_o_despues(): void
     {
         $bodegueroOai = User::factory()->forWarehouse($this->oai)->create(['name' => 'Luis OAI']);

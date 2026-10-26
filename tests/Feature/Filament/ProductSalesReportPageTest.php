@@ -8,11 +8,9 @@ use App\Models\Invoice;
 use App\Models\InvoiceLine;
 use App\Models\InvoiceWarehouseTransfer;
 use App\Models\Manifest;
-use App\Models\ReturnReason;
 use App\Models\User;
 use App\Models\Warehouse;
 use App\Services\Reports\ProductSalesReportService;
-use App\Services\ReturnService;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Crypt;
@@ -88,11 +86,7 @@ class ProductSalesReportPageTest extends TestCase
             ->assertOk()
             ->assertSee('Reporte de ventas por producto')
             ->assertSee('ARROZ PRUEBA OAC')
-            ->assertSee('FRIJOL PRUEBA OAS')
-            // Cuadro de arriba: Entró − Devuelto = Se movió, en cajas, unidades y lempiras.
-            ->assertSeeInOrder(['Entró', 'Devuelto', 'Se movió', 'De eso bonificación'])
-            ->assertSeeInOrder(['Cajas y sueltas', 'En unidades', '168', 'En lempiras', 'L 1,680.00'])
-            ->assertDontSee('¿Por qué las cajas no restan exacto?');
+            ->assertSee('FRIJOL PRUEBA OAS');
 
         $this->assertSame('/reportes/ventas-por-producto', parse_url(ProductSalesReportPage::getUrl(), PHP_URL_PATH));
     }
@@ -164,39 +158,6 @@ class ProductSalesReportPageTest extends TestCase
 
     // ── Imprimir ────────────────────────────────────────────────────
 
-    public function test_si_una_devolucion_abre_una_caja_el_cuadro_lo_explica(): void
-    {
-        // 2 cajas de 24 y devuelven 5 sueltas: queda 1 cj + 19 u, una caja se abrió.
-        $invoice = $this->sale($this->oac, 'ACE-01', 'ACEITE PRUEBA OAC', 48, 480.00);
-        $line = $invoice->lines()->firstOrFail();
-
-        app(ReturnService::class)->createReturn([
-            'invoice_id' => $invoice->id,
-            'return_reason_id' => ReturnReason::factory()->create()->id,
-            'return_date' => now()->toDateString(),
-            'created_by' => $this->admin->id,
-            'lines' => [[
-                'invoice_line_id' => $line->id,
-                'line_number' => $line->line_number,
-                'product_id' => $line->product_id,
-                'product_description' => $line->product_description,
-                'quantity_box' => 0,
-                'quantity' => 5,
-            ]],
-        ]);
-
-        $this->actingAs($this->admin)
-            ->get(ProductSalesReportPage::getUrl())
-            ->assertOk()
-            ->assertSee('¿Por qué las cajas no restan exacto?')
-            ->assertSee('En 1 producto');
-
-        $this->get(Livewire::test(ProductSalesReportPage::class)->instance()->printUrl())
-            ->assertOk()
-            ->assertSee('¿Por qué las cajas no restan exacto?')
-            ->assertSee('En 1 producto');
-    }
-
     public function test_imprimir_muestra_los_mismos_datos_que_la_pantalla(): void
     {
         $this->actingAs($this->admin);
@@ -210,9 +171,7 @@ class ProductSalesReportPageTest extends TestCase
             ->assertSee('Reporte de Ventas por Producto')
             ->assertSee('ARROZ PRUEBA OAC')
             ->assertSee('FRIJOL PRUEBA OAS')
-            ->assertSee('1,680.00')
-            ->assertSeeInOrder(['Entró', 'Devuelto', 'Se movió', 'De eso bonificación'])
-            ->assertSeeInOrder(['Cajas y sueltas', 'En unidades', '168', 'En lempiras', 'L 1,680.00']);
+            ->assertSee('1,680.00');
     }
 
     public function test_cantidades_grandes_se_imprimen_completas_sin_recortarse(): void
@@ -257,7 +216,27 @@ class ProductSalesReportPageTest extends TestCase
             ->assertSee($invoice->invoice_number)
             ->assertSee('Productos de esta factura')
             ->assertSee('Resumen de productos trasladados')
-            ->assertSee('Sin devoluciones.');
+            ->assertSee('Sin devoluciones.')
+            // Recuadro de arriba: a OAS le llegó, sí le cuenta.
+            ->assertSee('Facturas que se movieron de bodega')
+            ->assertSee('Jaremar le facturó a OAS')
+            ->assertSee('ese dinero sí cuenta en este reporte');
+
+        // A OAI se le fue: el recuadro explica que se resta y dónde cuenta.
+        $this->get($this->printUrlFor([$oai->id]))
+            ->assertOk()
+            ->assertSee('Facturas que se movieron de bodega')
+            ->assertSee('Jaremar le facturó a OAI')
+            ->assertSee('ese dinero no cuenta en este reporte, cuenta en OAS')
+            ->assertSee('− L 480.00');
+
+        Livewire::test(ProductSalesReportPage::class)
+            ->fillForm(['warehouse_ids' => [$oai->id]])
+            ->call('generate')
+            ->assertHasNoFormErrors()
+            ->assertSee('Facturas que se movieron de bodega')
+            ->assertSee('ese dinero no cuenta en este reporte, cuenta en OAS')
+            ->assertSee($invoice->invoice_number);
     }
 
     public function test_imprimir_sin_permiso_da_403(): void

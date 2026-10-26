@@ -28,40 +28,40 @@
         .dark .psr-alert { color: var(--warning-300); }
         .psr-alert strong { font-weight: 700; }
 
-        /* Cuadro resumen: columnas = Entró − Devuelto = Se movió; filas = en qué se mide. */
-        .psr-flowwrap { border-radius: .75rem; background: #fff; border: 1px solid var(--gray-200); overflow-x: auto; }
-        .dark .psr-flowwrap { background: var(--gray-900); border-color: rgb(255 255 255 / .1); }
-        .psr-flow { width: 100%; border-collapse: separate; border-spacing: 0; font-variant-numeric: tabular-nums; }
-        .psr-flow th { padding: .75rem 1rem .5rem; text-align: center; vertical-align: bottom; font-size: .75rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--gray-700); background: var(--gray-50); border-bottom: 1px solid var(--gray-200); }
-        .dark .psr-flow th { color: var(--gray-200); background: var(--gray-800); border-color: rgb(255 255 255 / .1); }
-        .psr-flow-hint { display: block; margin-top: .125rem; font-size: .6875rem; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--gray-500); }
-        .dark .psr-flow-hint { color: var(--gray-400); }
-        .psr-flow th.psr-flow-op { width: 1.25rem; padding: 0; vertical-align: middle; font-size: 1.375rem; font-weight: 700; color: var(--gray-400); }
-        .psr-flow td { padding: .5rem 1rem; text-align: center; white-space: nowrap; border-bottom: 1px solid var(--gray-100); }
-        .dark .psr-flow td { border-color: rgb(255 255 255 / .06); }
-        .psr-flow tr:last-child td { border-bottom: none; }
-        .psr-flow td.psr-flow-op { padding: 0; }
-        .psr-flow td.psr-flow-row { width: 1%; text-align: left; font-size: .6875rem; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--gray-500); }
-        .dark .psr-flow td.psr-flow-row { color: var(--gray-400); }
-        .psr-flow tr.psr-flow-qty td { font-size: 1.25rem; line-height: 1.75rem; font-weight: 700; }
-        .psr-flow tr.psr-flow-money td { font-size: 1rem; font-weight: 700; }
-        .psr-flow tr.psr-flow-qty td.psr-flow-row, .psr-flow tr.psr-flow-money td.psr-flow-row { font-size: .6875rem; line-height: 1rem; }
-        .psr-flow th.psr-ret { color: var(--danger-700); }
-        .dark .psr-flow th.psr-ret { color: var(--danger-400); }
-        .psr-flow-pct { margin-left: .375rem; font-size: .75rem; font-weight: 500; color: var(--gray-500); }
-        .dark .psr-flow-pct { color: var(--gray-400); }
-        .psr-flow .psr-flow-net { background: color-mix(in oklab, var(--success-500) 8%, transparent); color: var(--success-700); box-shadow: inset 2px 0 0 var(--success-500), inset -2px 0 0 var(--success-500); }
-        .dark .psr-flow .psr-flow-net { background: color-mix(in oklab, var(--success-500) 12%, transparent); color: var(--success-400); }
-        .psr-flow th.psr-flow-net { background: color-mix(in oklab, var(--success-500) 16%, transparent); color: var(--success-800); }
-        .dark .psr-flow th.psr-flow-net { color: var(--success-300); }
-        .psr-flow .psr-flow-bonus { border-left: 1px dashed var(--gray-300); }
-        .dark .psr-flow .psr-flow-bonus { border-left-color: rgb(255 255 255 / .15); }
-        .psr-flow td.psr-flow-bonus { color: var(--success-700); }
-        .dark .psr-flow td.psr-flow-bonus { color: var(--success-400); }
-        .psr-flow-note { margin-top: -.5rem; font-size: .75rem; color: var(--gray-500); }
-        .dark .psr-flow-note { color: var(--gray-400); }
-        .psr-flow-note strong { font-weight: 600; color: var(--gray-700); }
-        .dark .psr-flow-note strong { color: var(--gray-200); }
+        .psr-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr)); gap: .75rem; }
+        .psr-card { border-radius: .75rem; padding: .875rem 1rem; background: #fff; border: 1px solid var(--gray-200); }
+        .dark .psr-card { background: rgb(255 255 255 / .04); border-color: rgb(255 255 255 / .1); }
+        .psr-card-label { font-size: .6875rem; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--gray-500); }
+        .dark .psr-card-label { color: var(--gray-400); }
+        .psr-card-value { margin-top: .25rem; font-size: 1.375rem; line-height: 1.75rem; font-weight: 700; letter-spacing: -.01em; }
+        .psr-card-sub { margin-top: .125rem; font-size: .75rem; color: var(--gray-500); }
+        .dark .psr-card-sub { color: var(--gray-400); }
+        .psr-card-net { background: color-mix(in oklab, var(--success-500) 9%, transparent); border-color: color-mix(in oklab, var(--success-500) 35%, transparent); }
+        .dark .psr-card-net { background: color-mix(in oklab, var(--success-500) 12%, transparent); }
+        .psr-card-net .psr-card-value { color: var(--success-700); }
+        .dark .psr-card-net .psr-card-value { color: var(--success-400); }
+        .psr-card-ret .psr-card-value { color: var(--danger-700); }
+        .dark .psr-card-ret .psr-card-value { color: var(--danger-400); }
+
+        .psr-recon { border-radius: .75rem; padding: .75rem 1rem; background: color-mix(in oklab, var(--info-500) 8%, transparent); border: 1px solid color-mix(in oklab, var(--info-500) 30%, transparent); border-left: 4px solid var(--info-500); }
+        .dark .psr-recon { background: color-mix(in oklab, var(--info-500) 12%, transparent); }
+        .psr-recon-title { display: flex; align-items: center; gap: .375rem; margin-bottom: .375rem; font-size: .75rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--info-700); }
+        .dark .psr-recon-title { color: var(--info-300); }
+        .psr-recon-icon { width: 1rem; height: 1rem; }
+        .psr-recon-table { width: 100%; border-collapse: collapse; font-size: .8125rem; }
+        .psr-recon-table td { padding: .25rem .5rem; vertical-align: top; }
+        .psr-recon-table td.psr-num { width: 1%; text-align: right; }
+        .psr-recon-op { width: 1rem; font-size: 1rem; font-weight: 700; text-align: center; color: var(--info-700); }
+        .dark .psr-recon-op { color: var(--info-300); }
+        .psr-recon-out .psr-recon-amount { font-weight: 700; color: var(--danger-700); }
+        .dark .psr-recon-out .psr-recon-amount { color: var(--danger-400); }
+        .psr-recon-in .psr-recon-amount { font-weight: 700; color: var(--success-700); }
+        .dark .psr-recon-in .psr-recon-amount { color: var(--success-400); }
+        .psr-recon-result td { border-top: 1px solid color-mix(in oklab, var(--info-500) 35%, transparent); font-weight: 700; }
+        .psr-recon-inv { display: block; margin-top: .125rem; font-size: .75rem; color: var(--gray-500); }
+        .dark .psr-recon-inv { color: var(--gray-400); }
+        .psr-recon-foot { margin-top: .375rem; font-size: .75rem; color: var(--gray-600); }
+        .dark .psr-recon-foot { color: var(--gray-400); }
 
         .psr-panel { border-radius: .75rem; background: #fff; border: 1px solid var(--gray-200); overflow: hidden; }
         .dark .psr-panel { background: var(--gray-900); border-color: rgb(255 255 255 / .1); }
@@ -172,6 +172,7 @@
             $from = \Illuminate\Support\Carbon::parse($report['filters']['date_from'])->format('d/m/Y');
             $to = \Illuminate\Support\Carbon::parse($report['filters']['date_to'])->format('d/m/Y');
             $warehouseCodes = collect($report['warehouses'])->pluck('code')->implode(', ');
+            $recon = $report['transfers']['reconciliation'] ?? null;
             $qty = fn (string $label): string => '<span class="psr-nw">'
                 .str_replace(' + ', '</span> <span class="psr-nw">+ ', e($label))
                 .'</span>';
@@ -196,60 +197,83 @@
                 </div>
             @endif
 
-            <div class="psr-flowwrap">
-                <table class="psr-flow">
-                    <thead>
-                        <tr>
-                            <th></th>
-                            <th>Entró<span class="psr-flow-hint">lo facturado en el período</span></th>
-                            <th class="psr-flow-op">−</th>
-                            <th class="psr-ret">Devuelto<span class="psr-flow-hint">de esas mismas facturas</span></th>
-                            <th class="psr-flow-op">=</th>
-                            <th class="psr-flow-net">Se movió<span class="psr-flow-hint">lo que se quedó vendido</span></th>
-                            <th class="psr-flow-bonus">De eso bonificación<span class="psr-flow-hint">ya va dentro de Entró · no se resta</span></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr class="psr-flow-qty">
-                            <td class="psr-flow-row">Cajas y sueltas</td>
-                            <td>{!! $qty($totals['entered']['label']) !!}</td>
-                            <td class="psr-flow-op"></td>
-                            <td class="psr-ret">{!! $qty($totals['returned']['label']) !!}</td>
-                            <td class="psr-flow-op"></td>
-                            <td class="psr-flow-net">{!! $qty($totals['net']['label']) !!}</td>
-                            <td class="psr-flow-bonus">{!! $qty($totals['bonus']['label']) !!}</td>
-                        </tr>
-                        <tr>
-                            <td class="psr-flow-row">En unidades</td>
-                            <td>{{ number_format($totals['entered']['units']) }}</td>
-                            <td class="psr-flow-op"></td>
-                            <td class="psr-ret">{{ number_format($totals['returned']['units']) }}<span class="psr-flow-pct">{{ number_format($totals['returned_units_pct'], 1) }}%</span></td>
-                            <td class="psr-flow-op"></td>
-                            <td class="psr-flow-net">{{ number_format($totals['net']['units']) }}<span class="psr-flow-pct">{{ number_format($totals['net_units_pct'], 1) }}%</span></td>
-                            <td class="psr-flow-bonus">{{ number_format($totals['bonus']['units']) }}<span class="psr-flow-pct">{{ number_format($totals['bonus_units_pct'], 1) }}%</span></td>
-                        </tr>
-                        <tr class="psr-flow-money">
-                            <td class="psr-flow-row">En lempiras</td>
-                            <td>L {{ number_format($totals['billed_total'], 2) }}</td>
-                            <td class="psr-flow-op"></td>
-                            <td class="psr-ret">L {{ number_format($totals['returned_total'], 2) }}<span class="psr-flow-pct">{{ number_format($totals['return_pct'], 1) }}%</span></td>
-                            <td class="psr-flow-op"></td>
-                            <td class="psr-flow-net">L {{ number_format($totals['net_total'], 2) }}<span class="psr-flow-pct">{{ number_format($totals['net_pct'], 1) }}%</span></td>
-                            <td class="psr-flow-bonus">L 0.00<span class="psr-flow-pct">sin valor</span></td>
-                        </tr>
-                    </tbody>
-                </table>
+            <div class="psr-cards">
+                <div class="psr-card">
+                    <div class="psr-card-label">Facturas</div>
+                    <div class="psr-card-value psr-num">{{ number_format($totals['invoices_count']) }}</div>
+                    <div class="psr-card-sub">{{ number_format($totals['products_count']) }} productos</div>
+                </div>
+                <div class="psr-card">
+                    <div class="psr-card-label">Facturado</div>
+                    <div class="psr-card-value psr-num">L {{ number_format($totals['billed_total'], 2) }}</div>
+                    <div class="psr-card-sub psr-num">Entró {{ $totals['entered']['label'] }}</div>
+                </div>
+                <div class="psr-card psr-card-ret">
+                    <div class="psr-card-label">Devuelto</div>
+                    <div class="psr-card-value psr-num">L {{ number_format($totals['returned_total'], 2) }}</div>
+                    <div class="psr-card-sub psr-num">{{ number_format($totals['return_pct'], 1) }}% de lo facturado</div>
+                </div>
+                <div class="psr-card psr-card-net">
+                    <div class="psr-card-label">Venta neta</div>
+                    <div class="psr-card-value psr-num">L {{ number_format($totals['net_total'], 2) }}</div>
+                    <div class="psr-card-sub psr-num">Vendido {{ $totals['net']['label'] }}</div>
+                </div>
             </div>
-            <div class="psr-flow-note">
-                {{ number_format($totals['invoices_count']) }} facturas · {{ number_format($totals['products_count']) }} productos.
-                Los porcentajes son sobre lo que entró.
-                @if ($totals['products_with_opened_box'] > 0)
-                    <strong>¿Por qué las cajas no restan exacto?</strong>
-                    En {{ number_format($totals['products_with_opened_box']) }} {{ $totals['products_with_opened_box'] === 1 ? 'producto' : 'productos' }}
-                    se devolvieron unidades sueltas que salen de una caja abierta (si la caja trae 20: 50 cj − 10 u = 49 cj + 10 u).
-                    En unidades y en lempiras la resta es exacta.
-                @endif
-            </div>
+
+            @if ($recon !== null && $recon['applies'])
+                <div class="psr-recon">
+                    <div class="psr-recon-title">
+                        <x-filament::icon icon="heroicon-o-arrows-right-left" class="psr-recon-icon" />
+                        Facturas que se movieron de bodega
+                    </div>
+                    <div class="psr-tablewrap">
+                        <table class="psr-recon-table">
+                            <tr>
+                                <td class="psr-recon-op"></td>
+                                <td>Jaremar le facturó a {{ $warehouseCodes }}</td>
+                                <td class="psr-num">{{ number_format($recon['billed_by_jaremar']['count']) }} facturas</td>
+                                <td class="psr-num">L {{ number_format($recon['billed_by_jaremar']['total'], 2) }}</td>
+                            </tr>
+                            @foreach ($recon['left']['groups'] as $group)
+                                <tr class="psr-recon-out">
+                                    <td class="psr-recon-op">−</td>
+                                    <td>
+                                        {{ $group['count'] === 1 ? 'Factura que se envió' : 'Facturas que se enviaron' }} a <strong>{{ $group['from'] }}</strong>
+                                        pero después {{ $group['count'] === 1 ? 'se movió' : 'se movieron' }} a <strong>{{ $group['to'] }}</strong>:
+                                        ese dinero no cuenta en este reporte, cuenta en {{ $group['to'] }} ({{ $group['quantity'] }})
+                                        <span class="psr-recon-inv">{{ implode(' · ', $group['invoices']) }}</span>
+                                    </td>
+                                    <td class="psr-num">{{ $group['count'] }} {{ $group['count'] === 1 ? 'factura' : 'facturas' }}</td>
+                                    <td class="psr-num psr-recon-amount">− L {{ number_format($group['total'], 2) }}</td>
+                                </tr>
+                            @endforeach
+                            @foreach ($recon['arrived']['groups'] as $group)
+                                <tr class="psr-recon-in">
+                                    <td class="psr-recon-op">+</td>
+                                    <td>
+                                        {{ $group['count'] === 1 ? 'Factura que se envió' : 'Facturas que se enviaron' }} a <strong>{{ $group['from'] }}</strong>
+                                        pero después {{ $group['count'] === 1 ? 'se movió' : 'se movieron' }} a <strong>{{ $group['to'] }}</strong>:
+                                        ese dinero sí cuenta en este reporte ({{ $group['quantity'] }})
+                                        <span class="psr-recon-inv">{{ implode(' · ', $group['invoices']) }}</span>
+                                    </td>
+                                    <td class="psr-num">{{ $group['count'] }} {{ $group['count'] === 1 ? 'factura' : 'facturas' }}</td>
+                                    <td class="psr-num psr-recon-amount">+ L {{ number_format($group['total'], 2) }}</td>
+                                </tr>
+                            @endforeach
+                            <tr class="psr-recon-result">
+                                <td class="psr-recon-op">=</td>
+                                <td>Facturado en este reporte (la tarjeta "Facturado")</td>
+                                <td class="psr-num">{{ number_format($recon['in_report']['count']) }} facturas</td>
+                                <td class="psr-num">L {{ number_format($recon['in_report']['total'], 2) }}</td>
+                            </tr>
+                        </table>
+                    </div>
+                    <div class="psr-recon-foot">
+                        Lo devuelto de esas facturas también cuenta en la bodega donde quedaron.
+                        El detalle de cada una (productos y quién devolvió) está abajo, en "Facturas trasladadas entre bodegas".
+                    </div>
+                </div>
+            @endif
 
             @if (count($report['rows']) === 0)
                 <div class="psr-empty">

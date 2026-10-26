@@ -134,10 +134,10 @@ final class ProductSalesFilters
 
     public function cacheKey(): string
     {
-        // El "v3" es la forma del reporte guardado: subirlo cada vez que cambien
+        // El "v4" es la forma del reporte guardado: subirlo cada vez que cambien
         // sus llaves, para que tras un deploy nadie reciba de la caché un
         // reporte viejo al que le faltan datos que la vista ya espera.
-        return 'reports:product-sales:v3:'.sha1((string) json_encode($this->toArray()));
+        return 'reports:product-sales:v4:'.sha1((string) json_encode($this->toArray()));
     }
 
     public function dateFieldLabel(): string

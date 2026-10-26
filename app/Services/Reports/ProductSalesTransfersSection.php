@@ -88,6 +88,115 @@ final class ProductSalesTransfersSection
     }
 
     /**
+     * Recuadro "por qué el facturado no es todo lo que Jaremar le facturó a la
+     * bodega": parte de lo que Jaremar le cargó a las bodegas del reporte, resta
+     * las facturas que se trasladaron a otra bodega (ya no cuentan aquí), suma
+     * las que llegaron de otra bodega (sí cuentan) y llega al facturado del
+     * reporte. Un traslado entre dos bodegas del mismo reporte no cambia el
+     * total, así que no entra al recuadro (sigue en el detalle de abajo).
+     *
+     * @param  array<string, mixed>  $section  Lo que devuelve build().
+     * @param  list<int>  $warehouseIds
+     * @return array{
+     *     applies: bool,
+     *     billed_by_jaremar: array{count: int, total: float},
+     *     left: array<string, mixed>,
+     *     arrived: array<string, mixed>,
+     *     in_report: array{count: int, total: float},
+     * }
+     */
+    public function reconciliation(array $section, array $warehouseIds, int $reportInvoices, float $reportBilled): array
+    {
+        $billedHere = fn (array $invoice): bool => in_array($invoice['origin_warehouse_id'], $warehouseIds, true);
+
+        // Salieron: Jaremar las facturó a una bodega del reporte y hoy están en otra.
+        $left = $this->movedGroup(array_values(array_filter($section['sent'], $billedHere)));
+        // Llegaron: hoy están aquí pero Jaremar las facturó a otra bodega.
+        $arrived = $this->movedGroup(
+            array_values(array_filter($section['received'], fn (array $invoice): bool => ! $billedHere($invoice))),
+        );
+
+        return [
+            'applies' => $left['count'] + $arrived['count'] > 0,
+            'billed_by_jaremar' => [
+                'count' => $reportInvoices - $arrived['count'] + $left['count'],
+                'total' => round($reportBilled - $arrived['total'] + $left['total'], 2),
+            ],
+            'left' => $left,
+            'arrived' => $arrived,
+            'in_report' => ['count' => $reportInvoices, 'total' => round($reportBilled, 2)],
+        ];
+    }
+
+    /**
+     * Facturas trasladadas agrupadas por recorrido (de qué bodega a cuál), con
+     * sus números, cantidad y monto.
+     *
+     * @param  list<array<string, mixed>>  $invoices
+     * @return array{count: int, total: float, groups: list<array{from: string, to: string, count: int, total: float, quantity: string, invoices: list<string>}>}
+     */
+    private function movedGroup(array $invoices): array
+    {
+        $groups = [];
+
+        foreach ($invoices as $invoice) {
+            $groups[$invoice['origin'].'|'.$invoice['current_warehouse']][] = $invoice;
+        }
+
+        ksort($groups, SORT_STRING);
+
+        $rows = [];
+
+        foreach ($groups as $group) {
+            $rows[] = [
+                'from' => (string) $group[0]['origin'],
+                'to' => (string) $group[0]['current_warehouse'],
+                'count' => count($group),
+                'total' => round(array_sum(array_column($group, 'total')), 2),
+                'quantity' => $this->quantityLabel($group),
+                'invoices' => array_column($group, 'invoice_number'),
+            ];
+        }
+
+        return [
+            'count' => count($invoices),
+            'total' => round(array_sum(array_column($invoices, 'total')), 2),
+            'groups' => $rows,
+        ];
+    }
+
+    /**
+     * Cantidad total de un grupo de facturas en "cj + u", sumando por producto
+     * como la tabla principal.
+     *
+     * @param  list<array<string, mixed>>  $invoices
+     */
+    private function quantityLabel(array $invoices): string
+    {
+        $byProduct = [];
+
+        foreach ($invoices as $invoice) {
+            foreach ($invoice['products'] as $product) {
+                $entry = $byProduct[$product['product_id']] ?? ['units' => 0, 'factor' => 0];
+                $entry['units'] += $product['units'];
+                $entry['factor'] = max($entry['factor'], $product['factor']);
+                $byProduct[$product['product_id']] = $entry;
+            }
+        }
+
+        $cajas = 0;
+        $sueltas = 0;
+
+        foreach ($byProduct as $entry) {
+            $boxes = ProductSalesReportService::boxes($entry['units'], $entry['factor']);
+            $cajas += $boxes['cajas'];
+            $sueltas += $boxes['sueltas'];
+        }
+
+        return ProductSalesReportService::boxesLabel($cajas, $sueltas);
+    }
+
+    /**
      * Resumen por producto de lo que llegó y salió por traslado, con totales.
      * Es la suma de las tablas de productos de cada factura.
      *
@@ -228,7 +337,8 @@ final class ProductSalesTransfersSection
      */
     private function invoiceDetail(Invoice $invoice, Collection $moves, Collection $returns, Collection $products): array
     {
-        $origin = $moves->first()?->fromWarehouse?->code ?? 'Sin bodega';
+        $firstMove = $moves->first();
+        $origin = $firstMove?->fromWarehouse?->code ?? 'Sin bodega';
         $chain = collect([$origin])
             ->merge($moves->map(fn (InvoiceWarehouseTransfer $move): string => $move->toWarehouse?->code ?? '?'))
             ->implode(' → ');
@@ -245,6 +355,9 @@ final class ProductSalesTransfersSection
             'client' => trim(($invoice->client_id ? $invoice->client_id.' · ' : '').$invoice->client_name),
             'manifest_number' => (string) ($invoice->manifest?->number ?? '—'),
             'current_warehouse' => (string) ($invoice->warehouse?->code ?? '—'),
+            // Bodega a la que Jaremar la facturó: la de origen del primer traslado.
+            'origin' => $origin,
+            'origin_warehouse_id' => $firstMove?->from_warehouse_id !== null ? (int) $firstMove->from_warehouse_id : null,
             'chain' => $chain,
             'total' => round((float) $invoice->total, 2),
             'returned_total' => round((float) $invoice->total_returns, 2),
