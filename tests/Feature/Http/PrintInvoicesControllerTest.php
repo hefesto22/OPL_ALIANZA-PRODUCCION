@@ -189,6 +189,51 @@ class PrintInvoicesControllerTest extends TestCase
         $response->assertDontSee('Entregar a:');
     }
 
+    public function test_hosana_view_shows_every_amount_of_the_footer_in_order(): void
+    {
+        // Factura solo de bonificación (002-001-01-04032897): 7 cajas de pasta
+        // a L 756.87 en cero; el cliente paga solo el ISV.
+        $invoice = Invoice::factory()
+            ->for($this->manifest, 'manifest')
+            ->for($this->warehouseOAC, 'warehouse')
+            ->create([
+                'importe_gravado' => 5298.09,
+                'importe_excento' => 0,
+                'importe_exonerado' => 0,
+                'isv15' => 794.71,
+                'isv18' => 0,
+                'total' => 794.71,
+            ]);
+
+        InvoiceLine::factory()->for($invoice, 'invoice')->create([
+            'product_type' => 'B',
+            'price' => 756.87,
+            'quantity_decimal' => 7,
+            'subtotal' => 0,
+            'tax' => 0,
+            'total' => 0,
+        ]);
+
+        $payload = $this->encryptedPayload([
+            'manifest_id' => $this->manifest->id,
+            'invoice_ids' => [$invoice->id],
+        ]);
+
+        $response = $this->actingAs($this->user)
+            ->get(route('invoices.print.hosana', ['payload' => $payload]));
+
+        $response->assertOk();
+        // Dos columnas, como la matriz: cada fila trae su par izquierda/derecha.
+        $response->assertSeeInOrder([
+            'Importe Exonerado:', '0.00', 'SubTotal:', '5,298.09',
+            'Importe Gravado 15%:', '5,298.09', 'Descuento:', '5,298.09',
+            'Importe Gravado 18%:', '0.00', 'Impuesto 15%:', '794.71',
+            'Importe Exento:', '0.00', 'Impuesto 18%:', '0.00',
+            'TOTAL:', '794.71',
+            'SON:',
+        ]);
+    }
+
     public function test_show_does_not_mark_invoices_as_printed(): void
     {
         // Cambio central de este sprint: la vista NO marca is_printed.

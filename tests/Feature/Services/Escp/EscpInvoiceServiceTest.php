@@ -446,6 +446,116 @@ class EscpInvoiceServiceTest extends TestCase
         $this->assertSame(1, substr_count($out, 'GRUPO JAREMAR'));
     }
 
+    public function test_footer_prints_every_amount_in_two_columns(): void
+    {
+        // Izquierda: Exonerado / Gravado 15% / Gravado 18% / Exento.
+        // Derecha:   SubTotal / Descuento / Impuesto 15% / Impuesto 18% / TOTAL.
+        // 5 lineas en vez de 9 para no gastar forma.
+        $invoice = $this->invoiceWithLines([
+            'importe_exonerado' => 0,
+            'importe_excento' => 120.50,
+            'importe_gravado' => 878.29,
+            'isv15' => 131.75,
+            'isv18' => 0,
+            'total' => 1130.54,
+        ]);
+
+        $lines = explode("\n", app(EscpInvoiceService::class)->previewText(collect([$invoice])));
+        $row = function (string $label) use ($lines): string {
+            $found = array_values(array_filter($lines, fn (string $line): bool => str_contains($line, $label)));
+            $this->assertCount(1, $found, "Se esperaba una sola linea con {$label}");
+
+            return $found[0];
+        };
+
+        $pairs = [
+            ['Importe Exonerado:', 'L.         0.00', 'SubTotal:', 'L.       998.79'],
+            ['Importe Gravado 15%:', 'L.       878.29', 'Descuento:', 'L.         0.00'],
+            ['Importe Gravado 18%:', 'L.         0.00', 'Impuesto 15%:', 'L.       131.75'],
+            ['Importe Exento:', 'L.       120.50', 'Impuesto 18%:', 'L.         0.00'],
+        ];
+        foreach ($pairs as [$leftLabel, $leftAmount, $rightLabel, $rightAmount]) {
+            $line = $row($leftLabel);
+            $this->assertMatchesRegularExpression(
+                '/'.preg_quote($leftLabel, '/').'\s+'.preg_quote($leftAmount, '/').'\s+'
+                .preg_quote($rightLabel, '/').'\s+'.preg_quote($rightAmount, '/').'$/',
+                $line
+            );
+        }
+        $this->assertMatchesRegularExpression('/^\s+TOTAL:\s+L\.\s+1,130\.54$/', $row('TOTAL:'));
+
+        // El orden de las filas es el pedido.
+        $order = array_map(fn (string $label): int => array_search($row($label), $lines, true), [
+            'Importe Exonerado:', 'Importe Gravado 15%:', 'Importe Gravado 18%:', 'Importe Exento:', 'TOTAL:',
+        ]);
+        $sorted = $order;
+        sort($sorted);
+        $this->assertSame($sorted, $order);
+
+        $cpl = max(40, (int) config('escp.chars_per_line', 92));
+        foreach ($lines as $line) {
+            $this->assertLessThanOrEqual($cpl, mb_strlen($line), 'Linea mas ancha que cpl: '.$line);
+        }
+    }
+
+    public function test_bonus_only_invoice_shows_the_bonus_as_discount(): void
+    {
+        // 002-001-01-04032897: 7 cajas de PASTA NORMAL bonificadas a L 756.87.
+        // SubTotal 5,298.09 − Descuento 5,298.09 + ISV 794.71 = TOTAL 794.71.
+        $manifest = Manifest::factory()->create(['number' => (string) (++static::$manifestSeq)]);
+        $invoice = Invoice::factory()->for($manifest)->create([
+            'importe_gravado' => 5298.09,
+            'importe_excento' => 0,
+            'importe_exonerado' => 0,
+            'isv15' => 794.71,
+            'isv18' => 0,
+            'total' => 794.71,
+        ]);
+        InvoiceLine::factory()->for($invoice)->create([
+            'product_type' => 'B',
+            'price' => 756.87,
+            'quantity_decimal' => 7,
+            'subtotal' => 0,
+            'tax' => 0,
+            'total' => 0,
+        ]);
+        $invoice->load('lines');
+
+        $preview = app(EscpInvoiceService::class)->previewText(collect([$invoice]));
+
+        $this->assertMatchesRegularExpression('/Importe Gravado 15%:\s+L\.\s+5,298\.09\s+Descuento:\s+L\.\s+5,298\.09/', $preview);
+        $this->assertMatchesRegularExpression('/SubTotal:\s+L\.\s+5,298\.09/', $preview);
+        $this->assertMatchesRegularExpression('/Impuesto 15%:\s+L\.\s+794\.71/', $preview);
+        $this->assertMatchesRegularExpression('/TOTAL:\s+L\.\s+794\.71/', $preview);
+    }
+
+    public function test_narrow_line_stacks_the_amounts_without_cutting_them(): void
+    {
+        // Con una linea angosta las dos columnas no caben: van una debajo de la
+        // otra, en el mismo orden, y ningun monto se recorta.
+        config(['escp.chars_per_line' => 50]);
+
+        $preview = app(EscpInvoiceService::class)->previewText(collect([$this->invoiceWithLines([
+            'importe_gravado' => 121050.00,
+            'isv15' => 18157.50,
+            'total' => 139207.50,
+        ])]));
+
+        $labels = ['Importe Exonerado:', 'Importe Gravado 15%:', 'Importe Gravado 18%:', 'Importe Exento:',
+            'SubTotal:', 'Descuento:', 'Impuesto 15%:', 'Impuesto 18%:', 'TOTAL:'];
+        $positions = array_map(fn (string $label): int|false => strpos($preview, $label), $labels);
+        $this->assertNotContains(false, $positions);
+        $sorted = $positions;
+        sort($sorted);
+        $this->assertSame($sorted, $positions);
+
+        $this->assertMatchesRegularExpression('/Importe Gravado 15%:\s+L\.\s+121,050\.00/', $preview);
+        $this->assertMatchesRegularExpression('/TOTAL:\s+L\.\s+139,207\.50/', $preview);
+        foreach (explode("\n", $preview) as $line) {
+            $this->assertLessThanOrEqual(50, mb_strlen($line), 'Linea mas ancha que cpl: '.$line);
+        }
+    }
+
     public function test_un_line_shows_box_equivalence(): void
     {
         // Una línea vendida en UN se muestra en cajas equivalentes + sueltas,

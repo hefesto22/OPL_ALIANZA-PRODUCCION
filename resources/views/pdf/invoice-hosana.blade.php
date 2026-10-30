@@ -63,6 +63,13 @@ table.lines th.desc, table.lines td.desc { width:100%; white-space:normal; }
 table.lines th { border-top:1px solid #000; border-bottom:1px solid #000; text-align:left; }
 .hr { border-top:1px solid #000; margin:3px 0; }
 .totales td { padding:0 2px; }
+/* Importes del pie: dos columnas como en la matriz; el hueco del medio es lo
+   unico elastico, asi ningun monto se parte ni se recorta. */
+table.importes { width:100%; border-collapse:collapse; }
+table.importes td { padding:0 2px; white-space:nowrap; }
+table.importes td.importes-gap { width:100%; }
+table.importes td.importes-l { padding-left:10px; }
+table.importes tr.importes-total td { font-weight:bold; }
 </style>
 
 {{-- Estilo de impresión por defecto (Carta vertical). Se DESACTIVA por JS
@@ -182,28 +189,32 @@ table.lines th { border-top:1px solid #000; border-bottom:1px solid #000; text-a
     </table>
     <div class="hr"></div>
 
-    {{-- ══ Totales (derecha) ══ --}}
-    <table style="width:100%;">
-        <tr>
-            <td style="width:55%;">&nbsp;</td>
-            <td class="totales" style="width:30%;">SubTotal:</td>
-            <td class="totales r" style="width:15%;">L. {{ number_format((float) ($invoice->importe_gravado ?? 0) + (float) ($invoice->importe_excento ?? 0) + (float) ($invoice->importe_exonerado ?? 0), 2) }}</td>
+    {{-- ══ Importes y totales ══
+         Espejo de EscpInvoiceService::amountLines(): mismas filas, mismo orden y
+         mismas dos columnas que la matriz, para que la vista previa sea igual a
+         lo que sale en la LX-350. Los montos vienen de InvoiceAmounts. --}}
+    @php
+        $amounts = \App\Support\InvoiceAmounts::breakdown($invoice);
+        $amountRows = [
+            [['Importe Exonerado:', $amounts['exonerado']], ['SubTotal:', $amounts['subtotal']]],
+            [['Importe Gravado 15%:', $amounts['gravado15']], ['Descuento:', $amounts['descuento']]],
+            [['Importe Gravado 18%:', $amounts['gravado18']], ['Impuesto 15%:', $amounts['isv15']]],
+            [['Importe Exento:', $amounts['exento']], ['Impuesto 18%:', $amounts['isv18']]],
+            [null, ['TOTAL:', $amounts['total']]],
+        ];
+    @endphp
+    <table class="importes">
+        @foreach ($amountRows as [$leftRow, $rightRow])
+        <tr @if ($rightRow[0] === 'TOTAL:') class="importes-total" @endif>
+            <td>{{ $leftRow[0] ?? '' }}</td>
+            <td class="importes-l">{{ $leftRow !== null ? 'L.' : '' }}</td>
+            <td class="r">{{ $leftRow !== null ? number_format($leftRow[1], 2) : '' }}</td>
+            <td class="importes-gap">&nbsp;</td>
+            <td>{{ $rightRow[0] }}</td>
+            <td class="importes-l">L.</td>
+            <td class="r">{{ number_format($rightRow[1], 2) }}</td>
         </tr>
-        <tr>
-            <td>&nbsp;</td>
-            <td class="totales">Impuesto 18%:</td>
-            <td class="totales r">L. {{ number_format((float) ($invoice->isv18 ?? 0), 2) }}</td>
-        </tr>
-        <tr>
-            <td>&nbsp;</td>
-            <td class="totales">Impuesto 15%:</td>
-            <td class="totales r">L. {{ number_format((float) ($invoice->isv15 ?? 0), 2) }}</td>
-        </tr>
-        <tr>
-            <td>&nbsp;</td>
-            <td class="totales"><strong>TOTAL:</strong></td>
-            <td class="totales r"><strong>L. {{ number_format((float) $invoice->total, 2) }}</strong></td>
-        </tr>
+        @endforeach
     </table>
 
     <div style="margin-top:6px;">SON: {{ strtoupper(\App\Helpers\NumberHelper::toWords((float) $invoice->total)) }}</div>
