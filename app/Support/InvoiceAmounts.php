@@ -11,36 +11,36 @@ use App\Models\InvoiceLine;
  * Desglose fiscal del pie de factura del Formato Hosana (matriz LX-350 y su
  * vista previa HTML), en el orden que pidió la distribuidora:
  *
- *   Importe Exonerado · Importe Gravado 15% · Importe Gravado 18% ·
- *   Importe Exento · SubTotal · Descuento · Impuesto 15% · Impuesto 18% · TOTAL
+ *   Importe Gravado 15% · Importe Gravado 18% · Importe Exento · SubTotal ·
+ *   Impuesto 15% · Impuesto 18% · TOTAL
  *
- * Todo sale de lo que manda Jaremar; aquí solo se reparte y se suma:
+ * Todo sale de lo que manda Jaremar; aquí solo se reparte:
  *
- *   - Exento, Exonerado, ISV 15 %, ISV 18 % y Total: tal cual del encabezado.
- *   - SubTotal = Exento + Exonerado + Gravado (igual que antes en esta factura
- *     y que la fila "TOTAL A PAGAR" del formato Jaremar).
+ *   - Exento, ISV 15 %, ISV 18 % y Total: tal cual del encabezado.
+ *   - SubTotal = Exento + Exonerado + Gravado, igual que siempre tuvo esta
+ *     factura y que la fila "TOTAL A PAGAR" del formato Jaremar.
  *   - Jaremar manda UN solo Importe Gravado. Se parte en 15 % / 18 % con el ISV
  *     de la factura: si no hay ISV 18 % (lo normal: el 18 % es para cerveza,
  *     licor y cigarros), todo es gravado al 15 %, y al revés. Si trae los dos,
  *     el 18 % es la suma de las líneas con ISV 18 % y el resto es 15 %.
- *   - Descuento = valor de la mercadería bonificada, con la MISMA regla del
- *     formato Jaremar (invoice-pdf): floor(precio × cantidad) por línea "B".
- *     Por eso en una factura solo de bonificación se lee
- *     SubTotal − Descuento + ISV = TOTAL (el cliente solo paga el ISV).
  *
- * Ver memory project_invoice_pdf_jaremar_format y
- * project_isv_imposible_jaremar_2026-07-17.
+ * Exonerado y Descuento NO se imprimen (decisión de Mauricio, 30/10/2026).
+ * Jaremar no manda un descuento confiable: lo mete en ImporteGravado_Desc, la
+ * bonificación exenta la resta del exento sin anotarla, ImporteExento_Desc trae
+ * basura y DescuentosRebajas viene siempre en 0 (19,821 facturas revisadas). Por
+ * eso SubTotal + Impuestos no siempre da el TOTAL impreso, igual que antes de
+ * este cambio: el TOTAL es el de Jaremar.
+ *
+ * Ver memory project_invoice_pdf_jaremar_format.
  */
 final class InvoiceAmounts
 {
     /**
      * @return array{
-     *     exonerado: float,
      *     gravado15: float,
      *     gravado18: float,
      *     exento: float,
      *     subtotal: float,
-     *     descuento: float,
      *     isv15: float,
      *     isv18: float,
      *     total: float,
@@ -54,41 +54,19 @@ final class InvoiceAmounts
         $isv15 = self::money($invoice->isv15);
         $isv18 = self::money($invoice->isv18);
 
+        $subtotal = round($exento + $exonerado + $gravado, 2);
+
         [$gravado15, $gravado18] = self::splitGravado($invoice, $gravado, $isv15, $isv18);
 
         return [
-            'exonerado' => $exonerado,
             'gravado15' => $gravado15,
             'gravado18' => $gravado18,
             'exento' => $exento,
-            'subtotal' => round($exento + $exonerado + $gravado, 2),
-            'descuento' => self::bonusDiscount($invoice),
+            'subtotal' => $subtotal,
             'isv15' => $isv15,
             'isv18' => $isv18,
             'total' => self::money($invoice->total),
         ];
-    }
-
-    /**
-     * Valor de la mercadería bonificada (líneas tipo "B"): floor(precio ×
-     * cantidad) al centavo, como lo imprime Jaremar. El round previo a 6
-     * decimales evita que un 5,298.09 guardado como 5,298.0899999 en coma
-     * flotante pierda un centavo al truncar.
-     */
-    public static function bonusDiscount(Invoice $invoice): float
-    {
-        $total = 0.0;
-
-        foreach ($invoice->lines as $line) {
-            if (strtoupper((string) ($line->product_type ?? '')) !== 'B') {
-                continue;
-            }
-
-            $exact = (float) $line->price * (float) $line->quantity_decimal;
-            $total += floor(round($exact * 100, 6)) / 100;
-        }
-
-        return round($total, 2);
     }
 
     /**

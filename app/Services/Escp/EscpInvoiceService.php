@@ -583,11 +583,11 @@ class EscpInvoiceService
 
     /**
      * Importes del pie en UNA columna a la derecha, con el mismo estilo que
-     * tenia la factura (etiqueta y "L. monto" pegado), en el orden pedido:
-     * Exonerado, Gravado 15%, Gravado 18%, Exento, SubTotal, Descuento,
-     * Impuesto 15%, Impuesto 18% y TOTAL. Las etiquetas quedan alineadas y los
-     * montos alineados a la derecha; un monto grande ensancha el bloque, nunca
-     * se recorta.
+     * tenia la factura (etiqueta y "L. monto"), en el orden pedido: Gravado
+     * 15%, Gravado 18%, Exento, SubTotal, Impuesto 15%, Impuesto 18% y TOTAL
+     * (sin Exonerado ni Descuento, ver InvoiceAmounts). Las etiquetas quedan
+     * alineadas y los montos a la derecha; un monto grande ensancha el bloque,
+     * nunca se recorta.
      *
      * @return string[]
      */
@@ -596,12 +596,10 @@ class EscpInvoiceService
         $a = InvoiceAmounts::breakdown($invoice);
 
         $rows = [
-            ['Importe Exonerado:', $a['exonerado']],
             ['Importe Gravado 15%:', $a['gravado15']],
             ['Importe Gravado 18%:', $a['gravado18']],
             ['Importe Exento:', $a['exento']],
             ['SubTotal:', $a['subtotal']],
-            ['Descuento:', $a['descuento']],
             ['Impuesto 15%:', $a['isv15']],
             ['Impuesto 18%:', $a['isv18']],
             ['TOTAL:', $a['total']],

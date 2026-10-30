@@ -224,13 +224,13 @@ class PrintInvoicesControllerTest extends TestCase
 
         $response->assertOk();
         // Una columna a la derecha, en el orden pedido, igual que la matriz.
+        $response->assertDontSee('Exonerado');
+        $response->assertDontSee('Descuento');
         $response->assertSeeInOrder([
-            'Importe Exonerado:', 'L. 0.00',
             'Importe Gravado 15%:', 'L. 5,298.09',
             'Importe Gravado 18%:', 'L. 0.00',
             'Importe Exento:', 'L. 0.00',
             'SubTotal:', 'L. 5,298.09',
-            'Descuento:', 'L. 5,298.09',
             'Impuesto 15%:', 'L. 794.71',
             'Impuesto 18%:', 'L. 0.00',
             'TOTAL:', 'L. 794.71',

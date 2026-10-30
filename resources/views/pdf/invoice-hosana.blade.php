@@ -189,12 +189,10 @@ table.lines th { border-top:1px solid #000; border-bottom:1px solid #000; text-a
     @php
         $amounts = \App\Support\InvoiceAmounts::breakdown($invoice);
         $amountRows = [
-            ['Importe Exonerado:', $amounts['exonerado']],
             ['Importe Gravado 15%:', $amounts['gravado15']],
             ['Importe Gravado 18%:', $amounts['gravado18']],
             ['Importe Exento:', $amounts['exento']],
             ['SubTotal:', $amounts['subtotal']],
-            ['Descuento:', $amounts['descuento']],
             ['Impuesto 15%:', $amounts['isv15']],
             ['Impuesto 18%:', $amounts['isv18']],
             ['TOTAL:', $amounts['total']],

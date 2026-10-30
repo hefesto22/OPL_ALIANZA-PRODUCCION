@@ -448,9 +448,9 @@ class EscpInvoiceServiceTest extends TestCase
 
     public function test_footer_prints_every_amount_in_one_right_column(): void
     {
-        // Mismo estilo de antes (columna a la derecha), con las 9 filas en el
-        // orden pedido: Exonerado, Gravado 15%, Gravado 18%, Exento, SubTotal,
-        // Descuento, Impuesto 15%, Impuesto 18% y TOTAL.
+        // Mismo estilo de antes (columna a la derecha), con las 7 filas en el
+        // orden pedido: Gravado 15%, Gravado 18%, Exento, SubTotal, Impuesto
+        // 15%, Impuesto 18% y TOTAL. Sin Exonerado ni Descuento.
         $invoice = $this->invoiceWithLines([
             'importe_exonerado' => 0,
             'importe_excento' => 120.50,
@@ -461,13 +461,16 @@ class EscpInvoiceServiceTest extends TestCase
         ]);
 
         $lines = explode("\n", app(EscpInvoiceService::class)->previewText(collect([$invoice])));
+        $this->assertNotContains(true, array_map(
+            fn (string $line): bool => str_contains($line, 'Exonerado') || str_contains($line, 'Descuento'),
+            $lines
+        ));
+
         $expected = [
-            'Importe Exonerado:' => 'L. 0.00',
             'Importe Gravado 15%:' => 'L. 878.29',
             'Importe Gravado 18%:' => 'L. 0.00',
             'Importe Exento:' => 'L. 120.50',
             'SubTotal:' => 'L. 998.79',
-            'Descuento:' => 'L. 0.00',
             'Impuesto 15%:' => 'L. 131.75',
             'Impuesto 18%:' => 'L. 0.00',
             'TOTAL:' => 'L. 1,130.54',
@@ -504,10 +507,10 @@ class EscpInvoiceServiceTest extends TestCase
         }
     }
 
-    public function test_bonus_only_invoice_shows_the_bonus_as_discount(): void
+    public function test_bonus_only_invoice_shows_jaremar_amounts(): void
     {
         // 002-001-01-04032897: 7 cajas de PASTA NORMAL bonificadas a L 756.87.
-        // SubTotal 5,298.09 − Descuento 5,298.09 + ISV 794.71 = TOTAL 794.71.
+        // La base va por fuera (gravado) y el cliente solo paga el ISV.
         $manifest = Manifest::factory()->create(['number' => (string) (++static::$manifestSeq)]);
         $invoice = Invoice::factory()->for($manifest)->create([
             'importe_gravado' => 5298.09,
@@ -531,7 +534,7 @@ class EscpInvoiceServiceTest extends TestCase
 
         $this->assertMatchesRegularExpression('/Importe Gravado 15%:\s+L\. 5,298\.09\n/', $preview);
         $this->assertMatchesRegularExpression('/SubTotal:\s+L\. 5,298\.09\n/', $preview);
-        $this->assertMatchesRegularExpression('/Descuento:\s+L\. 5,298\.09\n/', $preview);
+        $this->assertStringNotContainsString('Descuento', $preview);
         $this->assertMatchesRegularExpression('/Impuesto 15%:\s+L\. 794\.71\n/', $preview);
         $this->assertMatchesRegularExpression('/TOTAL:\s+L\. 794\.71\n/', $preview);
     }
