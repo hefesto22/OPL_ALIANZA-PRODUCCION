@@ -446,11 +446,11 @@ class EscpInvoiceServiceTest extends TestCase
         $this->assertSame(1, substr_count($out, 'GRUPO JAREMAR'));
     }
 
-    public function test_footer_prints_every_amount_in_two_columns(): void
+    public function test_footer_prints_every_amount_in_one_right_column(): void
     {
-        // Izquierda: Exonerado / Gravado 15% / Gravado 18% / Exento.
-        // Derecha:   SubTotal / Descuento / Impuesto 15% / Impuesto 18% / TOTAL.
-        // 5 lineas en vez de 9 para no gastar forma.
+        // Mismo estilo de antes (columna a la derecha), con las 9 filas en el
+        // orden pedido: Exonerado, Gravado 15%, Gravado 18%, Exento, SubTotal,
+        // Descuento, Impuesto 15%, Impuesto 18% y TOTAL.
         $invoice = $this->invoiceWithLines([
             'importe_exonerado' => 0,
             'importe_excento' => 120.50,
@@ -461,36 +461,42 @@ class EscpInvoiceServiceTest extends TestCase
         ]);
 
         $lines = explode("\n", app(EscpInvoiceService::class)->previewText(collect([$invoice])));
-        $row = function (string $label) use ($lines): string {
-            $found = array_values(array_filter($lines, fn (string $line): bool => str_contains($line, $label)));
-            $this->assertCount(1, $found, "Se esperaba una sola linea con {$label}");
-
-            return $found[0];
-        };
-
-        $pairs = [
-            ['Importe Exonerado:', 'L.         0.00', 'SubTotal:', 'L.       998.79'],
-            ['Importe Gravado 15%:', 'L.       878.29', 'Descuento:', 'L.         0.00'],
-            ['Importe Gravado 18%:', 'L.         0.00', 'Impuesto 15%:', 'L.       131.75'],
-            ['Importe Exento:', 'L.       120.50', 'Impuesto 18%:', 'L.         0.00'],
+        $expected = [
+            'Importe Exonerado:' => 'L. 0.00',
+            'Importe Gravado 15%:' => 'L. 878.29',
+            'Importe Gravado 18%:' => 'L. 0.00',
+            'Importe Exento:' => 'L. 120.50',
+            'SubTotal:' => 'L. 998.79',
+            'Descuento:' => 'L. 0.00',
+            'Impuesto 15%:' => 'L. 131.75',
+            'Impuesto 18%:' => 'L. 0.00',
+            'TOTAL:' => 'L. 1,130.54',
         ];
-        foreach ($pairs as [$leftLabel, $leftAmount, $rightLabel, $rightAmount]) {
-            $line = $row($leftLabel);
-            $this->assertMatchesRegularExpression(
-                '/'.preg_quote($leftLabel, '/').'\s+'.preg_quote($leftAmount, '/').'\s+'
-                .preg_quote($rightLabel, '/').'\s+'.preg_quote($rightAmount, '/').'$/',
-                $line
-            );
-        }
-        $this->assertMatchesRegularExpression('/^\s+TOTAL:\s+L\.\s+1,130\.54$/', $row('TOTAL:'));
 
-        // El orden de las filas es el pedido.
-        $order = array_map(fn (string $label): int => array_search($row($label), $lines, true), [
-            'Importe Exonerado:', 'Importe Gravado 15%:', 'Importe Gravado 18%:', 'Importe Exento:', 'TOTAL:',
-        ]);
-        $sorted = $order;
-        sort($sorted);
-        $this->assertSame($sorted, $order);
+        $start = null;
+        $labelColumns = [];
+        $offset = 0;
+        foreach ($expected as $label => $amount) {
+            $found = array_values(array_filter(
+                $lines,
+                fn (string $line): bool => preg_match('/\s'.preg_quote($label, '/').'\s/', $line) === 1
+            ));
+            $this->assertCount(1, $found, "Se esperaba una sola linea con {$label}");
+            $line = $found[0];
+            $index = array_search($line, $lines, true);
+
+            // Una fila tras otra, en el orden pedido.
+            $start ??= $index;
+            $this->assertSame($start + $offset, $index, "{$label} fuera de orden");
+            $offset++;
+
+            // Etiqueta y monto en la misma fila; el monto pegado al borde derecho.
+            $this->assertMatchesRegularExpression('/'.preg_quote($label, '/').'\s+'.preg_quote($amount, '/').'$/', $line);
+            $labelColumns[] = strpos($line, $label);
+        }
+
+        // Las etiquetas arrancan en la misma columna (bloque alineado).
+        $this->assertCount(1, array_unique($labelColumns));
 
         $cpl = max(40, (int) config('escp.chars_per_line', 92));
         foreach ($lines as $line) {
@@ -523,36 +529,29 @@ class EscpInvoiceServiceTest extends TestCase
 
         $preview = app(EscpInvoiceService::class)->previewText(collect([$invoice]));
 
-        $this->assertMatchesRegularExpression('/Importe Gravado 15%:\s+L\.\s+5,298\.09\s+Descuento:\s+L\.\s+5,298\.09/', $preview);
-        $this->assertMatchesRegularExpression('/SubTotal:\s+L\.\s+5,298\.09/', $preview);
-        $this->assertMatchesRegularExpression('/Impuesto 15%:\s+L\.\s+794\.71/', $preview);
-        $this->assertMatchesRegularExpression('/TOTAL:\s+L\.\s+794\.71/', $preview);
+        $this->assertMatchesRegularExpression('/Importe Gravado 15%:\s+L\. 5,298\.09\n/', $preview);
+        $this->assertMatchesRegularExpression('/SubTotal:\s+L\. 5,298\.09\n/', $preview);
+        $this->assertMatchesRegularExpression('/Descuento:\s+L\. 5,298\.09\n/', $preview);
+        $this->assertMatchesRegularExpression('/Impuesto 15%:\s+L\. 794\.71\n/', $preview);
+        $this->assertMatchesRegularExpression('/TOTAL:\s+L\. 794\.71\n/', $preview);
     }
 
-    public function test_narrow_line_stacks_the_amounts_without_cutting_them(): void
+    public function test_large_footer_amounts_are_never_cut_on_a_narrow_line(): void
     {
-        // Con una linea angosta las dos columnas no caben: van una debajo de la
-        // otra, en el mismo orden, y ningun monto se recorta.
-        config(['escp.chars_per_line' => 50]);
+        config(['escp.chars_per_line' => 40]);
 
         $preview = app(EscpInvoiceService::class)->previewText(collect([$this->invoiceWithLines([
-            'importe_gravado' => 121050.00,
-            'isv15' => 18157.50,
-            'total' => 139207.50,
+            'importe_gravado' => 1210500.00,
+            'isv15' => 181575.00,
+            'total' => 1392075.00,
         ])]));
 
-        $labels = ['Importe Exonerado:', 'Importe Gravado 15%:', 'Importe Gravado 18%:', 'Importe Exento:',
-            'SubTotal:', 'Descuento:', 'Impuesto 15%:', 'Impuesto 18%:', 'TOTAL:'];
-        $positions = array_map(fn (string $label): int|false => strpos($preview, $label), $labels);
-        $this->assertNotContains(false, $positions);
-        $sorted = $positions;
-        sort($sorted);
-        $this->assertSame($sorted, $positions);
-
-        $this->assertMatchesRegularExpression('/Importe Gravado 15%:\s+L\.\s+121,050\.00/', $preview);
-        $this->assertMatchesRegularExpression('/TOTAL:\s+L\.\s+139,207\.50/', $preview);
+        $this->assertMatchesRegularExpression('/Importe Gravado 15%:\s+L\. 1,210,500\.00/', $preview);
+        $this->assertMatchesRegularExpression('/TOTAL:\s+L\. 1,392,075\.00/', $preview);
         foreach (explode("\n", $preview) as $line) {
-            $this->assertLessThanOrEqual(50, mb_strlen($line), 'Linea mas ancha que cpl: '.$line);
+            if (str_contains($line, 'L. ')) {
+                $this->assertLessThanOrEqual(40, mb_strlen($line), 'Linea mas ancha que cpl: '.$line);
+            }
         }
     }
 

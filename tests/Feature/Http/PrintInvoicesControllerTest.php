@@ -223,13 +223,17 @@ class PrintInvoicesControllerTest extends TestCase
             ->get(route('invoices.print.hosana', ['payload' => $payload]));
 
         $response->assertOk();
-        // Dos columnas, como la matriz: cada fila trae su par izquierda/derecha.
+        // Una columna a la derecha, en el orden pedido, igual que la matriz.
         $response->assertSeeInOrder([
-            'Importe Exonerado:', '0.00', 'SubTotal:', '5,298.09',
-            'Importe Gravado 15%:', '5,298.09', 'Descuento:', '5,298.09',
-            'Importe Gravado 18%:', '0.00', 'Impuesto 15%:', '794.71',
-            'Importe Exento:', '0.00', 'Impuesto 18%:', '0.00',
-            'TOTAL:', '794.71',
+            'Importe Exonerado:', 'L. 0.00',
+            'Importe Gravado 15%:', 'L. 5,298.09',
+            'Importe Gravado 18%:', 'L. 0.00',
+            'Importe Exento:', 'L. 0.00',
+            'SubTotal:', 'L. 5,298.09',
+            'Descuento:', 'L. 5,298.09',
+            'Impuesto 15%:', 'L. 794.71',
+            'Impuesto 18%:', 'L. 0.00',
+            'TOTAL:', 'L. 794.71',
             'SON:',
         ]);
     }

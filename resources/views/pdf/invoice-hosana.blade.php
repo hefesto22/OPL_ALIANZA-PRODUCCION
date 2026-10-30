@@ -63,13 +63,6 @@ table.lines th.desc, table.lines td.desc { width:100%; white-space:normal; }
 table.lines th { border-top:1px solid #000; border-bottom:1px solid #000; text-align:left; }
 .hr { border-top:1px solid #000; margin:3px 0; }
 .totales td { padding:0 2px; }
-/* Importes del pie: dos columnas como en la matriz; el hueco del medio es lo
-   unico elastico, asi ningun monto se parte ni se recorta. */
-table.importes { width:100%; border-collapse:collapse; }
-table.importes td { padding:0 2px; white-space:nowrap; }
-table.importes td.importes-gap { width:100%; }
-table.importes td.importes-l { padding-left:10px; }
-table.importes tr.importes-total td { font-weight:bold; }
 </style>
 
 {{-- Estilo de impresión por defecto (Carta vertical). Se DESACTIVA por JS
@@ -189,30 +182,35 @@ table.importes tr.importes-total td { font-weight:bold; }
     </table>
     <div class="hr"></div>
 
-    {{-- ══ Importes y totales ══
-         Espejo de EscpInvoiceService::amountLines(): mismas filas, mismo orden y
-         mismas dos columnas que la matriz, para que la vista previa sea igual a
-         lo que sale en la LX-350. Los montos vienen de InvoiceAmounts. --}}
+    {{-- ══ Importes y totales (derecha) ══
+         Espejo de EscpInvoiceService::amountLines(): mismas filas y mismo orden
+         que la matriz, en la misma columna de la derecha que ya tenia la factura.
+         Los montos vienen de InvoiceAmounts. --}}
     @php
         $amounts = \App\Support\InvoiceAmounts::breakdown($invoice);
         $amountRows = [
-            [['Importe Exonerado:', $amounts['exonerado']], ['SubTotal:', $amounts['subtotal']]],
-            [['Importe Gravado 15%:', $amounts['gravado15']], ['Descuento:', $amounts['descuento']]],
-            [['Importe Gravado 18%:', $amounts['gravado18']], ['Impuesto 15%:', $amounts['isv15']]],
-            [['Importe Exento:', $amounts['exento']], ['Impuesto 18%:', $amounts['isv18']]],
-            [null, ['TOTAL:', $amounts['total']]],
+            ['Importe Exonerado:', $amounts['exonerado']],
+            ['Importe Gravado 15%:', $amounts['gravado15']],
+            ['Importe Gravado 18%:', $amounts['gravado18']],
+            ['Importe Exento:', $amounts['exento']],
+            ['SubTotal:', $amounts['subtotal']],
+            ['Descuento:', $amounts['descuento']],
+            ['Impuesto 15%:', $amounts['isv15']],
+            ['Impuesto 18%:', $amounts['isv18']],
+            ['TOTAL:', $amounts['total']],
         ];
     @endphp
-    <table class="importes">
-        @foreach ($amountRows as [$leftRow, $rightRow])
-        <tr @if ($rightRow[0] === 'TOTAL:') class="importes-total" @endif>
-            <td>{{ $leftRow[0] ?? '' }}</td>
-            <td class="importes-l">{{ $leftRow !== null ? 'L.' : '' }}</td>
-            <td class="r">{{ $leftRow !== null ? number_format($leftRow[1], 2) : '' }}</td>
-            <td class="importes-gap">&nbsp;</td>
-            <td>{{ $rightRow[0] }}</td>
-            <td class="importes-l">L.</td>
-            <td class="r">{{ number_format($rightRow[1], 2) }}</td>
+    <table style="width:100%;">
+        @foreach ($amountRows as [$label, $amount])
+        <tr>
+            <td style="width:55%;">&nbsp;</td>
+            @if ($label === 'TOTAL:')
+            <td class="totales" style="width:30%;"><strong>{{ $label }}</strong></td>
+            <td class="totales r" style="width:15%; white-space:nowrap;"><strong>L. {{ number_format($amount, 2) }}</strong></td>
+            @else
+            <td class="totales" style="width:30%; white-space:nowrap;">{{ $label }}</td>
+            <td class="totales r" style="width:15%; white-space:nowrap;">L. {{ number_format($amount, 2) }}</td>
+            @endif
         </tr>
         @endforeach
     </table>

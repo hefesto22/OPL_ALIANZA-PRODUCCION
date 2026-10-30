@@ -582,11 +582,12 @@ class EscpInvoiceService
     }
 
     /**
-     * Importes del pie en dos columnas, para no gastar forma: a la izquierda
-     * Exonerado / Gravado 15% / Gravado 18% / Exento y a la derecha SubTotal /
-     * Descuento / Impuesto 15% / Impuesto 18% / TOTAL (5 lineas en vez de 9).
-     * Si la linea no alcanza para las dos columnas, van una debajo de la otra
-     * en el mismo orden: ningun monto se recorta (ver fit()).
+     * Importes del pie en UNA columna a la derecha, con el mismo estilo que
+     * tenia la factura (etiqueta y "L. monto" pegado), en el orden pedido:
+     * Exonerado, Gravado 15%, Gravado 18%, Exento, SubTotal, Descuento,
+     * Impuesto 15%, Impuesto 18% y TOTAL. Las etiquetas quedan alineadas y los
+     * montos alineados a la derecha; un monto grande ensancha el bloque, nunca
+     * se recorta.
      *
      * @return string[]
      */
@@ -594,13 +595,11 @@ class EscpInvoiceService
     {
         $a = InvoiceAmounts::breakdown($invoice);
 
-        $left = [
+        $rows = [
             ['Importe Exonerado:', $a['exonerado']],
             ['Importe Gravado 15%:', $a['gravado15']],
             ['Importe Gravado 18%:', $a['gravado18']],
             ['Importe Exento:', $a['exento']],
-        ];
-        $right = [
             ['SubTotal:', $a['subtotal']],
             ['Descuento:', $a['descuento']],
             ['Impuesto 15%:', $a['isv15']],
@@ -608,34 +607,16 @@ class EscpInvoiceService
             ['TOTAL:', $a['total']],
         ];
 
-        // Todos los montos a un mismo ancho: las "L." y los centavos quedan en
-        // columna, y un monto grande ensancha el bloque en vez de cortarse.
-        $amountWidth = max(12, ...array_map(
-            fn (array $row): int => strlen(number_format($row[1], 2)),
-            array_merge($left, $right)
-        ));
-        $cell = fn (array $row, int $labelWidth): string => str_pad($row[0], $labelWidth)
-            .'L. '.str_pad(number_format($row[1], 2), $amountWidth, ' ', STR_PAD_LEFT);
+        $labelWidth = max(array_map(fn (array $row): int => strlen($row[0]), $rows)) + 1;
+        $values = array_map(fn (array $row): string => 'L. '.number_format($row[1], 2), $rows);
+        $valueWidth = max(array_map('strlen', $values));
 
-        $leftCells = array_map(fn (array $row): string => $cell($row, 21), $left);
-        $rightCells = array_map(fn (array $row): string => $cell($row, 15), $right);
-
-        $leftWidth = strlen($leftCells[0]);
-        $rightWidth = strlen($rightCells[0]);
-
-        // Sin lr(): su clean() junta los espacios y descuadraria las columnas.
+        // Sin lr(): su clean() junta los espacios y desalinearia el bloque.
         // Los textos son fijos (ASCII), no hace falta limpiarlos.
-        if ($leftWidth + 2 + $rightWidth > $this->cpl) {
-            return array_map(
-                fn (string $text): string => str_pad($text, $this->cpl, ' ', STR_PAD_LEFT),
-                array_merge($leftCells, $rightCells)
-            );
-        }
-
         $lines = [];
-        foreach ($rightCells as $i => $rightCell) {
-            $leftCell = $leftCells[$i] ?? '';
-            $lines[] = $leftCell.str_repeat(' ', $this->cpl - strlen($leftCell) - $rightWidth).$rightCell;
+        foreach ($rows as $i => $row) {
+            $block = str_pad($row[0], $labelWidth).str_pad($values[$i], $valueWidth, ' ', STR_PAD_LEFT);
+            $lines[] = str_pad($block, max($this->cpl, strlen($block)), ' ', STR_PAD_LEFT);
         }
 
         return $lines;
