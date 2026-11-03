@@ -2,8 +2,6 @@
 
 namespace App\Models;
 
-use App\Models\Edt\EdtSeller;
-use App\Support\Edt\EdtModule;
 use App\Traits\HasAuditFields;
 use BezhanSalleh\FilamentShield\Traits\HasPanelShield;
 use Filament\Models\Contracts\FilamentUser;
@@ -11,7 +9,6 @@ use Filament\Panel;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -76,8 +73,6 @@ class User extends Authenticatable implements FilamentUser
             'encargado',
             'operador',
             'finance',
-            // Vendedores de ruta del EDT (entran desde el celular).
-            EdtModule::SELLER_ROLE,
         ]);
     }
 
@@ -141,15 +136,6 @@ class User extends Authenticatable implements FilamentUser
     public function isWarehouseUser(): bool
     {
         return $this->warehouseIds() !== [];
-    }
-
-    /**
-     * Ficha de vendedor del EDT, si el usuario es vendedor de ruta.
-     * Se usa para limitar sus clientes a los municipios de sus rutas.
-     */
-    public function edtSeller(): HasOne
-    {
-        return $this->hasOne(EdtSeller::class);
     }
 
     // ─── Relaciones jerárquicas ───────────────────────────────

@@ -67,13 +67,6 @@ class RolePermissionSeeder extends Seeder
     private const MODELS = [
         'Activity',
         'Deposit',
-        'EdtClient',
-        'EdtOrder',
-        'EdtPriceTier',
-        'EdtProduct',
-        'EdtRoute',
-        'EdtSeller',
-        'EdtSupplier',
         'Invoice',
         'InvoiceReturn',
         'Manifest',
@@ -102,20 +95,6 @@ class RolePermissionSeeder extends Seeder
         'admin' => [
             'Activity' => ['ViewAny', 'View'],
             'Deposit' => ['ViewAny', 'View', 'Create', 'Update', 'Delete', 'Restore', 'ExportPdf', 'ExportExcel'],
-            // Módulo EDT: catálogo de proveedores. Al arrancar el módulo solo
-            // lo usan super_admin y admin; los demás roles se agregan cuando
-            // se definan (desde Shield o en esta matriz).
-            'EdtSupplier' => ['ViewAny', 'View', 'Create', 'Update', 'Delete'],
-            'EdtProduct' => ['ViewAny', 'View', 'Create', 'Update', 'ChangePrice'],
-            'EdtPriceTier' => ['ViewAny', 'View', 'Create', 'Update', 'Delete'],
-            // Clientes del EDT: cada uno es de una bodega (la Policy filtra
-            // por bodega para los usuarios de bodega; el admin es global).
-            'EdtClient' => ['ViewAny', 'View', 'Create', 'Update', 'Delete'],
-            'EdtSeller' => ['ViewAny', 'View', 'Create', 'Update'],
-            'EdtRoute' => ['ViewAny', 'View', 'Create', 'Update', 'Delete', 'AssignSeller'],
-            // Preventas: el admin las ve y revisa; tomarlas (Create) solo lo
-            // logra quien tenga ficha de vendedor (EdtOrderPolicy).
-            'EdtOrder' => ['ViewAny', 'View', 'Create', 'Update', 'Cancel', 'Review'],
             'Invoice' => ['ViewAny', 'View', 'Update', 'Delete', 'Restore', 'ReportProductSales'],
             'InvoiceReturn' => ['ViewAny', 'View', 'Create', 'Update', 'Delete', 'Restore', 'ExportPdf', 'ExportExcel'],
             'Manifest' => [
@@ -149,16 +128,6 @@ class RolePermissionSeeder extends Seeder
             ],
             'ReturnReason' => ['ViewAny', 'View'],
             'Warehouse' => ['ViewAny', 'View'],
-            // Módulo EDT (fase 4): el encargado maneja clientes, vendedores y
-            // rutas de SU bodega (las Policies filtran) y consulta el
-            // catálogo. Borrar y cambiar precios queda para el admin.
-            // Mismo bloque que EdtPermissionSeeder::ROLE_PERMISSIONS.
-            'EdtClient' => ['ViewAny', 'View', 'Create', 'Update'],
-            'EdtSeller' => ['ViewAny', 'View', 'Create', 'Update'],
-            'EdtRoute' => ['ViewAny', 'View', 'Create', 'Update', 'AssignSeller'],
-            'EdtProduct' => ['ViewAny', 'View'],
-            // Revisa las preventas de su bodega: baja lo que no hay, aprueba o rechaza.
-            'EdtOrder' => ['ViewAny', 'View', 'Review'],
         ],
 
         // ── operador: trabajo diario de bodega ─────────────────────
@@ -204,16 +173,6 @@ class RolePermissionSeeder extends Seeder
                 'ReportPdf', 'ReportPdfSinIsv', 'ExportExcel',
             ],
             'Warehouse' => ['ViewAny', 'View'],
-        ],
-
-        // ── vendedor_edt: vendedor de ruta del EDT ─────────────────
-        // Desde el celular: consulta sus clientes (EdtSellerZones los limita
-        // a los municipios de sus rutas) y el catálogo con precios.
-        'vendedor_edt' => [
-            'EdtClient' => ['ViewAny', 'View'],
-            'EdtProduct' => ['ViewAny', 'View'],
-            // Toma sus preventas y las corrige o anula hasta que la bodega las revise.
-            'EdtOrder' => ['ViewAny', 'View', 'Create', 'Update', 'Cancel'],
         ],
     ];
 

@@ -50,10 +50,6 @@ class MultiTenantContractTest extends TestCase
      *   - ActivityLogResource: bitácora global del sistema.
      *   - WarehouseResource: catálogo de bodegas (auto-referencial).
      *   - ReturnReasonResource: catálogo de razones, compartido entre bodegas.
-     *   - EdtSupplierResource: proveedores del módulo EDT, catálogo de la
-     *     empresa (no pertenecen a una bodega; la tabla no tiene warehouse_id).
-     *   - EdtProductResource / EdtPriceTierResource: catálogo de productos y
-     *     escalas mayoristas del EDT, globales por la misma razón.
      *
      * Cada entrada debe justificarse en comentario. No agregar sin revisión.
      */
@@ -62,9 +58,6 @@ class MultiTenantContractTest extends TestCase
         \App\Filament\Resources\ActivityLogResource::class,
         \App\Filament\Resources\Catalogs\WarehouseResource::class,
         \App\Filament\Resources\Catalogs\ReturnReasonResource::class,
-        \App\Filament\Resources\Edt\Suppliers\EdtSupplierResource::class,
-        \App\Filament\Resources\Edt\Products\EdtProductResource::class,
-        \App\Filament\Resources\Edt\PriceTiers\EdtPriceTierResource::class,
     ];
 
     /**

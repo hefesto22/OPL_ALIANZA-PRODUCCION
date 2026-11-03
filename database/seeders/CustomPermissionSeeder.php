@@ -114,25 +114,6 @@ class CustomPermissionSeeder extends Seeder
         // es excepcional y queda marcada (returns.after_deadline). Se asigna
         // a `finance` y al super_admin; NO a operador ni encargado.
         'RegisterAfterDeadline:InvoiceReturn',
-
-        // ── Módulo EDT: cambio de precio (2026-10-04) ───────────────
-        // Acción «Cambiar precio» del catálogo. Permiso aparte de
-        // Update:EdtProduct: editar la descripción no es mover precios.
-        // En entornos existentes lo provee EdtPermissionSeeder.
-        'ChangePrice:EdtProduct',
-
-        // ── Módulo EDT: vendedor de una ruta (2026-10-04) ───────────
-        // Asignar, quitar o cancelar el vendedor de una ruta. Aparte de
-        // Update:EdtRoute porque cambia qué clientes ve cada vendedor.
-        // En entornos existentes lo provee EdtPermissionSeeder.
-        'AssignSeller:EdtRoute',
-
-        // ── Módulo EDT: preventas (2026-10-06) ──────────────────────
-        // El vendedor anula su preventa mientras la bodega no la toque; la
-        // bodega la revisa (ajusta líneas, aprueba o rechaza).
-        // En entornos existentes lo provee EdtPermissionSeeder.
-        'Cancel:EdtOrder',
-        'Review:EdtOrder',
     ];
 
     public function run(): void

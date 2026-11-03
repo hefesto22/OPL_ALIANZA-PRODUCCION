@@ -2,7 +2,7 @@
     Reporte de ventas por producto (pantalla).
     Los números los arma App\Services\Reports\ProductSalesReportService; aquí solo se pintan.
     Estilos con prefijo psr- y las variables de color de Filament: se ve igual en claro
-    y oscuro sin compilar un tema (mismo patrón que las vistas del EDT).
+    y oscuro sin compilar un tema.
 --}}
 <x-filament-panels::page>
     <style>

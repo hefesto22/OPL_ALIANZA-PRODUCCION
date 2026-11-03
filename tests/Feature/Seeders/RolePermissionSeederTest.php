@@ -34,7 +34,7 @@ class RolePermissionSeederTest extends TestCase
     {
         parent::setUp();
 
-        // Crea los 6 roles vacíos (super_admin, admin, encargado, operador, finance, vendedor_edt).
+        // Crea los 5 roles vacíos (super_admin, admin, encargado, operador, finance).
         $this->seed(RoleSeeder::class);
     }
 
@@ -45,8 +45,7 @@ class RolePermissionSeederTest extends TestCase
     private function seedShieldPermissions(): void
     {
         $models = [
-            'Activity', 'Deposit', 'EdtClient', 'EdtOrder', 'EdtPriceTier', 'EdtProduct', 'EdtRoute', 'EdtSeller', 'EdtSupplier',
-            'Invoice', 'InvoiceReturn', 'Manifest',
+            'Activity', 'Deposit', 'Invoice', 'InvoiceReturn', 'Manifest',
             'ReturnReason', 'Role', 'User', 'Warehouse',
         ];
 
@@ -329,62 +328,6 @@ class RolePermissionSeederTest extends TestCase
 
         foreach (['encargado', 'operador'] as $role) {
             $this->assertNotContains('ReportProductSales:Invoice', $perms($role));
-        }
-    }
-
-    /**
-     * Módulo EDT: el admin lo tiene completo (el super_admin lo recibe de
-     * shield:super-admin / EdtPermissionSeeder). Desde la fase 4
-     * (2026-10-04) el encargado maneja clientes, vendedores y rutas de su
-     * bodega y el vendedor consulta sus clientes y el catálogo. Operador y
-     * finance no ven el EDT.
-     */
-    public function test_edt_permissions_per_role(): void
-    {
-        $this->seedShieldPermissions();
-        $this->seed(RolePermissionSeeder::class);
-
-        $perms = fn (string $role): array => Role::query()
-            ->where('name', $role)->first()->permissions->pluck('name')->all();
-
-        $admin = $perms('admin');
-        foreach (['ViewAny', 'View', 'Create', 'Update', 'Delete'] as $action) {
-            $this->assertContains("{$action}:EdtSupplier", $admin);
-            $this->assertContains("{$action}:EdtPriceTier", $admin);
-            $this->assertContains("{$action}:EdtClient", $admin);
-        }
-        foreach (['ViewAny', 'View', 'Create', 'Update', 'ChangePrice'] as $action) {
-            $this->assertContains("{$action}:EdtProduct", $admin);
-        }
-        // Un producto con historial no se borra: nadie tiene Delete:EdtProduct.
-        $this->assertNotContains('Delete:EdtProduct', $admin);
-        $this->assertContains('AssignSeller:EdtRoute', $admin);
-        $this->assertNotContains('Delete:EdtSeller', $admin);
-
-        $encargado = $perms('encargado');
-        foreach (['Create:EdtClient', 'Create:EdtSeller', 'Update:EdtRoute', 'AssignSeller:EdtRoute', 'View:EdtProduct'] as $permission) {
-            $this->assertContains($permission, $encargado);
-        }
-        foreach (['Delete:EdtClient', 'Delete:EdtRoute', 'ChangePrice:EdtProduct', 'ViewAny:EdtSupplier', 'ViewAny:EdtPriceTier'] as $permission) {
-            $this->assertNotContains($permission, $encargado);
-        }
-
-        // Preventas: el encargado revisa; el vendedor toma, corrige y anula.
-        $this->assertContains('Review:EdtOrder', $encargado);
-        $this->assertNotContains('Create:EdtOrder', $encargado);
-
-        $this->assertEqualsCanonicalizing(
-            [
-                'ViewAny:EdtClient', 'View:EdtClient', 'ViewAny:EdtProduct', 'View:EdtProduct',
-                'ViewAny:EdtOrder', 'View:EdtOrder', 'Create:EdtOrder', 'Update:EdtOrder', 'Cancel:EdtOrder',
-            ],
-            $perms('vendedor_edt'),
-        );
-
-        foreach (['operador', 'finance'] as $role) {
-            foreach ($perms($role) as $permission) {
-                $this->assertStringNotContainsString(':Edt', $permission, "{$role} no debería ver el EDT.");
-            }
         }
     }
 
