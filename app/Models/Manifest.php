@@ -28,8 +28,8 @@ class Manifest extends Model
     /**
      * La fecha límite de registro de devoluciones se fija automáticamente
      * al CREAR el manifiesto (N días hábiles desde su llegada, ver
-     * config api.devoluciones_ventana_dias_habiles y App\Support\BusinessDays)
-     * y se recalcula si la fecha operativa cambia.
+     * Configuración → Devoluciones (ReturnSetting::windowBusinessDays) y
+     * App\Support\BusinessDays) y se recalcula si la fecha operativa cambia.
      *
      * IMPORTANTE — NULL significa "SIN LÍMITE" (transición 2026-07-21): los
      * manifiestos anteriores a la entrada en vigor de la regla quedaron con
@@ -44,7 +44,7 @@ class Manifest extends Model
             if ($manifest->date && $manifest->returns_deadline_at === null) {
                 $manifest->returns_deadline_at = BusinessDays::deadline(
                     $manifest->date,
-                    (int) config('api.devoluciones_ventana_dias_habiles', 7),
+                    ReturnSetting::current()->windowBusinessDays(),
                 );
             }
         });
@@ -55,7 +55,7 @@ class Manifest extends Model
                 && $manifest->getOriginal('returns_deadline_at') !== null) {
                 $manifest->returns_deadline_at = BusinessDays::deadline(
                     $manifest->date,
-                    (int) config('api.devoluciones_ventana_dias_habiles', 7),
+                    ReturnSetting::current()->windowBusinessDays(),
                 );
             }
         });

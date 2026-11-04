@@ -26,7 +26,7 @@ class InvoiceReturn extends Model
         'jaremar_return_id', 'type', 'status', 'manifest_number',
         'client_id', 'client_name',
         'return_date', 'processed_date', 'processed_time',
-        'total', 'rejection_reason', 'after_deadline',
+        'total', 'rejection_reason', 'after_deadline', 'published_at',
         'created_by', 'reviewed_by', 'reviewed_at',
         'cancelled_at', 'cancelled_by', 'cancellation_reason',
     ];
@@ -40,6 +40,7 @@ class InvoiceReturn extends Model
             'cancelled_at' => 'datetime',
             'total' => 'decimal:2',
             'after_deadline' => 'boolean',
+            'published_at' => 'datetime',
         ];
     }
 
@@ -52,7 +53,8 @@ class InvoiceReturn extends Model
             // en silencio y no ensucia la bitácora.
             // after_deadline: excepción registrada fuera de la ventana hábil.
             // Se audita para que quede en la bitácora quién ejerció el permiso.
-            ->logOnly(['type', 'status', 'total', 'return_reason_id', 'invoice_id', 'warehouse_id', 'after_deadline'])
+            // published_at: cuándo la ve Jaremar (Configuración → Devoluciones).
+            ->logOnly(['type', 'status', 'total', 'return_reason_id', 'invoice_id', 'warehouse_id', 'after_deadline', 'published_at'])
             ->logOnlyDirty()
             ->dontSubmitEmptyLogs();
     }
@@ -153,13 +155,29 @@ class InvoiceReturn extends Model
      * fue creada. Después de medianoche queda bloqueada porque Jaremar
      * pudo haberla consumido vía API (GET /devoluciones).
      *
+     * Tampoco se edita si Jaremar ya puede verla (published_at): con
+     * "al momento" en Configuración → Devoluciones eso pasa al registrarla.
+     *
      * Se usa created_at (no return_date) porque return_date puede ser
      * retroactiva, pero la ventana de edición depende de cuándo fue
      * registrada en el sistema.
      */
     public function isEditableToday(): bool
     {
-        return $this->created_at->isToday();
+        return $this->created_at->isToday() && ! $this->isPublishedToJaremar();
+    }
+
+    /**
+     * Jaremar ya puede verla en GET v1/devoluciones/listar porque llegó su
+     * published_at. Desde ahí no se edita ni se cancela: su ERP puede
+     * haberla consumido.
+     *
+     * Las que tienen published_at NULL se publican al cerrar la ventana
+     * del manifiesto; esa regla la cubre Manifest::returnsWindowClosed().
+     */
+    public function isPublishedToJaremar(): bool
+    {
+        return $this->published_at !== null && ! $this->published_at->isFuture();
     }
 
     /**
@@ -167,6 +185,10 @@ class InvoiceReturn extends Model
      */
     public function getEditabilityLabel(): string
     {
+        if ($this->isPublishedToJaremar()) {
+            return 'Bloqueada — Jaremar ya puede verla';
+        }
+
         if ($this->isEditableToday()) {
             return 'Editable hasta las 23:59 de hoy';
         }

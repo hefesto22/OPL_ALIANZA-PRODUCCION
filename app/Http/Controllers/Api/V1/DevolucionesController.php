@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\InvoiceReturn;
+use App\Models\ReturnSetting;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -80,6 +81,10 @@ class DevolucionesController extends Controller
      *      del cierre la fecha responde vacío — nunca un paquete parcial.
      *      Tras el cierre el paquete es COMPLETO e INMUTABLE (ReturnService
      *      congela crear/editar/cancelar).
+     *      EXCEPCIÓN (Configuración → Devoluciones, 2026-11-04): con
+     *      "cada devolución, un tiempo después de registrarla", la devolución
+     *      guarda su propio published_at y aparece desde ese momento aunque
+     *      el manifiesto siga abierto (y desde ahí queda congelada).
      *
      *   3. TODO EN UNIDADES: cantidad = cajas × factor de conversión +
      *      unidades sueltas (ej. 1 caja de 96 + 10 sueltas = 106.000000).
@@ -225,8 +230,12 @@ class DevolucionesController extends Controller
         // Modo legacy: processed_date nunca es futuro; "abierto" = incluye hoy.
         $filtroEmision = (bool) config('api.devoluciones_filtro_emision', true);
 
-        $ventanaHabil = max(1, (int) config('api.devoluciones_ventana_dias_habiles', 7));
-        $diasHorizonte = $ventanaHabil + intdiv($ventanaHabil, 6) + 1 + 3;
+        // Configuración → Devoluciones. Si cada devolución se publica N días
+        // después de registrada, una fecha de emisión sigue recibiendo
+        // devoluciones nuevas N días más: el horizonte "abierto" crece igual.
+        $ajustes = ReturnSetting::current();
+        $ventanaHabil = $ajustes->windowBusinessDays();
+        $diasHorizonte = $ventanaHabil + intdiv($ventanaHabil, 6) + 1 + 3 + ($ajustes->publicationDelayDays() ?? 0);
 
         $horizonteAbierto = $filtroEmision
             ? now()->subDays($diasHorizonte)->toDateString()
@@ -278,7 +287,9 @@ class DevolucionesController extends Controller
 
             if ($filtroEmision) {
                 // Punto 1: filtro por fecha de EMISIÓN de la factura.
-                // Punto 2: manifiestos con ventana CERRADA → paquete completo,
+                // Punto 2: con published_at (Configuración → Devoluciones),
+                // cada devolución aparece al llegar ese momento. Sin él,
+                // manifiestos con ventana CERRADA → paquete completo,
                 // publicado de una sola vez y congelado. Los manifiestos SIN
                 // LÍMITE (returns_deadline_at NULL — anteriores a la entrada
                 // en vigor de la regla, transición 2026-07-21) se publican de
@@ -286,13 +297,22 @@ class DevolucionesController extends Controller
                 // y pueden seguir creciendo hasta que su backlog se agote.
                 $query
                     ->whereHas('invoice', fn ($q) => $q->whereBetween('invoice_date', [$desde, $hasta]))
-                    ->whereHas('manifest', fn ($q) => $q
-                        ->where(fn ($w) => $w
-                            ->whereNull('returns_deadline_at')
-                            ->orWhere('returns_deadline_at', '<', now())));
+                    ->where(fn ($publicada) => $publicada
+                        ->where('published_at', '<=', now())
+                        ->orWhere(fn ($conManifiesto) => $conManifiesto
+                            ->whereNull('published_at')
+                            ->whereHas('manifest', fn ($q) => $q
+                                ->where(fn ($w) => $w
+                                    ->whereNull('returns_deadline_at')
+                                    ->orWhere('returns_deadline_at', '<', now())))));
             } else {
-                // Legacy: fecha en que Hosana procesó la devolución.
-                $query->whereBetween('processed_date', [$desde, $hasta]);
+                // Legacy: fecha en que Hosana procesó la devolución, sin
+                // retener por ventana. Solo se respeta un published_at futuro.
+                $query
+                    ->whereBetween('processed_date', [$desde, $hasta])
+                    ->where(fn ($publicada) => $publicada
+                        ->whereNull('published_at')
+                        ->orWhere('published_at', '<=', now()));
             }
 
             $devoluciones = $query

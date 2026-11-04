@@ -7,6 +7,7 @@ use App\Models\Invoice;
 use App\Models\InvoiceReturn;
 use App\Models\Manifest;
 use App\Models\ReturnLine;
+use App\Models\ReturnSetting;
 use App\Models\User;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -159,6 +160,9 @@ class ReturnService
                 'processed_time' => $now->format('H:i:s'),
                 'total' => $total,
                 'after_deadline' => $afterDeadline,
+                // Cuándo la ve Jaremar (Configuración → Devoluciones). NULL =
+                // con el paquete del manifiesto, al cerrar su ventana.
+                'published_at' => ReturnSetting::current()->publishedAtFor($now),
                 'created_by' => $data['created_by'],
                 'manifest_number' => $invoice->manifest->number,
             ]);
@@ -261,6 +265,12 @@ class ReturnService
                 'id' => 'La ventana de devoluciones de este manifiesto cerró el '.
                     $return->manifest->returnsDeadlineLabel().
                     '. Lo publicado a Jaremar es inmutable.',
+            ]);
+        }
+
+        if ($return->isPublishedToJaremar()) {
+            throw ValidationException::withMessages([
+                'id' => 'Jaremar ya puede ver esta devolución y no acepta cambios.',
             ]);
         }
 
@@ -847,6 +857,14 @@ class ReturnService
                 'id' => 'No se puede cancelar: la ventana de devoluciones del manifiesto cerró el '.
                     $return->manifest->returnsDeadlineLabel().
                     ' y el paquete publicado a Jaremar es inmutable.',
+            ]);
+        }
+
+        // Publicada por separado (Configuración → Devoluciones): Jaremar ya
+        // pudo consumirla, así que tampoco se cancela.
+        if ($return->isPublishedToJaremar()) {
+            throw ValidationException::withMessages([
+                'id' => 'No se puede cancelar: Jaremar ya puede ver esta devolución.',
             ]);
         }
 

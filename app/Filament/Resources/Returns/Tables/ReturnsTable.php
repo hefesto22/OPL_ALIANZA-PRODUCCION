@@ -170,7 +170,8 @@ class ReturnsTable
                             ->send();
                     })
                     ->hidden(fn (InvoiceReturn $record): bool => $record->isCancelled() ||
-                        $record->manifest->isClosed()
+                        $record->manifest->isClosed() ||
+                        $record->isPublishedToJaremar()
                     ),
             ])
             ->defaultSort('id', 'desc')
