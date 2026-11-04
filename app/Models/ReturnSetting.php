@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\ReturnPublicationMode;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
@@ -21,6 +22,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * @property ReturnPublicationMode $publication_mode
  * @property int $publication_delay_days
  * @property int|null $updated_by
+ * @property-read User|null $updatedBy
  */
 class ReturnSetting extends Model
 {
@@ -63,6 +65,14 @@ class ReturnSetting extends Model
     public static function current(): self
     {
         return static::query()->find(self::SINGLETON_ID) ?? new static;
+    }
+
+    /**
+     * Quién guardó el último cambio desde la pantalla.
+     */
+    public function updatedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'updated_by');
     }
 
     /**
