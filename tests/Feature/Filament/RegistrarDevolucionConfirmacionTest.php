@@ -45,6 +45,8 @@ class RegistrarDevolucionConfirmacionTest extends TestCase
 
     private ReturnReason $reason;
 
+    private InvoiceLine $line;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -78,7 +80,7 @@ class RegistrarDevolucionConfirmacionTest extends TestCase
             'status' => 'imported',
         ]);
 
-        InvoiceLine::factory()->create([
+        $this->line = InvoiceLine::factory()->create([
             'invoice_id' => $this->invoice->id,
             'quantity_fractions' => 10,
             'quantity_box' => 0,
@@ -136,5 +138,17 @@ class RegistrarDevolucionConfirmacionTest extends TestCase
                 'return_reason_id' => $this->reason->id,
             ])
             ->assertNotified(self::SIN_PRODUCTOS);
+    }
+
+    public function test_el_modal_muestra_la_factura_y_una_fila_por_producto(): void
+    {
+        $this->facturasDelManifiesto()
+            ->mountTableAction('registrar_devolucion', $this->invoice)
+            ->assertMountedActionModalSee([
+                'Devolver factura '.$this->invoice->invoice_number,
+                'Total factura',
+                'A devolver',
+                $this->line->product_description,
+            ]);
     }
 }

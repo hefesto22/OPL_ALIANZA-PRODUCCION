@@ -29,21 +29,19 @@ class FinalReturnConfirmation
     {
         return [
             Placeholder::make('aviso_devolucion_definitiva')
-                ->label('')
+                ->hiddenLabel()
                 ->visible($isFinal)
                 ->content(new HtmlString(
                     '<div style="border:1px solid #dc2626;background:rgba(220,38,38,.08);'.
-                    'border-radius:8px;padding:12px 14px;margin-top:4px;">'.
-                    '<strong style="color:#ef4444;font-size:14px;">Revise bien antes de registrar</strong>'.
-                    '<div style="font-size:13px;line-height:1.55;margin-top:4px;">'.
-                    'Esta devolución <strong>no se podrá editar ni anular</strong> después de registrarla: '.
-                    'Jaremar la puede ver desde que se guarda. Verifique la factura, el motivo y las cantidades. '.
+                    'border-radius:8px;padding:8px 12px;font-size:13px;line-height:1.5;">'.
+                    '<strong style="color:#ef4444;">Revise bien antes de registrar:</strong> '.
+                    'esta devolución <strong>no se podrá editar ni anular</strong> y Jaremar la ve desde que se guarda. '.
                     '<strong>Usted es el absoluto responsable</strong> de lo que registre.'.
-                    '</div></div>'
+                    '</div>'
                 )),
 
             Checkbox::make(self::FIELD)
-                ->label('Revisé la factura, el motivo y las cantidades. Entiendo que no se puede editar ni anular y que soy responsable de esta devolución.')
+                ->label('Revisé la factura, el motivo y las cantidades. Soy responsable de esta devolución.')
                 ->visible($isFinal)
                 ->accepted()
                 ->validationMessages([

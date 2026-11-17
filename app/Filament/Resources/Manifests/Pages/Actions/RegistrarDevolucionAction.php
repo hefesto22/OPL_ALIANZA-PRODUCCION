@@ -8,17 +8,18 @@ use App\Models\Manifest;
 use App\Models\ReturnReason;
 use App\Services\ReturnService;
 use Filament\Actions\Action;
-use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Repeater;
+use Filament\Forms\Components\Repeater\TableColumn;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
-use Filament\Schemas\Components\Grid;
+use Filament\Schemas\Components\Flex;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\HtmlString;
 use Illuminate\Validation\ValidationException;
@@ -110,116 +111,52 @@ class RegistrarDevolucionAction
                     'lines' => $lines,
                 ]);
             })
+            ->modalHeading(fn (Invoice $record): string => 'Devolver factura '.$record->invoice_number)
+            ->modalDescription(fn (Invoice $record): string => (string) $record->client_name)
             ->schema([
                 // Campos ocultos globales del encabezado
                 Hidden::make('invoice_number'),
                 Hidden::make('client_name'),
                 Hidden::make('invoice_total'),
                 Hidden::make('available_total'),
+                // Siempre hoy: se muestra en la barra de la factura, no como campo.
+                Hidden::make('return_date'),
 
-                Section::make('')
-                    ->schema([
-                        // ── Aviso de excepción fuera de ventana ─────────────
-                        // Solo lo ve quien llegó hasta acá con el manifiesto ya
-                        // cerrado (permiso RegisterAfterDeadline): debe saber
-                        // que Jaremar no la recibe salvo que re-consulte la
-                        // fecha de emisión de la factura.
-                        Placeholder::make('after_deadline_warning')
-                            ->label('')
-                            ->visible(function (Invoice $record): bool {
-                                return (bool) $record->manifest?->returnsWindowClosed();
-                            })
-                            ->content(function (Invoice $record): HtmlString {
-                                $cierre = htmlspecialchars($record->manifest->returnsDeadlineLabel());
+                // ── Aviso de excepción fuera de ventana ─────────────────
+                // Solo lo ve quien llegó hasta acá con el manifiesto ya
+                // cerrado (permiso RegisterAfterDeadline): debe saber que
+                // Jaremar no la recibe salvo que re-consulte la fecha de
+                // emisión de la factura.
+                Placeholder::make('after_deadline_warning')
+                    ->hiddenLabel()
+                    ->visible(fn (Invoice $record): bool => (bool) $record->manifest?->returnsWindowClosed())
+                    ->content(fn (Invoice $record): HtmlString => self::avisoFueraDePlazoHtml($record)),
 
-                                return new HtmlString(
-                                    '<div style="border:1px solid #f59e0b;background:rgba(245,158,11,.08);'.
-                                    'border-radius:8px;padding:10px 12px;margin-bottom:8px;">'.
-                                    '<strong style="color:#f59e0b;">Devolución fuera de plazo</strong>'.
-                                    '<div style="font-size:12px;line-height:1.5;margin-top:4px;">'.
-                                    'La ventana de este manifiesto cerró el '.$cierre.'. Se registrará como '.
-                                    '<strong>excepción</strong> y quedará marcada en la bitácora. '.
-                                    'Jaremar solo la recibirá si vuelve a consultar la fecha de emisión de esta factura.'.
-                                    '</div></div>'
-                                );
-                            }),
+                // ── Barra de la factura: total, ya devuelto, disponible ─
+                Placeholder::make('invoice_header')
+                    ->hiddenLabel()
+                    ->content(fn (Get $get): HtmlString => self::barraFacturaHtml($get)),
 
-                        // ── Cabecera: nombre factura + totales ──────────────
-                        Placeholder::make('invoice_header')
-                            ->label('')
-                            ->content(function (Get $get): HtmlString {
-                                $invoiceNumber = htmlspecialchars($get('invoice_number') ?? '');
-                                $clientName = htmlspecialchars($get('client_name') ?? '');
-                                $invoiceTotal = (float) ($get('invoice_total') ?? 0);
-                                $availableTotal = (float) ($get('available_total') ?? 0);
+                // Código primero: las bodegas buscan "BE-01" tecleando.
+                Select::make('return_reason_id')
+                    ->label('Motivo de devolución')
+                    ->required()
+                    ->options(fn (): array => ReturnReason::query()
+                        ->where('is_active', true)
+                        ->orderBy('code')
+                        ->get(['id', 'code', 'description'])
+                        ->mapWithKeys(fn (ReturnReason $reason): array => [
+                            $reason->id => "{$reason->code} — {$reason->description}",
+                        ])
+                        ->all())
+                    ->searchable(),
 
-                                $invoiceTotalFmt = 'L.'.number_format($invoiceTotal, 2);
-                                $availableTotalFmt = 'L.'.number_format($availableTotal, 2);
-
-                                return new HtmlString("
-                                    <div style=\"display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;padding:2px 0 6px;\">
-                                        <div style=\"display:flex;align-items:center;gap:8px;\">
-                                            <svg xmlns='http://www.w3.org/2000/svg' width='18' height='18' fill='none' viewBox='0 0 24 24' stroke='#6b7280'>
-                                                <path stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z'/>
-                                            </svg>
-                                            <div>
-                                                <div style=\"font-size:15px;font-weight:700;color:#111827;\">Factura #{$invoiceNumber}</div>
-                                                <div style=\"font-size:12px;color:#6b7280;margin-top:1px;\">{$clientName}</div>
-                                            </div>
-                                        </div>
-                                        <div style=\"display:flex;gap:10px;flex-wrap:wrap;\">
-                                            <div style=\"
-                                                background:#f0fdf4;
-                                                border:1px solid #bbf7d0;
-                                                border-radius:8px;
-                                                padding:6px 14px;
-                                                text-align:center;
-                                                min-width:130px;
-                                            \">
-                                                <div style=\"font-size:10px;font-weight:600;color:#16a34a;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px;\">Total Factura</div>
-                                                <div style=\"font-size:16px;font-weight:700;color:#15803d;\">{$invoiceTotalFmt}</div>
-                                            </div>
-                                            <div style=\"
-                                                background:#eff6ff;
-                                                border:1px solid #bfdbfe;
-                                                border-radius:8px;
-                                                padding:6px 14px;
-                                                text-align:center;
-                                                min-width:130px;
-                                            \">
-                                                <div style=\"font-size:10px;font-weight:600;color:#2563eb;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px;\">Disponible p/Dev.</div>
-                                                <div style=\"font-size:16px;font-weight:700;color:#1d4ed8;\">{$availableTotalFmt}</div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                ");
-                            }),
-
-                        Grid::make(2)->schema([
-                            Select::make('return_reason_id')
-                                ->label('Motivo de Devolución')
-                                ->required()
-                                ->options(
-                                    ReturnReason::where('is_active', true)
-                                        ->orderBy('code')
-                                        ->pluck('description', 'id')
-                                )
-                                ->searchable(),
-
-                            DatePicker::make('return_date')
-                                ->label('Fecha de Devolución')
-                                ->required()
-                                ->default(today())
-                                ->disabled()
-                                ->dehydrated(true),
-                        ]),
-                    ]),
-
-                Section::make('Productos a Devolver')
+                Section::make('Productos a devolver')
+                    ->compact()
                     ->headerActions([
                         // ── Devolver Todo ─────────────────────────────────
                         Action::make('devolver_todo')
-                            ->label('Devolver Todo')
+                            ->label('Devolver todo')
                             ->icon('heroicon-o-arrow-uturn-left')
                             ->color('danger')
                             ->action(function (Get $get, Set $set): void {
@@ -262,53 +199,49 @@ class RegistrarDevolucionAction
                             }),
                     ])
                     ->schema([
+                        // Una fila por producto (tabla). En pantallas angostas
+                        // Filament la apila sola con sus etiquetas.
                         Repeater::make('lines')
-                            ->label('')
+                            ->hiddenLabel()
+                            ->table([
+                                TableColumn::make('Producto'),
+                                TableColumn::make('Disponible')->width('8rem'),
+                                TableColumn::make('A devolver')->width('15rem'),
+                                TableColumn::make('Subtotal')->width('8rem')->alignEnd(),
+                            ])
                             ->schema([
-                                // ── Campos ocultos (referencia server-side) ────
+                                // ── Ocultos (los usa ReturnService al guardar) ──
                                 Hidden::make('invoice_line_id'),
+                                Hidden::make('line_number'),
+                                Hidden::make('product_id'),
+                                Hidden::make('product_description'),
                                 Hidden::make('available_quantity'),
                                 Hidden::make('available_boxes'),
                                 Hidden::make('conversion_factor'),
                                 Hidden::make('unit_price'),
                                 Hidden::make('price_per_box'),
                                 Hidden::make('unit_sale'),
+                                Hidden::make('line_total'),
 
-                                // ── Fila: identificación + cantidades + subtotal ──
-                                // Desktop (lg): #(1)+Cód(2)+Desc(3)+[Cajas(2)+Sueltas(2)|Cant(3)]+Total(2~3)=12
-                                // Móvil (default): todo full-width apilado
-                                Grid::make(12)->schema([
-                                    TextInput::make('line_number')
-                                        ->label('#')
-                                        ->disabled()->dehydrated(true)
-                                        ->columnSpan(['default' => 'full', 'lg' => 1]),
+                                // ── Columnas visibles, en el orden de la tabla ──
+                                Placeholder::make('producto')
+                                    ->hiddenLabel()
+                                    ->content(fn (Get $get): HtmlString => self::productoHtml($get)),
 
-                                    TextInput::make('product_id')
-                                        ->label('Código')
-                                        ->disabled()->dehydrated(true)
-                                        ->columnSpan(['default' => 'full', 'lg' => 2]),
+                                Placeholder::make('disponible')
+                                    ->hiddenLabel()
+                                    ->content(fn (Get $get): HtmlString => self::disponibleHtml($get)),
 
-                                    TextInput::make('product_description')
-                                        ->label('Descripción')
-                                        ->disabled()->dehydrated(true)
-                                        ->columnSpan(['default' => 'full', 'lg' => 3]),
-
-                                    // ── Cajas (solo CJ) ───────────────────────
+                                Flex::make([
+                                    // ── Cajas (solo CJ) ───────────────────
                                     TextInput::make('quantity_box')
-                                        ->label('Cajas a Dev.')
+                                        ->label('Cajas')
+                                        ->suffix('cj')
                                         ->numeric()
                                         ->default(0)
                                         ->minValue(0)
                                         ->live(debounce: 500)
-                                        ->helperText(function (Get $get): string {
-                                            $pricePerBox = (float) ($get('price_per_box') ?? 0);
-                                            $maxBoxes = (int) ($get('available_boxes') ?? 0);
-                                            if ($pricePerBox > 0) {
-                                                return 'L'.number_format($pricePerBox, 2).' /caja · máx: '.$maxBoxes;
-                                            }
-
-                                            return 'Bonificación · máx: '.$maxBoxes;
-                                        })
+                                        ->disabled(fn (Get $get): bool => (float) ($get('available_quantity') ?? 0) <= 0)
                                         ->afterStateUpdated(function ($state, Get $get, Set $set): void {
                                             $boxes = max(0, (int) $state);
                                             $maxBoxes = (int) ($get('available_boxes') ?? 0);
@@ -330,39 +263,17 @@ class RegistrarDevolucionAction
 
                                             $set('line_total', round((($boxes * $convFactor) + $looseUnits) * $price, 2));
                                         })
-                                        ->hidden(fn (Get $get) => ($get('unit_sale') ?? 'UN') !== 'CJ')
-                                        ->columnSpan(['default' => 'full', 'lg' => 2]),
+                                        ->hidden(fn (Get $get) => ($get('unit_sale') ?? 'UN') !== 'CJ'),
 
                                     // ── Unidades sueltas (CJ) o Cantidad (UN) ──
                                     TextInput::make('quantity')
-                                        ->label(fn (Get $get) => ($get('unit_sale') ?? 'UN') === 'CJ' ? 'Uds. Sueltas' : 'Cant. a Dev.')
+                                        ->label(fn (Get $get) => ($get('unit_sale') ?? 'UN') === 'CJ' ? 'Unidades sueltas' : 'Unidades')
+                                        ->suffix('ud')
                                         ->numeric()
                                         ->default(0)
                                         ->minValue(0)
                                         ->live(debounce: 500)
-                                        ->helperText(function (Get $get): string {
-                                            $unitPrice = (float) ($get('unit_price') ?? 0);
-                                            $isCJ = ($get('unit_sale') ?? 'UN') === 'CJ';
-
-                                            if ($isCJ) {
-                                                $convFactor = max(1, (float) $get('conversion_factor'));
-                                                $boxes = max(0, (float) $get('quantity_box'));
-                                                $available = (float) ($get('available_quantity') ?? 0);
-                                                $maxLoose = max(0, $available - ($boxes * $convFactor));
-                                                $priceLabel = $unitPrice > 0
-                                                    ? 'L'.number_format($unitPrice, 2).' /ud.'
-                                                    : 'Bonificación';
-
-                                                return $priceLabel.' · máx: '.number_format($maxLoose, 0);
-                                            }
-
-                                            $maxQty = (float) ($get('available_quantity') ?? 0);
-                                            if ($unitPrice > 0) {
-                                                return 'L'.number_format($unitPrice, 2).' /ud. · máx: '.number_format($maxQty, 0);
-                                            }
-
-                                            return 'Bonificación · máx: '.number_format($maxQty, 0);
-                                        })
+                                        ->disabled(fn (Get $get): bool => (float) ($get('available_quantity') ?? 0) <= 0)
                                         ->afterStateUpdated(function ($state, Get $get, Set $set): void {
                                             $units = max(0, (float) $state);
                                             $price = (float) ($get('unit_price') ?? 0);
@@ -389,190 +300,28 @@ class RegistrarDevolucionAction
 
                                                 $set('line_total', round($units * $price, 2));
                                             }
-                                        })
-                                        ->columnSpan(fn (Get $get) => ($get('unit_sale') ?? 'UN') === 'CJ'
-                                            ? ['default' => 'full', 'lg' => 2]
-                                            : ['default' => 'full', 'lg' => 3]),
-
-                                    TextInput::make('line_total')
-                                        ->label('Total a Dev.')
-                                        ->prefix('L.')
-                                        ->disabled()->dehydrated(true)
-                                        ->columnSpan(fn (Get $get) => ($get('unit_sale') ?? 'UN') === 'CJ'
-                                            ? ['default' => 'full', 'lg' => 2]
-                                            : ['default' => 'full', 'lg' => 3]),
+                                        }),
                                 ]),
+
+                                Placeholder::make('subtotal')
+                                    ->hiddenLabel()
+                                    ->content(fn (Get $get): HtmlString => self::subtotalHtml($get)),
                             ])
                             ->addable(false)
                             ->deletable(false)
                             ->reorderable(false),
 
-                        // ── Resumen reactivo (recibo) ──────────────────────────
+                        // ── Total de lo que se está devolviendo ───────────────
                         Placeholder::make('resumen_devolucion')
-                            ->label('')
+                            ->hiddenLabel()
                             ->live()
-                            ->content(function (Get $get): HtmlString {
-                                $lines = $get('lines') ?? [];
-
-                                $selectedLines = collect($lines)->filter(
-                                    fn ($l) => (float) ($l['quantity_box'] ?? 0) > 0 ||
-                                        (float) ($l['quantity'] ?? 0) > 0
-                                );
-
-                                if ($selectedLines->isEmpty()) {
-                                    return new HtmlString('
-                                        <div style="
-                                            display:flex; align-items:center; gap:8px;
-                                            padding:12px 16px;
-                                            border-radius:8px;
-                                            background:#f9fafb;
-                                            border:1px dashed #d1d5db;
-                                            color:#9ca3af;
-                                            font-size:13px;
-                                            font-style:italic;
-                                        ">
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" style="flex-shrink:0">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
-                                            </svg>
-                                            Ingresa cantidades arriba para ver el resumen de la devolución.
-                                        </div>
-                                    ');
-                                }
-
-                                $rows = '';
-                                $grandTotal = 0.0;
-                                $lineCount = 0;
-
-                                foreach ($selectedLines as $line) {
-                                    $lineCount++;
-                                    $unitSale = strtoupper($line['unit_sale'] ?? 'UN');
-                                    $unitPrice = (float) ($line['unit_price'] ?? 0);
-                                    $pricePerBox = (float) ($line['price_per_box'] ?? 0);
-                                    $boxes = (float) ($line['quantity_box'] ?? 0);
-                                    $units = (float) ($line['quantity'] ?? 0);
-                                    $lineTotal = (float) ($line['line_total'] ?? 0);
-                                    $description = htmlspecialchars($line['product_description'] ?? '—');
-                                    $grandTotal += $lineTotal;
-
-                                    $isBonif = ($lineTotal == 0 && ($unitPrice == 0 && $pricePerBox == 0));
-
-                                    if ($unitSale === 'CJ') {
-                                        $parts = [];
-                                        if ($boxes > 0) {
-                                            $parts[] = number_format($boxes, 0).' caja'.($boxes != 1 ? 's' : '');
-                                        }
-                                        if ($units > 0) {
-                                            $parts[] = number_format($units, 0).' und.';
-                                        }
-                                        $qtyBadge = empty($parts) ? '0 cajas' : implode(' + ', $parts);
-
-                                        if ($isBonif) {
-                                            $priceStr = '';
-                                        } elseif ($boxes > 0 && $units > 0) {
-                                            $priceStr = '× L.'.number_format($pricePerBox, 2).'/caja + L.'.number_format($unitPrice, 2).'/und.';
-                                        } elseif ($boxes > 0) {
-                                            $priceStr = '× L.'.number_format($pricePerBox, 2).'/caja';
-                                        } else {
-                                            $priceStr = '× L.'.number_format($unitPrice, 2).'/und.';
-                                        }
-                                    } else {
-                                        $qtyBadge = number_format($units, 0).' und.';
-                                        $priceStr = $isBonif ? '' : '× L.'.number_format($unitPrice, 2).'/und.';
-                                    }
-
-                                    $bgRow = ($lineCount % 2 === 0) ? '#f9fafb' : '#ffffff';
-                                    $totalColor = $isBonif ? '#9ca3af' : '#111827';
-                                    $totalStr = $isBonif
-                                        ? '<span style="font-size:11px;background:#e5e7eb;color:#6b7280;padding:2px 6px;border-radius:4px;">Bonificación</span>'
-                                        : '<strong style="color:'.$totalColor.'">L.'.number_format($lineTotal, 2).'</strong>';
-
-                                    $rows .= "
-                                        <tr style=\"background:{$bgRow};\">
-                                            <td style=\"padding:9px 12px; font-size:13px; color:#374151; font-weight:500; border-bottom:1px solid #f3f4f6;\">
-                                                {$description}
-                                            </td>
-                                            <td style=\"padding:9px 12px; font-size:13px; color:#6b7280; white-space:nowrap; border-bottom:1px solid #f3f4f6;\">
-                                                <span style=\"display:inline-block;background:#e0f2fe;color:#0369a1;font-size:12px;font-weight:600;padding:2px 7px;border-radius:12px;margin-right:6px;\">{$qtyBadge}</span>
-                                                <span style=\"color:#9ca3af;font-size:12px;\">{$priceStr}</span>
-                                            </td>
-                                            <td style=\"padding:9px 12px; text-align:right; border-bottom:1px solid #f3f4f6;\">
-                                                {$totalStr}
-                                            </td>
-                                        </tr>
-                                    ";
-                                }
-
-                                $grandTotalFmt = 'L.'.number_format($grandTotal, 2);
-                                $itemLabel = $lineCount === 1 ? '1 producto' : "{$lineCount} productos";
-
-                                return new HtmlString("
-                                    <div style=\"
-                                        border-radius:10px;
-                                        overflow:hidden;
-                                        border:1px solid #e5e7eb;
-                                        box-shadow:0 1px 3px rgba(0,0,0,.06);
-                                        margin-top:4px;
-                                    \">
-                                        <!-- Cabecera -->
-                                        <div style=\"
-                                            background:linear-gradient(135deg,#1e3a5f 0%,#1e40af 100%);
-                                            padding:10px 16px;
-                                            display:flex;
-                                            align-items:center;
-                                            justify-content:space-between;
-                                        \">
-                                            <div style=\"display:flex;align-items:center;gap:8px;\">
-                                                <svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' viewBox='0 0 24 24' stroke='white' style='opacity:.9'>
-                                                    <path stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2'/>
-                                                </svg>
-                                                <span style=\"color:white;font-size:13px;font-weight:600;letter-spacing:.3px;\">RESUMEN DE DEVOLUCIÓN</span>
-                                            </div>
-                                            <span style=\"background:rgba(255,255,255,.2);color:white;font-size:11px;padding:2px 8px;border-radius:10px;\">{$itemLabel}</span>
-                                        </div>
-
-                                        <!-- Tabla -->
-                                        <table style=\"width:100%;border-collapse:collapse;background:white;\">
-                                            <thead>
-                                                <tr style=\"background:#f8fafc;\">
-                                                    <th style=\"padding:7px 12px;text-align:left;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;border-bottom:2px solid #e5e7eb;\">Producto</th>
-                                                    <th style=\"padding:7px 12px;text-align:left;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;border-bottom:2px solid #e5e7eb;\">Cantidad</th>
-                                                    <th style=\"padding:7px 12px;text-align:right;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;border-bottom:2px solid #e5e7eb;\">Subtotal</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {$rows}
-                                            </tbody>
-                                        </table>
-
-                                        <!-- Total footer -->
-                                        <div style=\"
-                                            background:#f8fafc;
-                                            border-top:2px solid #e5e7eb;
-                                            padding:12px 16px;
-                                            display:flex;
-                                            justify-content:space-between;
-                                            align-items:center;
-                                        \">
-                                            <span style=\"font-size:13px;color:#374151;font-weight:500;\">Total a devolver</span>
-                                            <span style=\"
-                                                font-size:18px;
-                                                font-weight:700;
-                                                color:#dc2626;
-                                                background:#fef2f2;
-                                                padding:4px 14px;
-                                                border-radius:8px;
-                                                border:1px solid #fecaca;
-                                            \">{$grandTotalFmt}</span>
-                                        </div>
-                                    </div>
-                                ");
-                            }),
-
-                        // ── Definitiva al guardar: aviso + casilla ─────────────
-                        ...FinalReturnConfirmation::components(
-                            fn (Invoice $record): bool => app(ReturnService::class)->registersAsFinal($record)
-                        ),
+                            ->content(fn (Get $get): HtmlString => self::resumenHtml($get('lines') ?? [])),
                     ]),
+
+                // ── Definitiva al guardar: aviso + casilla ─────────────
+                ...FinalReturnConfirmation::components(
+                    fn (Invoice $record): bool => app(ReturnService::class)->registersAsFinal($record)
+                ),
             ])
             ->action(function (array $data, Invoice $record): void {
                 $hasLines = collect($data['lines'] ?? [])
@@ -622,7 +371,137 @@ class RegistrarDevolucionAction
                     ->title('Devolución registrada correctamente.')
                     ->success()->send();
             })
-            ->modalWidth('7xl')
-            ->modalSubmitActionLabel('Registrar Devolución');
+            ->modalWidth('5xl')
+            ->stickyModalFooter()
+            ->modalSubmitActionLabel('Registrar devolución');
+    }
+
+    // ─── HTML de las celdas y barras del modal ────────────────────
+    // Estilos en línea con colores neutros (currentColor + opacidad):
+    // se leen igual en modo claro y oscuro.
+
+    private static function barraFacturaHtml(Get $get): HtmlString
+    {
+        $total = (float) ($get('invoice_total') ?? 0);
+        $disponible = (float) ($get('available_total') ?? 0);
+        $devuelto = max(0, $total - $disponible);
+        $fecha = filled($get('return_date')) ? Carbon::parse($get('return_date'))->format('d/m/Y') : '';
+
+        $dato = fn (string $etiqueta, string $valor, string $estilo = ''): string => '<div>'.
+            "<span style=\"font-size:12px;opacity:.65;\">{$etiqueta}</span> ".
+            "<strong style=\"font-size:15px;{$estilo}\">{$valor}</strong></div>";
+
+        return new HtmlString(
+            '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px 28px;padding:10px 14px;'.
+            'border:1px solid rgba(127,127,127,.25);border-radius:10px;">'.
+            $dato('Total factura', self::lempiras($total)).
+            $dato('Ya devuelto', self::lempiras($devuelto)).
+            $dato('Disponible', self::lempiras($disponible), 'color:#22c55e;').
+            "<div style=\"margin-left:auto;font-size:12px;opacity:.65;\">Fecha de devolución: hoy {$fecha}</div>".
+            '</div>'
+        );
+    }
+
+    private static function avisoFueraDePlazoHtml(Invoice $record): HtmlString
+    {
+        $cierre = e($record->manifest->returnsDeadlineLabel());
+
+        return new HtmlString(
+            '<div style="border:1px solid #f59e0b;background:rgba(245,158,11,.08);border-radius:8px;'.
+            'padding:8px 12px;font-size:13px;line-height:1.5;">'.
+            '<strong style="color:#f59e0b;">Fuera de plazo.</strong> '.
+            "La ventana cerró el {$cierre}. Se registra como <strong>excepción</strong> y queda en la bitácora; ".
+            'Jaremar solo la recibe si vuelve a consultar la fecha de emisión de esta factura.'.
+            '</div>'
+        );
+    }
+
+    private static function productoHtml(Get $get): HtmlString
+    {
+        $descripcion = e($get('product_description') ?? '');
+        $codigo = e(ltrim((string) ($get('product_id') ?? ''), '0'));
+        $linea = e((string) ($get('line_number') ?? ''));
+        $precio = (float) ($get('unit_price') ?? 0);
+        $factor = max(1, (int) ($get('conversion_factor') ?? 1));
+        $esCaja = ($get('unit_sale') ?? 'UN') === 'CJ';
+
+        $detalle = $precio > 0
+            ? self::lempiras($precio).'/ud'.($esCaja ? " · {$factor} ud por caja" : '')
+            : '<span style="color:#f59e0b;font-weight:600;">Bonificación</span>';
+
+        return new HtmlString(
+            '<div style="line-height:1.35;">'.
+            "<div style=\"font-weight:600;\">{$descripcion}</div>".
+            "<div style=\"font-size:12px;opacity:.65;margin-top:2px;\">#{$linea} · {$codigo} · {$detalle}</div>".
+            '</div>'
+        );
+    }
+
+    private static function disponibleHtml(Get $get): HtmlString
+    {
+        $disponible = (float) ($get('available_quantity') ?? 0);
+
+        if ($disponible <= 0) {
+            return new HtmlString('<span style="font-size:12px;opacity:.5;">Ya devuelto</span>');
+        }
+
+        if (($get('unit_sale') ?? 'UN') !== 'CJ') {
+            return new HtmlString(self::cantidad($disponible).' ud');
+        }
+
+        $factor = max(1, (int) ($get('conversion_factor') ?? 1));
+        $cajas = (int) floor($disponible / $factor);
+        $sueltas = $disponible - ($cajas * $factor);
+
+        return new HtmlString($cajas.' cj'.($sueltas > 0 ? ' + '.self::cantidad($sueltas).' ud' : ''));
+    }
+
+    private static function subtotalHtml(Get $get): HtmlString
+    {
+        $total = (float) ($get('line_total') ?? 0);
+
+        return new HtmlString($total > 0
+            ? '<strong>'.self::lempiras($total).'</strong>'
+            : '<span style="opacity:.4;">—</span>');
+    }
+
+    /**
+     * @param  array<int|string, array<string, mixed>>  $lines
+     */
+    private static function resumenHtml(array $lines): HtmlString
+    {
+        $seleccionadas = collect($lines)->filter(
+            fn ($line): bool => (float) ($line['quantity_box'] ?? 0) > 0 || (float) ($line['quantity'] ?? 0) > 0
+        );
+
+        if ($seleccionadas->isEmpty()) {
+            return new HtmlString(
+                '<div style="font-size:13px;opacity:.6;padding:2px;">'.
+                'Escriba en «A devolver» las cantidades que regresan, o use «Devolver todo».</div>'
+            );
+        }
+
+        $cuantos = $seleccionadas->count();
+        $total = (float) $seleccionadas->sum(fn ($line): float => (float) ($line['line_total'] ?? 0));
+
+        return new HtmlString(
+            '<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;'.
+            'padding:10px 14px;border:1px solid rgba(127,127,127,.25);border-radius:10px;">'.
+            '<span style="font-size:13px;">Devolviendo <strong>'.$cuantos.' '.($cuantos === 1 ? 'producto' : 'productos').'</strong></span>'.
+            '<span style="font-size:13px;">Total a devolver '.
+            '<strong style="font-size:18px;color:#ef4444;margin-left:6px;">'.self::lempiras($total).'</strong></span>'.
+            '</div>'
+        );
+    }
+
+    private static function lempiras(float $monto): string
+    {
+        return 'L '.number_format($monto, 2);
+    }
+
+    /** 2 → "2", 2.5 → "2.5": las cantidades casi siempre son enteras. */
+    private static function cantidad(float $valor): string
+    {
+        return rtrim(rtrim(number_format($valor, 2, '.', ','), '0'), '.');
     }
 }
