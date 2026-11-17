@@ -2,442 +2,462 @@
 
 namespace App\Filament\Resources\Manifests\Schemas;
 
+use App\Models\Manifest;
 use App\Models\User;
+use Closure;
 use Filament\Infolists\Components\RepeatableEntry;
+use Filament\Infolists\Components\RepeatableEntry\TableColumn;
 use Filament\Infolists\Components\TextEntry;
-use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
+use Filament\Support\Enums\TextSize;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\HtmlString;
 
+/**
+ * Vista del manifiesto (17/11/2026): tres franjas compactas para que la
+ * tabla de facturas —donde se trabaja— quede a la vista sin bajar:
+ *
+ *   1. Cabecera: fecha, proveedor, estado, plazo de devoluciones, bodegas.
+ *   2. Facturas: conteos que filtran la tabla al hacer clic.
+ *   3. Resumen Financiero (solo roles con dinero): la ecuación del
+ *      manifiesto, el avance del depósito y, si hay varias bodegas, el
+ *      desglose por bodega en una tabla.
+ */
 class ManifestInfolist
 {
+    private const ROLES_CON_DINERO = ['super_admin', 'admin', 'encargado', 'finance'];
+
     public static function configure(Schema $schema): Schema
     {
         return $schema->components([
-
-            // ══════════════════════════════════════════════════════════════
-            // FILA 1: Información del Manifiesto — ancho completo
-            // ══════════════════════════════════════════════════════════════
-            Section::make('Información del Manifiesto')
-                ->icon('heroicon-o-rectangle-stack')
-                ->columns(3)
-                ->columnSpanFull()
-                ->schema([
-                    TextEntry::make('number')
-                        ->label('# Manifiesto')
-                        ->weight('bold')
-                        ->copyable()
-                        ->copyMessage('Número copiado'),
-
-                    TextEntry::make('date')
-                        ->label('Fecha')
-                        ->date('d/m/Y'),
-
-                    TextEntry::make('status')
-                        ->label('Estado')
-                        ->badge()
-                        ->color(fn (string $state): string => match ($state) {
-                            'pending' => 'gray',
-                            'processing' => 'warning',
-                            'imported' => 'info',
-                            'closed' => 'success',
-                            default => 'gray',
-                        })
-                        ->icon(fn (string $state): string => match ($state) {
-                            'pending' => 'heroicon-o-clock',
-                            'processing' => 'heroicon-o-arrow-path',
-                            'imported' => 'heroicon-o-inbox-arrow-down',
-                            'closed' => 'heroicon-o-lock-closed',
-                            default => 'heroicon-o-question-mark-circle',
-                        })
-                        ->formatStateUsing(fn (string $state): string => match ($state) {
-                            'pending' => 'Pendiente',
-                            'processing' => 'Procesando',
-                            'imported' => 'Importado',
-                            'closed' => 'Cerrado',
-                            default => $state,
-                        }),
-
-                    TextEntry::make('supplier.name')
-                        ->label('Proveedor')
-                        ->columnSpan(2),
-
-                    TextEntry::make('warehouse.code')
-                        ->label('Bodega Principal')
-                        ->badge()
-                        ->color(fn ($state) => match ($state) {
-                            'OAC' => 'info',
-                            'OAO' => 'success',
-                            'OAS' => 'warning',
-                            default => 'gray',
-                        })
-                        ->placeholder('—'),
-                ]),
-
-            // Solo visible cuando el manifiesto está cerrado —
-            // no contamina la pantalla con campos vacíos en estado abierto.
-            Section::make('Información de Cierre')
-                ->icon('heroicon-o-lock-closed')
-                ->columns(2)
-                ->columnSpanFull()
-                ->hidden(fn ($record): bool => ! $record->isClosed())
-                ->schema([
-                    TextEntry::make('closedBy.name')
-                        ->label('Cerrado por')
-                        ->placeholder('—'),
-
-                    TextEntry::make('closed_at')
-                        ->label('Fecha y Hora de Cierre')
-                        ->dateTime('d/m/Y H:i'),
-                ]),
-
-            // ══════════════════════════════════════════════════════════════
-            // FILA 2: Resumen de Facturas (izq.) + Estadísticas (der.)
-            // Ambas secciones comparten la misma fila visual para aprovechar
-            // el ancho y establecer una relación visual entre los datos.
-            // ══════════════════════════════════════════════════════════════
-            Grid::make(2)
-                ->columnSpanFull()
-                ->schema([
-                    // ── Izquierda: tarjetas clickeables de facturas ────────
-                    Section::make('Resumen de Facturas')
-                        ->icon('heroicon-o-document-text')
-                        ->columns(2)
-                        ->extraAttributes(['class' => 'h-full'])
-                        ->schema([
-                            TextEntry::make('invoices_count')
-                                ->label('Total Enviadas')
-                                ->weight('bold')
-                                ->suffix(' facturas')
-                                ->state(function ($record): int {
-                                    /** @var User $user */
-                                    $user = Auth::user();
-                                    $query = $record->invoices();
-                                    if ($user->isWarehouseUser()) {
-                                        $query->whereIn('warehouse_id', $user->warehouseIds());
-                                    }
-
-                                    return $query->count();
-                                })
-                                ->extraAttributes([
-                                    'class' => 'cursor-pointer select-none rounded-lg px-3 py-2 transition-all hover:bg-gray-100 dark:hover:bg-white/5',
-                                    'wire:click' => "\$dispatch('filterInvoicesByStatus', { statuses: [] })",
-                                    'title' => 'Ver todas las facturas',
-                                ]),
-
-                            TextEntry::make('invoices_summary_accepted')
-                                ->label('Aceptadas')
-                                ->weight('bold')
-                                ->suffix(' facturas')
-                                ->color('success')
-                                ->state(function ($record): int {
-                                    /** @var User $user */
-                                    $user = Auth::user();
-                                    $summary = $record->getInvoicesSummary($user->warehouseIds());
-
-                                    return ($summary['imported']['count'] ?? 0)
-                                         + ($summary['partial_return']['count'] ?? 0)
-                                         + ($summary['returned']['count'] ?? 0);
-                                })
-                                ->extraAttributes([
-                                    'class' => 'cursor-pointer select-none rounded-lg px-3 py-2 transition-all hover:bg-success-50 dark:hover:bg-success-500/10',
-                                    'wire:click' => "\$dispatch('filterInvoicesByStatus', { statuses: ['imported','partial_return','returned'] })",
-                                    'title' => 'Ver facturas aceptadas',
-                                ]),
-
-                            TextEntry::make('invoices_summary_pending')
-                                ->label('Pend. Revisión')
-                                ->weight('bold')
-                                ->suffix(' facturas')
-                                ->color('warning')
-                                ->state(function ($record): int {
-                                    /** @var User $user */
-                                    $user = Auth::user();
-
-                                    return $record->getInvoicesSummary($user->warehouseIds())['pending_warehouse']['count'] ?? 0;
-                                })
-                                ->extraAttributes([
-                                    'class' => 'cursor-pointer select-none rounded-lg px-3 py-2 transition-all hover:bg-warning-50 dark:hover:bg-warning-500/10',
-                                    'wire:click' => "\$dispatch('filterInvoicesByStatus', { statuses: ['pending_warehouse'] })",
-                                    'title' => 'Ver facturas pendientes de revisión',
-                                ]),
-
-                            TextEntry::make('invoices_summary_rejected')
-                                ->label('Rechazadas')
-                                ->weight('bold')
-                                ->suffix(' facturas')
-                                ->color('danger')
-                                ->state(function ($record): int {
-                                    /** @var User $user */
-                                    $user = Auth::user();
-
-                                    return $record->getInvoicesSummary($user->warehouseIds())['rejected']['count'] ?? 0;
-                                })
-                                ->extraAttributes([
-                                    'class' => 'cursor-pointer select-none rounded-lg px-3 py-2 transition-all hover:bg-danger-50 dark:hover:bg-danger-500/10',
-                                    'wire:click' => "\$dispatch('filterInvoicesByStatus', { statuses: ['rejected'] })",
-                                    'title' => 'Ver facturas rechazadas',
-                                ]),
-                        ]),
-
-                    // ── Derecha: estadísticas operativas ──────────────────
-                    Section::make('Estadísticas')
-                        ->icon('heroicon-o-chart-bar')
-                        ->columns(2)
-                        ->extraAttributes(['class' => 'h-full'])
-                        ->schema([
-                            TextEntry::make('invoices_count')
-                                ->label('Facturas con bodega asignada')
-                                ->suffix(function ($record): string {
-                                    /** @var User $user */
-                                    $user = Auth::user();
-                                    $query = $record->invoices();
-                                    if ($user->isWarehouseUser()) {
-                                        $query->whereIn('warehouse_id', $user->warehouseIds());
-                                    }
-
-                                    return ' de '.$query->count().' enviadas';
-                                })
-                                ->state(function ($record): int {
-                                    /** @var User $user */
-                                    $user = Auth::user();
-                                    if ($user->isWarehouseUser()) {
-                                        return (int) $record->invoices()
-                                            ->whereIn('warehouse_id', $user->warehouseIds())
-                                            ->whereNotNull('warehouse_id')
-                                            ->count();
-                                    }
-
-                                    return (int) $record->invoices_count;
-                                }),
-
-                            TextEntry::make('returns_count')
-                                ->label('Total Devoluciones')
-                                ->state(function ($record): int {
-                                    /** @var User $user */
-                                    $user = Auth::user();
-                                    if ($user->isWarehouseUser()) {
-                                        return (int) $record->returns()
-                                            ->whereIn('warehouse_id', $user->warehouseIds())
-                                            ->where('status', '!=', 'cancelled')
-                                            ->count();
-                                    }
-
-                                    return (int) $record->returns_count;
-                                })
-                                ->color(fn ($state): string => $state > 0 ? 'warning' : 'gray'),
-
-                            TextEntry::make('deposit_progress')
-                                ->label('Progreso de Depósito')
-                                ->columnSpanFull()
-                                ->visible(fn (): bool => Auth::user()->hasAnyRole(['super_admin', 'admin', 'encargado', 'finance']))
-                                // Avance GLOBAL del pago para todos los usuarios.
-                                // El depósito es un pago agrupado contra el manifiesto
-                                // completo (no es atribuible por bodega sin warehouse_id),
-                                // así que el avance se muestra global — ver nota en la
-                                // sección "Resumen Financiero".
-                                ->state(function ($record): string {
-                                    $toDeposit = (float) $record->total_to_deposit;
-                                    $deposited = (float) $record->total_deposited;
-                                    if ($toDeposit <= 0) {
-                                        return 'Sin monto a depositar';
-                                    }
-                                    $pct = min(100, round(($deposited / $toDeposit) * 100, 1));
-
-                                    return "{$pct}%";
-                                })
-                                ->color(function ($record): string {
-                                    $toDeposit = (float) $record->total_to_deposit;
-                                    $deposited = (float) $record->total_deposited;
-                                    if ($toDeposit <= 0) {
-                                        return 'gray';
-                                    }
-                                    $pct = ($deposited / $toDeposit) * 100;
-                                    if ($pct >= 100) {
-                                        return 'success';
-                                    }
-                                    if ($pct >= 50) {
-                                        return 'warning';
-                                    }
-
-                                    return 'danger';
-                                }),
-                        ]),
-                ]),
-
-            // ══════════════════════════════════════════════════════════════
-            // FILA 3: Resumen Financiero — ancho completo, una sola fila
-            // Al ocupar el 100% del ancho, 5 columnas tienen suficiente
-            // espacio para mostrar cualquier monto sin romper en dos líneas.
-            // ══════════════════════════════════════════════════════════════
-            Section::make('Resumen Financiero')
-                ->icon('heroicon-o-banknotes')
-                ->description('Total − Devoluciones = A Depositar   ·   A Depositar − Depositado = Diferencia')
-                ->columns(5)
-                ->columnSpanFull()
-                // Lista blanca positiva: tener 'finance' basta para verlo, aunque
-                // el usuario también sea 'operador'. El operador puro no lo ve.
-                ->visible(fn (): bool => Auth::user()->hasAnyRole(['super_admin', 'admin', 'encargado', 'finance']))
-                // Resumen financiero GLOBAL del manifiesto para todos los usuarios
-                // (incluidos los de bodega). El pago es una obligación agrupada
-                // contra el manifiesto completo y los depósitos NO son atribuibles
-                // por bodega (deposits no tiene warehouse_id), por lo que mostrar
-                // "Depositado" por bodega es imposible. Para que la ecuación
-                // Total − Devoluciones = A Depositar − Depositado = Diferencia sea
-                // coherente, TODO el resumen se muestra global. El desglose por
-                // usuario/bodega vive en la lista de depósitos (visibleTo).
-                ->schema([
-                    TextEntry::make('total_invoices')
-                        ->label('Total Manifiesto')
-                        ->money('HNL')
-                        ->weight('bold')
-                        ->state(fn ($record): float => (float) $record->total_invoices),
-
-                    TextEntry::make('total_returns')
-                        ->label('(−) Devoluciones')
-                        ->money('HNL')
-                        ->color('danger')
-                        ->state(fn ($record): float => (float) $record->total_returns),
-
-                    TextEntry::make('total_to_deposit')
-                        ->label('(=) A Depositar')
-                        ->money('HNL')
-                        ->color('warning')
-                        ->weight('bold')
-                        ->state(fn ($record): float => (float) $record->total_to_deposit),
-
-                    TextEntry::make('total_deposited')
-                        ->label('(−) Depositado')
-                        ->money('HNL')
-                        ->color('success')
-                        ->state(fn ($record): float => (float) $record->total_deposited),
-
-                    // Solo aparece cuando hubo ajuste. Se muestra SEPARADO de
-                    // "Depositado" a propósito: esa columna debe seguir siendo
-                    // plata real que entró al banco. El ajuste es una decisión
-                    // administrativa sobre centavos, no un depósito.
-                    TextEntry::make('adjustment_amount')
-                        ->label('(−) Ajuste')
-                        ->money('HNL')
-                        ->color('warning')
-                        ->state(fn ($record): float => (float) $record->adjustment_amount)
-                        ->visible(fn ($record): bool => (float) $record->adjustment_amount != 0.0)
-                        ->tooltip('Ajuste manual de centavos registrado en la auditoría'),
-
-                    // Faltar y sobrar NO son el mismo problema y no deben
-                    // leerse igual: si falta, hay plata que la empresa no
-                    // recibió (rojo, bloquea el cierre); si sobra, recibió de
-                    // más (ámbar, se puede cerrar con justificación).
-                    TextEntry::make('difference')
-                        ->label(fn ($record): string => $record->isOverpaid() ? '(=) Sobrepago' : '(=) Diferencia')
-                        ->money('HNL')
-                        ->weight('bold')
-                        ->state(fn ($record): float => (float) $record->difference)
-                        ->color(fn ($record): string => match (true) {
-                            (float) $record->difference == 0.0 => 'success',
-                            $record->isOverpaid() => 'warning',
-                            default => 'danger',
-                        })
-                        ->icon(fn ($record): string => match (true) {
-                            (float) $record->difference == 0.0 => 'heroicon-o-check-circle',
-                            $record->isOverpaid() => 'heroicon-o-arrow-trending-up',
-                            default => 'heroicon-o-exclamation-circle',
-                        })
-                        ->tooltip(fn ($record): ?string => $record->isOverpaid()
-                            ? 'Se depositó de más. El manifiesto puede cerrarse dejando constancia del exceso.'
-                            : null),
-                ]),
-
-            // ══════════════════════════════════════════════════════════════
-            // FILA 4: Resumen Financiero / Bodega
-            //
-            // Aparece SOLO en manifiestos con más de una bodega. En los de una
-            // sola —el caso normal— no se muestra nada: el Resumen Financiero
-            // de arriba ya es el de esa bodega y repetirlo sería ruido.
-            //
-            // Es INFORMATIVO. El sobrepago, el progreso de depósito y el
-            // "listo para cerrar" siguen mirando el manifiesto entero, igual
-            // que antes. Este bloque responde una sola pregunta: cuánto de esa
-            // deuda global le toca a cada bodega.
-            //
-            // Por qué hacía falta: hasta que existieron los manifiestos
-            // multi-bodega, el total del manifiesto ERA el de la bodega. Desde
-            // que dejó de serlo, el encargado de Santa Bárbara leía como suyo
-            // el saldo de todo el manifiesto.
-            // ══════════════════════════════════════════════════════════════
-            Section::make('Resumen Financiero / Bodega')
-                ->icon('heroicon-o-building-storefront')
-                ->description('Cuánto de este manifiesto le corresponde a cada bodega. El saldo que gobierna el cierre sigue siendo el total de arriba.')
-                ->columnSpanFull()
-                ->visible(fn ($record): bool => Auth::user()->hasAnyRole(['super_admin', 'admin', 'encargado', 'finance'])
-                    && $record->warehouseTotals->count() > 1
-                )
-                ->schema([
-                    RepeatableEntry::make('warehouseTotals')
-                        ->hiddenLabel()
-                        ->columnSpanFull()
-                        ->columns(6)
-                        ->schema([
-                            // La bodega del usuario se pinta distinto para que
-                            // encuentre su fila sin leer las demás.
-                            TextEntry::make('warehouse.code')
-                                ->label('Bodega')
-                                ->badge()
-                                ->color(function ($record): string {
-                                    /** @var User $user */
-                                    $user = Auth::user();
-
-                                    return in_array((int) $record->warehouse_id, $user->warehouseIds(), true)
-                                        ? 'primary'
-                                        : 'gray';
-                                }),
-
-                            TextEntry::make('total_invoices')
-                                ->label('Total')
-                                ->money('HNL'),
-
-                            TextEntry::make('total_returns')
-                                ->label('(−) Devoluciones')
-                                ->money('HNL')
-                                ->color(fn ($state): string => (float) $state > 0 ? 'danger' : 'gray'),
-
-                            TextEntry::make('total_to_deposit')
-                                ->label('(=) A Depositar')
-                                ->money('HNL')
-                                ->weight('bold')
-                                ->color('warning'),
-
-                            TextEntry::make('total_deposited')
-                                ->label('(−) Depositado')
-                                ->money('HNL')
-                                ->color('success'),
-
-                            TextEntry::make('difference')
-                                ->label('(=) Diferencia')
-                                ->money('HNL')
-                                ->weight('bold')
-                                ->color(fn ($state): string => match (true) {
-                                    (float) $state == 0.0 => 'success',
-                                    (float) $state < 0.0 => 'warning',
-                                    default => 'danger',
-                                }),
-                        ]),
-
-                    // Los depósitos sin bodega no se le regalan a ninguna: se
-                    // declaran acá para que la suma de las filas de arriba no
-                    // parezca que "pierde" plata contra el total del manifiesto.
-                    TextEntry::make('depositos_sin_bodega')
-                        ->hiddenLabel()
-                        ->columnSpanFull()
-                        ->color('warning')
-                        ->icon('heroicon-o-exclamation-triangle')
-                        ->visible(fn ($record): bool => self::unassignedDeposits($record) > 0)
-                        ->state(fn ($record): string => 'Hay HNL '.number_format(self::unassignedDeposits($record), 2)
-                            .' en depósitos sin bodega asignada. Cuentan en el total del manifiesto pero no en el '
-                            .'desglose de arriba. Se corrigen editando el depósito en la pestaña Depósitos.'),
-                ]),
+            self::cabecera(),
+            self::facturas(),
+            self::resumenFinanciero(),
         ]);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // 1. Cabecera
+    // ══════════════════════════════════════════════════════════════════
+
+    private static function cabecera(): Section
+    {
+        return Section::make()
+            ->compact()
+            ->columnSpanFull()
+            ->columns(['default' => 2, 'md' => 3, 'xl' => 6])
+            ->schema([
+                TextEntry::make('date')
+                    ->label('Fecha')
+                    ->date('d/m/Y'),
+
+                TextEntry::make('supplier.name')
+                    ->label('Proveedor')
+                    ->placeholder('—')
+                    ->columnSpan(['default' => 2, 'md' => 2, 'xl' => 2]),
+
+                TextEntry::make('status')
+                    ->label('Estado')
+                    ->badge()
+                    ->color(fn (string $state): string => match ($state) {
+                        'pending' => 'gray',
+                        'processing' => 'warning',
+                        'imported' => 'info',
+                        'closed' => 'success',
+                        default => 'gray',
+                    })
+                    ->icon(fn (string $state): string => match ($state) {
+                        'pending' => 'heroicon-o-clock',
+                        'processing' => 'heroicon-o-arrow-path',
+                        'imported' => 'heroicon-o-inbox-arrow-down',
+                        'closed' => 'heroicon-o-lock-closed',
+                        default => 'heroicon-o-question-mark-circle',
+                    })
+                    ->formatStateUsing(fn (string $state): string => match ($state) {
+                        'pending' => 'Pendiente',
+                        'processing' => 'Procesando',
+                        'imported' => 'Importado',
+                        'closed' => 'Cerrado',
+                        default => $state,
+                    }),
+
+                // Hasta cuándo la bodega puede registrar devoluciones.
+                TextEntry::make('returns_window')
+                    ->label('Devoluciones')
+                    ->badge()
+                    ->state(fn (Manifest $record): string => self::plazoDevoluciones($record))
+                    ->color(fn (Manifest $record): string => self::colorPlazo($record))
+                    ->icon(fn (Manifest $record): ?string => match (true) {
+                        $record->returnsDeadline() === null => null,
+                        $record->returnsWindowClosed() => 'heroicon-o-lock-closed',
+                        default => 'heroicon-o-clock',
+                    })
+                    ->tooltip(fn (Manifest $record): ?string => self::tooltipPlazo($record)),
+
+                // Bodegas que tienen facturas en el manifiesto (antes
+                // "Bodega Principal", que en los multi-bodega salía vacío).
+                TextEntry::make('bodegas')
+                    ->label('Bodegas')
+                    ->badge()
+                    ->state(fn (Manifest $record): array => self::codigosBodega($record))
+                    ->color(fn (string $state): string => match ($state) {
+                        'OAC' => 'info',
+                        'OAO' => 'success',
+                        'OAS' => 'warning',
+                        default => 'gray',
+                    })
+                    ->placeholder('—'),
+
+                TextEntry::make('closed_info')
+                    ->label('Cerrado')
+                    ->columnSpanFull()
+                    ->visible(fn (Manifest $record): bool => $record->isClosed())
+                    ->state(fn (Manifest $record): string => 'Por '.($record->closedBy?->name ?? '—')
+                        .($record->closed_at ? ' el '.$record->closed_at->format('d/m/Y').' a las '.$record->closed_at->format('H:i') : '')),
+            ]);
+    }
+
+    private static function plazoDevoluciones(Manifest $record): string
+    {
+        $cierre = $record->returnsDeadline();
+
+        return match (true) {
+            $cierre === null => 'Sin límite',
+            $record->returnsWindowClosed() => 'Cerradas el '.$cierre->format('d/m/Y'),
+            default => 'Abiertas hasta el '.$cierre->format('d/m'),
+        };
+    }
+
+    private static function colorPlazo(Manifest $record): string
+    {
+        return match (true) {
+            $record->returnsDeadline() === null => 'info',
+            $record->returnsWindowClosed() => 'gray',
+            $record->remainingReturnBusinessDays() <= 1 => 'warning',
+            default => 'success',
+        };
+    }
+
+    private static function tooltipPlazo(Manifest $record): ?string
+    {
+        if ($record->returnsDeadline() === null || $record->returnsWindowClosed()) {
+            return null;
+        }
+
+        $dias = $record->remainingReturnBusinessDays();
+
+        return 'Cierra el '.$record->returnsDeadlineLabel().' · '
+            .($dias === 1 ? 'queda 1 día hábil' : "quedan {$dias} días hábiles");
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private static function codigosBodega(Manifest $record): array
+    {
+        $codigos = $record->warehouseTotals
+            ->loadMissing('warehouse:id,code')
+            ->map(fn ($total): ?string => $total->warehouse?->code)
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        return $codigos !== [] ? $codigos : array_values(array_filter([$record->warehouse?->code]));
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // 2. Facturas — cada conteo filtra la tabla de abajo
+    // ══════════════════════════════════════════════════════════════════
+
+    private static function facturas(): Section
+    {
+        return Section::make('Facturas')
+            ->icon('heroicon-o-document-text')
+            ->compact()
+            ->columnSpanFull()
+            ->columns(['default' => 2, 'md' => 5])
+            ->schema([
+                self::conteoFacturas('invoices_total', 'Enviadas', function (Manifest $record): int {
+                    /** @var User $user */
+                    $user = Auth::user();
+                    $query = $record->invoices();
+                    if ($user->isWarehouseUser()) {
+                        $query->whereIn('warehouse_id', $user->warehouseIds());
+                    }
+
+                    return $query->count();
+                }, [], null),
+
+                self::conteoFacturas('invoices_summary_accepted', 'Aceptadas', function (Manifest $record): int {
+                    $summary = self::resumenFacturas($record);
+
+                    return ($summary['imported']['count'] ?? 0)
+                         + ($summary['partial_return']['count'] ?? 0)
+                         + ($summary['returned']['count'] ?? 0);
+                }, ['imported', 'partial_return', 'returned'], 'success'),
+
+                self::conteoFacturas('invoices_summary_pending', 'Pend. revisión',
+                    fn (Manifest $record): int => self::resumenFacturas($record)['pending_warehouse']['count'] ?? 0,
+                    ['pending_warehouse'], 'warning'),
+
+                self::conteoFacturas('invoices_summary_rejected', 'Rechazadas',
+                    fn (Manifest $record): int => self::resumenFacturas($record)['rejected']['count'] ?? 0,
+                    ['rejected'], 'danger'),
+
+                TextEntry::make('returns_total')
+                    ->label('Devoluciones')
+                    ->size(TextSize::Large)
+                    ->weight('bold')
+                    ->state(function (Manifest $record): int {
+                        /** @var User $user */
+                        $user = Auth::user();
+                        if ($user->isWarehouseUser()) {
+                            return (int) $record->returns()
+                                ->whereIn('warehouse_id', $user->warehouseIds())
+                                ->where('status', '!=', 'cancelled')
+                                ->count();
+                        }
+
+                        return (int) $record->returns_count;
+                    })
+                    ->color(fn ($state): string => (int) $state > 0 ? 'warning' : 'gray'),
+            ]);
+    }
+
+    /**
+     * @param  array<int, string>  $statuses  estados que filtra al hacer clic ([] = todas)
+     */
+    private static function conteoFacturas(string $name, string $label, Closure $state, array $statuses, ?string $color): TextEntry
+    {
+        $filtro = $statuses === [] ? '[]' : "['".implode("','", $statuses)."']";
+
+        return TextEntry::make($name)
+            ->label($label)
+            ->size(TextSize::Large)
+            ->weight('bold')
+            ->state($state)
+            ->color(fn ($state): ?string => $color === null ? null : ((int) $state > 0 ? $color : 'gray'))
+            ->extraAttributes([
+                'class' => 'cursor-pointer select-none rounded-lg transition-all hover:bg-gray-100 dark:hover:bg-white/5',
+                'style' => 'cursor:pointer;',
+                'wire:click' => "\$dispatch('filterInvoicesByStatus', { statuses: {$filtro} })",
+                'title' => 'Filtrar la tabla de facturas',
+            ]);
+    }
+
+    /**
+     * @return array<string, array<string, mixed>>
+     */
+    private static function resumenFacturas(Manifest $record): array
+    {
+        /** @var User $user */
+        $user = Auth::user();
+
+        return $record->getInvoicesSummary($user->warehouseIds());
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // 3. Resumen Financiero — solo roles que manejan dinero
+    //
+    // GLOBAL del manifiesto para todos (incluidos los de bodega): el pago
+    // es una obligación agrupada contra el manifiesto completo. El
+    // desglose por bodega es INFORMATIVO; el sobrepago, el avance y el
+    // "listo para cerrar" siguen mirando el manifiesto entero.
+    // ══════════════════════════════════════════════════════════════════
+
+    private static function resumenFinanciero(): Section
+    {
+        return Section::make('Resumen Financiero')
+            ->icon('heroicon-o-banknotes')
+            ->compact()
+            ->columnSpanFull()
+            ->columns(['default' => 2, 'md' => 3, 'xl' => 5])
+            // Lista blanca positiva: tener 'finance' basta para verlo, aunque
+            // el usuario también sea 'operador'. El operador puro no lo ve.
+            ->visible(fn (): bool => Auth::user()->hasAnyRole(self::ROLES_CON_DINERO))
+            ->schema([
+                TextEntry::make('total_invoices')
+                    ->label('Total manifiesto')
+                    ->money('HNL')
+                    ->size(TextSize::Large)
+                    ->weight('bold')
+                    ->state(fn (Manifest $record): float => (float) $record->total_invoices),
+
+                TextEntry::make('total_returns')
+                    ->label('(−) Devoluciones')
+                    ->money('HNL')
+                    ->size(TextSize::Large)
+                    ->color('danger')
+                    ->state(fn (Manifest $record): float => (float) $record->total_returns),
+
+                TextEntry::make('total_to_deposit')
+                    ->label('(=) A depositar')
+                    ->money('HNL')
+                    ->size(TextSize::Large)
+                    ->color('warning')
+                    ->weight('bold')
+                    ->state(fn (Manifest $record): float => (float) $record->total_to_deposit),
+
+                TextEntry::make('total_deposited')
+                    ->label('(−) Depositado')
+                    ->money('HNL')
+                    ->size(TextSize::Large)
+                    ->color('success')
+                    ->state(fn (Manifest $record): float => (float) $record->total_deposited),
+
+                // Solo con ajuste. SEPARADO de "Depositado" a propósito: esa
+                // columna es plata real que entró al banco; el ajuste es una
+                // decisión administrativa sobre centavos.
+                TextEntry::make('adjustment_amount')
+                    ->label('(−) Ajuste')
+                    ->money('HNL')
+                    ->size(TextSize::Large)
+                    ->color('warning')
+                    ->state(fn (Manifest $record): float => (float) $record->adjustment_amount)
+                    ->visible(fn (Manifest $record): bool => (float) $record->adjustment_amount != 0.0)
+                    ->tooltip('Ajuste manual de centavos registrado en la auditoría'),
+
+                // Faltar y sobrar no se leen igual: si falta (rojo) bloquea
+                // el cierre; si sobra (ámbar) se cierra con justificación.
+                TextEntry::make('difference')
+                    ->label(fn (Manifest $record): string => $record->isOverpaid() ? '(=) Sobrepago' : '(=) Diferencia')
+                    ->money('HNL')
+                    ->size(TextSize::Large)
+                    ->weight('bold')
+                    ->state(fn (Manifest $record): float => (float) $record->difference)
+                    ->color(fn (Manifest $record): string => match (true) {
+                        (float) $record->difference == 0.0 => 'success',
+                        $record->isOverpaid() => 'warning',
+                        default => 'danger',
+                    })
+                    ->icon(fn (Manifest $record): string => match (true) {
+                        (float) $record->difference == 0.0 => 'heroicon-o-check-circle',
+                        $record->isOverpaid() => 'heroicon-o-arrow-trending-up',
+                        default => 'heroicon-o-exclamation-circle',
+                    })
+                    ->tooltip(fn (Manifest $record): ?string => $record->isOverpaid()
+                        ? 'Se depositó de más. El manifiesto puede cerrarse dejando constancia del exceso.'
+                        : null),
+
+                TextEntry::make('deposit_progress')
+                    ->hiddenLabel()
+                    ->columnSpanFull()
+                    ->html()
+                    ->state(fn (Manifest $record): HtmlString => self::barraDeposito($record)),
+
+                self::porBodega(),
+
+                // Los depósitos sin bodega no se le regalan a ninguna: se
+                // declaran para que la suma por bodega no parezca que "pierde"
+                // plata contra el total del manifiesto.
+                TextEntry::make('depositos_sin_bodega')
+                    ->hiddenLabel()
+                    ->columnSpanFull()
+                    ->color('warning')
+                    ->icon('heroicon-o-exclamation-triangle')
+                    ->visible(fn (Manifest $record): bool => $record->warehouseTotals->count() > 1
+                        && self::unassignedDeposits($record) > 0)
+                    ->state(fn (Manifest $record): string => 'Hay HNL '.number_format(self::unassignedDeposits($record), 2)
+                        .' en depósitos sin bodega asignada. Cuentan en el total del manifiesto pero no en el '
+                        .'desglose por bodega. Se corrigen editando el depósito en la pestaña Depósitos.'),
+            ]);
+    }
+
+    /**
+     * Avance del depósito contra lo que hay que depositar, como barra.
+     */
+    private static function barraDeposito(Manifest $record): HtmlString
+    {
+        $aDepositar = (float) $record->total_to_deposit;
+
+        if ($aDepositar <= 0) {
+            return new HtmlString('<span style="font-size:13px;opacity:.6;">Sin monto a depositar.</span>');
+        }
+
+        $porcentaje = min(100, round(((float) $record->total_deposited / $aDepositar) * 100, 1));
+        $color = match (true) {
+            $porcentaje >= 100 => '#22c55e',
+            $porcentaje >= 50 => '#f59e0b',
+            default => '#ef4444',
+        };
+        $texto = rtrim(rtrim(number_format($porcentaje, 1), '0'), '.');
+
+        return new HtmlString(
+            '<div style="display:flex;align-items:center;gap:12px;">'.
+            '<span style="font-size:13px;opacity:.65;white-space:nowrap;">Depositado</span>'.
+            '<div style="flex:1;height:8px;border-radius:999px;background:rgba(127,127,127,.22);overflow:hidden;">'.
+            "<div style=\"width:{$porcentaje}%;height:100%;border-radius:999px;background:{$color};\"></div>".
+            '</div>'.
+            "<span style=\"font-size:13px;font-weight:700;color:{$color};white-space:nowrap;\">{$texto}%</span>".
+            '</div>'
+        );
+    }
+
+    /**
+     * Cuánto del manifiesto le toca a cada bodega — solo en los
+     * multi-bodega; en los de una sola, el resumen de arriba ya es el suyo.
+     */
+    private static function porBodega(): RepeatableEntry
+    {
+        return RepeatableEntry::make('warehouseTotals')
+            ->label('Por bodega')
+            ->hint('El cierre se rige por el total del manifiesto')
+            ->columnSpanFull()
+            ->visible(fn (Manifest $record): bool => $record->warehouseTotals->count() > 1)
+            ->table([
+                TableColumn::make('Bodega'),
+                TableColumn::make('Total')->alignEnd(),
+                TableColumn::make('(−) Devoluciones')->alignEnd(),
+                TableColumn::make('(=) A depositar')->alignEnd(),
+                TableColumn::make('(−) Depositado')->alignEnd(),
+                TableColumn::make('(=) Diferencia')->alignEnd(),
+            ])
+            ->schema([
+                // La bodega del usuario se pinta distinto para que
+                // encuentre su fila sin leer las demás.
+                TextEntry::make('warehouse.code')
+                    ->badge()
+                    ->color(function ($record): string {
+                        /** @var User $user */
+                        $user = Auth::user();
+
+                        return in_array((int) $record->warehouse_id, $user->warehouseIds(), true)
+                            ? 'primary'
+                            : 'gray';
+                    }),
+
+                TextEntry::make('total_invoices')
+                    ->money('HNL')
+                    ->alignEnd(),
+
+                TextEntry::make('total_returns')
+                    ->money('HNL')
+                    ->alignEnd()
+                    ->color(fn ($state): string => (float) $state > 0 ? 'danger' : 'gray'),
+
+                TextEntry::make('total_to_deposit')
+                    ->money('HNL')
+                    ->alignEnd()
+                    ->weight('bold')
+                    ->color('warning'),
+
+                TextEntry::make('total_deposited')
+                    ->money('HNL')
+                    ->alignEnd()
+                    ->color('success'),
+
+                TextEntry::make('difference')
+                    ->money('HNL')
+                    ->alignEnd()
+                    ->weight('bold')
+                    ->color(fn ($state): string => match (true) {
+                        (float) $state == 0.0 => 'success',
+                        (float) $state < 0.0 => 'warning',
+                        default => 'danger',
+                    }),
+            ]);
     }
 
     /**

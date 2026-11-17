@@ -93,4 +93,13 @@ class ManifestFinancialSummaryVisibilityTest extends TestCase
             ->assertOk()
             ->assertDontSee('Resumen Financiero');
     }
+
+    public function test_la_cabecera_dice_hasta_cuando_se_registran_devoluciones(): void
+    {
+        // El TestCase base deja la ventana en 10000 días: sigue abierta.
+        $this->viewManifestAs($this->userWith(['operador']))
+            ->assertOk()
+            ->assertSee('Abiertas hasta el')
+            ->assertSee('Pend. revisión');
+    }
 }
