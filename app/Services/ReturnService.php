@@ -488,6 +488,18 @@ class ReturnService
     }
 
     /**
+     * true cuando la devolución queda definitiva en cuanto se guarda: no se
+     * podrá editar ni cancelar. Pasa con "Al momento" (Jaremar la ve de una
+     * vez) y con la excepción fuera de plazo (el manifiesto ya cerró). Los
+     * formularios lo usan para pedir que el usuario confirme que revisó.
+     */
+    public function registersAsFinal(Invoice $invoice): bool
+    {
+        return ReturnSetting::current()->publishesImmediately()
+            || (bool) $invoice->manifest?->returnsWindowClosed();
+    }
+
+    /**
      * Monto pendiente de devolver = total factura - (aprobadas + pendientes)
      */
     public function getPendingAmount(Invoice $invoice): float

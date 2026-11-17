@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Manifests\Pages\Actions;
 
+use App\Filament\Resources\Returns\Schemas\FinalReturnConfirmation;
 use App\Models\Invoice;
 use App\Models\Manifest;
 use App\Models\ReturnReason;
@@ -566,6 +567,11 @@ class RegistrarDevolucionAction
                                     </div>
                                 ");
                             }),
+
+                        // ── Definitiva al guardar: aviso + casilla ─────────────
+                        ...FinalReturnConfirmation::components(
+                            fn (Invoice $record): bool => app(ReturnService::class)->registersAsFinal($record)
+                        ),
                     ]),
             ])
             ->action(function (array $data, Invoice $record): void {

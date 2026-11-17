@@ -97,6 +97,15 @@ class ReturnSetting extends Model
     }
 
     /**
+     * true con "Al momento" (0 días): Jaremar ve la devolución en cuanto se
+     * guarda, así que desde ese instante ya no se corrige ni se cancela.
+     */
+    public function publishesImmediately(): bool
+    {
+        return $this->publicationDelayDays() === 0;
+    }
+
+    /**
      * Momento en que Jaremar podrá ver una devolución registrada en
      * $registeredAt. Null = cuando cierre la ventana del manifiesto.
      * Un día son 24 horas: registrada el lunes a las 3 pm con 1 día, se ve

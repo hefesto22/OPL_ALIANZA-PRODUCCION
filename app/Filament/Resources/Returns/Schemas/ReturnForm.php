@@ -493,6 +493,16 @@ class ReturnForm
                                 </div>
                             ");
                         }),
+
+                    // ── Definitiva al guardar: aviso + casilla (solo al crear) ─
+                    ...($editing ? [] : FinalReturnConfirmation::components(
+                        function (Get $get): bool {
+                            $invoice = Invoice::with('manifest')->find($get('invoice_id'));
+
+                            return $invoice !== null
+                                && app(ReturnService::class)->registersAsFinal($invoice);
+                        }
+                    )),
                 ])
                 ->hidden(fn (Get $get) => ! $get('invoice_id')),
         ]);

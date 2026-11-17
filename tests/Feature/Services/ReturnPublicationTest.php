@@ -325,4 +325,40 @@ class ReturnPublicationTest extends TestCase
         $this->travelTo(Carbon::parse('2026-11-05 15:00:00'));
         $this->assertSame([(string) $return->id], $this->idsVisiblesParaJaremar());
     }
+
+    public function test_el_registro_es_definitivo_solo_al_momento_o_fuera_de_plazo(): void
+    {
+        $manifest = Manifest::factory()->create([
+            'date' => now()->toDateString(),
+            'status' => 'imported',
+            'warehouse_id' => $this->warehouse->id,
+        ]);
+
+        $invoice = Invoice::factory()->create([
+            'manifest_id' => $manifest->id,
+            'warehouse_id' => $this->warehouse->id,
+            'invoice_date' => now()->toDateString(),
+        ]);
+
+        $service = app(ReturnService::class);
+
+        // Por defecto (paquete al cerrar la ventana) se corrige el mismo día.
+        $this->assertFalse($service->registersAsFinal($invoice));
+
+        // "Después de unos días": se cancela mientras no se publique.
+        $this->publicarDespuesDe(1);
+        $this->assertFalse($service->registersAsFinal($invoice));
+
+        // "Al momento": definitiva en cuanto se guarda.
+        $this->publicarDespuesDe(0);
+        $this->assertTrue($service->registersAsFinal($invoice));
+
+        // Paquete al cierre con la ventana abierta: no es definitiva…
+        $this->settings()->update(7, ReturnPublicationMode::Window, 0, false, $this->user);
+        $this->assertFalse($service->registersAsFinal($invoice));
+
+        // …pero la excepción fuera de plazo sí lo es.
+        Manifest::query()->whereKey($manifest->id)->update(['returns_deadline_at' => now()->subDay()]);
+        $this->assertTrue($service->registersAsFinal($invoice->fresh()));
+    }
 }
