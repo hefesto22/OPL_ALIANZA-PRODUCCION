@@ -25,6 +25,29 @@ class ReturnsRelationManager extends RelationManager
 
     protected static ?string $pluralLabel = 'Devoluciones';
 
+    protected static string|\BackedEnum|null $icon = 'heroicon-o-arrow-uturn-left';
+
+    /**
+     * Contador de la pestaña: devoluciones vigentes (sin las canceladas).
+     */
+    public static function getBadge(\Illuminate\Database\Eloquent\Model $ownerRecord, string $pageClass): ?string
+    {
+        /** @var \App\Models\Manifest $manifest */
+        $manifest = $ownerRecord;
+
+        return (string) $manifest->returns()->where('status', '!=', 'cancelled')->count();
+    }
+
+    public static function getBadgeColor(\Illuminate\Database\Eloquent\Model $ownerRecord, string $pageClass): ?string
+    {
+        return 'gray';
+    }
+
+    public static function getBadgeTooltip(\Illuminate\Database\Eloquent\Model $ownerRecord, string $pageClass): ?string
+    {
+        return 'Sin contar las canceladas';
+    }
+
     /**
      * La pestaña se rige por el permiso custom ViewReturns:Manifest
      * (ManifestPolicy::viewReturns), administrable desde Shield →

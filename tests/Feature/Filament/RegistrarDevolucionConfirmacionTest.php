@@ -151,4 +151,14 @@ class RegistrarDevolucionConfirmacionTest extends TestCase
                 $this->line->product_description,
             ]);
     }
+
+    public function test_la_tabla_de_facturas_muestra_lo_que_queda_por_cobrar_y_el_contador(): void
+    {
+        $this->facturasDelManifiesto()
+            ->assertSee('A cobrar')
+            ->assertSee('Buscar cliente, factura o ruta')
+            ->assertSee($this->invoice->invoice_number);
+
+        $this->assertSame('1', InvoicesRelationManager::getBadge($this->manifest, ViewManifest::class));
+    }
 }

@@ -4,11 +4,14 @@ namespace App\Filament\Resources\Manifests\RelationManagers;
 
 use App\Filament\Resources\Manifests\Pages\Actions\RegistrarDevolucionAction;
 use App\Models\Invoice;
+use App\Models\Manifest;
 use App\Models\User;
 use App\Services\InvoicePdfService;
 use Filament\Actions\BulkAction;
 use Filament\Actions\BulkActionGroup;
 use Filament\Resources\RelationManagers\RelationManager;
+use Filament\Tables\Columns\Summarizers\Sum;
+use Filament\Tables\Columns\Summarizers\Summarizer;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
@@ -16,6 +19,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\On;
 
 class InvoicesRelationManager extends RelationManager
@@ -27,6 +31,32 @@ class InvoicesRelationManager extends RelationManager
     protected static ?string $label = 'Factura';
 
     protected static ?string $pluralLabel = 'Facturas';
+
+    protected static string|\BackedEnum|null $icon = 'heroicon-o-document-text';
+
+    /**
+     * Contador de la pestaña: las facturas que el usuario ve en la tabla
+     * (solo las de su bodega si es usuario de bodega).
+     */
+    public static function getBadge(\Illuminate\Database\Eloquent\Model $ownerRecord, string $pageClass): ?string
+    {
+        /** @var Manifest $manifest */
+        $manifest = $ownerRecord;
+        /** @var User|null $user */
+        $user = Auth::user();
+        $query = $manifest->invoices();
+
+        if ($user?->isWarehouseUser()) {
+            $query->whereIn('warehouse_id', $user->warehouseIds());
+        }
+
+        return (string) $query->count();
+    }
+
+    public static function getBadgeColor(\Illuminate\Database\Eloquent\Model $ownerRecord, string $pageClass): ?string
+    {
+        return 'gray';
+    }
 
     public array $statusesFilter = [];
 
@@ -41,8 +71,38 @@ class InvoicesRelationManager extends RelationManager
     {
         return $table
             ->columns([
+                // La tabla ya viene ordenada por ruta: es la primera pista
+                // del operador para ubicarse.
+                TextColumn::make('route_number')
+                    ->label('Ruta')
+                    ->badge()
+                    ->color('gray')
+                    ->searchable()
+                    ->sortable()
+                    ->toggleable(),
+
+                TextColumn::make('invoice_number')
+                    ->label('Factura')
+                    ->searchable()
+                    ->sortable()
+                    ->copyable()
+                    ->copyMessage('Número copiado')
+                    ->description(fn (Invoice $record): string => $record->invoice_date?->format('d/m/Y') ?? '')
+                    ->toggleable(),
+
+                TextColumn::make('client_name')
+                    ->label('Cliente')
+                    ->searchable(['client_name', 'client_id'])
+                    ->weight('medium')
+                    ->limit(34)
+                    ->tooltip(fn (Invoice $record): string => trim($record->client_name.' · '.$record->address, ' ·'))
+                    ->description(fn (Invoice $record): ?string => filled($record->client_id) ? 'Cód. '.$record->client_id : null)
+                    ->toggleable(),
+
+                // Solo en manifiestos de varias bodegas: en los de una sola,
+                // la misma etiqueta repetida en cada fila no dice nada.
                 TextColumn::make('warehouse.code')
-                    ->label('Almacén')
+                    ->label('Bodega')
                     ->badge()
                     ->color(fn ($state) => match ($state) {
                         'OAC' => 'info',
@@ -53,76 +113,77 @@ class InvoicesRelationManager extends RelationManager
                     })
                     ->placeholder('—')
                     ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: false),
-
-                TextColumn::make('route_number')
-                    ->label('Num. Ruta')
-                    ->searchable()
-                    ->sortable()
-                    // Oculta por defecto para que el botón de acción quepa sin
-                    // scroll horizontal. El usuario puede activarla con el
-                    // selector de columnas (⊞).
-                    ->toggleable(isToggledHiddenByDefault: true),
-
-                TextColumn::make('invoice_date')
-                    ->label('Fecha Factura')
-                    ->date('d/m/Y')
-                    ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: false),
-
-                TextColumn::make('invoice_number')
-                    ->label('# Factura')
-                    ->searchable()
-                    ->sortable()
-                    ->copyable()
-                    ->copyMessage('Número copiado')
-                    ->toggleable(isToggledHiddenByDefault: false),
-
-                TextColumn::make('client_id')
-                    ->label('Cód. Cliente')
-                    ->searchable()
-                    ->sortable()
-                    // Oculta por defecto (vista compacta) — activable con ⊞.
-                    ->toggleable(isToggledHiddenByDefault: true),
-
-                TextColumn::make('client_name')
-                    ->label('Cliente')
-                    ->searchable()
-                    ->limit(30)
-                    ->tooltip(fn ($record) => $record->client_name)
-                    ->toggleable(isToggledHiddenByDefault: false),
-
-                TextColumn::make('address')
-                    ->label('Dirección')
-                    ->limit(35)
-                    ->tooltip(fn ($record) => $record->address)
-                    // Oculta por defecto (vista compacta) — activable con ⊞.
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->visible(fn (): bool => $this->getOwnerRecord()->warehouseTotals->count() > 1)
+                    ->toggleable(),
 
                 TextColumn::make('total')
                     ->label('Total')
                     ->money('HNL')
+                    ->alignEnd()
                     ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: false),
+                    ->summarize(Sum::make()->label('Total')->money('HNL'))
+                    ->toggleable(),
+
+                TextColumn::make('total_returns')
+                    ->label('Devuelto')
+                    ->money('HNL')
+                    ->alignEnd()
+                    ->sortable()
+                    ->color(fn ($state): string => (float) $state > 0 ? 'danger' : 'gray')
+                    ->summarize(Sum::make()->label('Devuelto')->money('HNL'))
+                    ->toggleable(),
+
+                // Lo que la factura sigue valiendo después de devoluciones.
+                TextColumn::make('a_cobrar')
+                    ->label('A cobrar')
+                    ->state(fn (Invoice $record): float => (float) $record->total - (float) $record->total_returns)
+                    ->money('HNL')
+                    ->alignEnd()
+                    ->weight('bold')
+                    ->summarize(
+                        Summarizer::make()
+                            ->label('A cobrar')
+                            ->money('HNL')
+                            ->using(fn ($query): float => (float) $query->sum(DB::raw('total - total_returns')))
+                    )
+                    ->toggleable(),
 
                 TextColumn::make('status')
                     ->label('Estado')
                     ->badge()
                     ->color(fn (string $state) => match ($state) {
                         'imported' => 'success',
-                        'partial_return' => 'info',
+                        'partial_return' => 'warning',
                         'returned' => 'danger',
-                        'rejected' => 'gray',
                         default => 'gray',
+                    })
+                    ->icon(fn (string $state) => match ($state) {
+                        'imported' => 'heroicon-o-check-circle',
+                        'partial_return', 'returned' => 'heroicon-o-arrow-uturn-left',
+                        'rejected' => 'heroicon-o-no-symbol',
+                        default => null,
                     })
                     ->formatStateUsing(fn (string $state) => match ($state) {
                         'imported' => 'Importada',
-                        'partial_return' => 'Dev. Parcial',
+                        'partial_return' => 'Dev. parcial',
                         'returned' => 'Devuelta',
                         'rejected' => 'Rechazada',
                         default => $state,
                     })
-                    ->toggleable(isToggledHiddenByDefault: false),
+                    ->toggleable(),
+
+                // ── Ocultas por defecto, activables con ⊞ ──────────────
+                TextColumn::make('invoice_date')
+                    ->label('Fecha factura')
+                    ->date('d/m/Y')
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+
+                TextColumn::make('address')
+                    ->label('Dirección')
+                    ->limit(35)
+                    ->tooltip(fn ($record) => $record->address)
+                    ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
                 SelectFilter::make('status')
@@ -264,6 +325,7 @@ class InvoicesRelationManager extends RelationManager
 
             ->defaultSort('route_number', 'asc')
             ->striped()
+            ->searchPlaceholder('Buscar cliente, factura o ruta')
             ->paginated([25, 50, 100, 200]);
     }
 }

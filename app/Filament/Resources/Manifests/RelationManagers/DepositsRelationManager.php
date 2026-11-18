@@ -26,6 +26,31 @@ class DepositsRelationManager extends RelationManager
 
     protected static ?string $pluralLabel = 'Depósitos';
 
+    protected static string|\BackedEnum|null $icon = 'heroicon-o-banknotes';
+
+    /**
+     * Contador de la pestaña: los depósitos que el usuario ve en la tabla.
+     */
+    public static function getBadge(\Illuminate\Database\Eloquent\Model $ownerRecord, string $pageClass): ?string
+    {
+        /** @var \App\Models\User|null $user */
+        $user = Auth::user();
+
+        if ($user === null) {
+            return null;
+        }
+
+        /** @var \App\Models\Manifest $manifest */
+        $manifest = $ownerRecord;
+
+        return (string) $manifest->deposits()->visibleTo($user)->count();
+    }
+
+    public static function getBadgeColor(\Illuminate\Database\Eloquent\Model $ownerRecord, string $pageClass): ?string
+    {
+        return 'gray';
+    }
+
     /**
      * La pestaña se rige por el permiso custom ViewDeposits:Manifest
      * (ManifestPolicy::viewDeposits), administrable desde Shield →
