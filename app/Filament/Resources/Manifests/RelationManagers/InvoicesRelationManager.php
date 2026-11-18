@@ -10,8 +10,6 @@ use App\Services\InvoicePdfService;
 use Filament\Actions\BulkAction;
 use Filament\Actions\BulkActionGroup;
 use Filament\Resources\RelationManagers\RelationManager;
-use Filament\Tables\Columns\Summarizers\Sum;
-use Filament\Tables\Columns\Summarizers\Summarizer;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
@@ -19,7 +17,6 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Crypt;
-use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\On;
 
 class InvoicesRelationManager extends RelationManager
@@ -121,7 +118,6 @@ class InvoicesRelationManager extends RelationManager
                     ->money('HNL')
                     ->alignEnd()
                     ->sortable()
-                    ->summarize(Sum::make()->label('Total')->money('HNL'))
                     ->toggleable(),
 
                 TextColumn::make('total_returns')
@@ -130,7 +126,6 @@ class InvoicesRelationManager extends RelationManager
                     ->alignEnd()
                     ->sortable()
                     ->color(fn ($state): string => (float) $state > 0 ? 'danger' : 'gray')
-                    ->summarize(Sum::make()->label('Devuelto')->money('HNL'))
                     ->toggleable(),
 
                 // Lo que la factura sigue valiendo después de devoluciones.
@@ -140,12 +135,6 @@ class InvoicesRelationManager extends RelationManager
                     ->money('HNL')
                     ->alignEnd()
                     ->weight('bold')
-                    ->summarize(
-                        Summarizer::make()
-                            ->label('A cobrar')
-                            ->money('HNL')
-                            ->using(fn ($query): float => (float) $query->sum(DB::raw('total - total_returns')))
-                    )
                     ->toggleable(),
 
                 TextColumn::make('status')
